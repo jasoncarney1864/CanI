@@ -29,6 +29,22 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             return response
+        except Exception:
+            # Without this, an unhandled exception propagates straight to Starlette's
+            # default handler, which logs a raw traceback via the stdlib `logging`
+            # module — untagged with trace_id and outside the structured JSON stream
+            # every other log line uses. That makes failures hard to correlate against
+            # the request that caused them once logs leave a single terminal (e.g. once
+            # shipped to Log Analytics per docs/13-observability.md §13.3). Log
+            # structured here, then re-raise so Starlette still returns its safe,
+            # generic 500 body — this must never leak exception details to the client.
+            logger.error(
+                "request_failed",
+                method=request.method,
+                path=request.url.path,
+                exc_info=True,
+            )
+            raise
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
             logger.info(
