@@ -1,7 +1,7 @@
 """CanI platform landing zone (docs/06-azure-landing-zone-design.md, docs/11-iac-strategy.md).
 
 Not applied this session (no live Azure subscription in this environment) — see the
-launch-readiness gap report. §6.6 bootstrapping note applies: management-group-scope
+docs/implementation-status.md. §6.6 bootstrapping note applies: management-group-scope
 resources require an interactive `pulumi up` under an "elevated access" admin session
 the first time; after that, the platform GitHub identity holds a narrower permanent role.
 """

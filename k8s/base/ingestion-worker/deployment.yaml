@@ -43,7 +43,7 @@ metadata:
 ---
 # KEDA scales replicas with ingestion backlog per docs/10 §10.8. Requires the KEDA
 # postgresql scaler add-on and a read-only DB credential — deferred until the KEDA
-# add-on itself is installed on a real cluster (see the launch-readiness gap report).
+# add-on itself is installed on a real cluster (see docs/implementation-status.md).
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:

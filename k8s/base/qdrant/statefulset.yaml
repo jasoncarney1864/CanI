@@ -1,6 +1,6 @@
 # Qdrant StatefulSet on the datapool per docs/10-aks-cluster-design.md §10.9. Snapshot
 # export to Blob Storage (§9.10 backup model) is a deferred cron job — see the
-# launch-readiness gap report.
+# docs/implementation-status.md.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

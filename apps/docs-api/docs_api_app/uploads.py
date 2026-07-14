@@ -1,7 +1,7 @@
 """Upload validation per docs/08-rag-pipeline-design.md §8.3 and
 docs/14-security-and-compliance.md §14.8: strict file-type/size checks before any
 processing. Malware scanning (§8.11) is explicitly deferred for this MVP pass — see the
-launch-readiness gap report — so this is a defense against malformed/mislabeled input,
+docs/implementation-status.md — so this is a defense against malformed/mislabeled input,
 not a substitute for AV scanning before production launch.
 """
 

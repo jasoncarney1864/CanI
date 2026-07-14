@@ -23,7 +23,7 @@ P1 per docs/14-security-and-compliance.md §14.11. Any confirmed instance is a h
 - Revoke the affected user(s)' entitlements immediately (`entitlements.revoked_at`) —
   forces re-auth and blocks further access (§7.7: "Existing sessions are revoked on
   critical entitlement removals" — session revocation on entitlement change is not yet
-  implemented in this MVP pass; see the gap report. Until it is, also rotate
+  implemented in this MVP pass; see docs/implementation-status.md. Until it is, also rotate
   `CANI_TOKEN_SIGNING_SECRET` to invalidate all outstanding access tokens platform-wide).
 - If the cause is a code defect in ownership scoping, take the affected service out of
   rotation before deploying a fix.

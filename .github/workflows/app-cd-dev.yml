@@ -3,7 +3,7 @@ name: app-cd-dev
 # Targets a real AKS dev cluster once infra/workload has actually been applied and OIDC
 # federated credentials + ACR push access are configured — not live this session. Until
 # then, ci.yml's compose-smoke-deploy job is the working proxy for "dev deployment".
-# See the launch-readiness gap report.
+# See docs/implementation-status.md.
 
 on:
   push:
