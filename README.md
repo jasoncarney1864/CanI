@@ -9,7 +9,7 @@ scaffolded is tracked in [docs/implementation-status.md](docs/implementation-sta
 
 ## Prerequisites
 
-- Python 3.11+ (3.12 is what CI uses)
+- Python 3.13 (pinned baseline for reproducible local + CI runs)
 - Docker Desktop (or another Docker Engine + Compose v2) — only required for the full
   dev stack and the integration tests, not for unit tests or lint
 
@@ -18,7 +18,12 @@ scaffolded is tracked in [docs/implementation-status.md](docs/implementation-sta
 ```bash
 git clone <this-repo>
 cd CanI
-python -m venv .venv-test
+python3.13 -m venv .venv-test
+```
+
+```powershell
+# Windows (recommended)
+py -3.13 -m venv .venv-test
 ```
 
 ```bash
@@ -67,6 +72,18 @@ non-secret string (the publicly documented Azurite emulator dev key); everything
 
 ## Running tests
 
+Reliable one-command local test run (unit first, then integration):
+
+```bash
+python scripts/run_local_tests.py
+```
+
+On Windows without an activated venv:
+
+```powershell
+.\.venv-test\Scripts\python.exe scripts\run_local_tests.py
+```
+
 Unit tests (fast, no Docker required):
 
 ```bash
@@ -89,8 +106,7 @@ Everything (what CI runs, in order):
 ```bash
 ruff check apps tests db
 ruff format --check apps tests db
-pytest tests/unit -v
-pytest tests/integration -v
+python scripts/run_local_tests.py
 ```
 
 ## Running the dev stack manually
@@ -149,4 +165,5 @@ tests/unit/       no external dependencies
 tests/integration/ drives docker-compose
 runbooks/         operational runbooks for the scenarios already covered by this MVP
 docs/             architecture, ADRs, implementation status, PR summary
+scripts/          local developer automation helpers (including sequential test runner)
 ```
