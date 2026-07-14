@@ -1,0 +1,74 @@
+name: app-cd-dev
+
+# Targets a real AKS dev cluster once infra/workload has actually been applied and OIDC
+# federated credentials + ACR push access are configured — not live this session. Until
+# then, ci.yml's compose-smoke-deploy job is the working proxy for "dev deployment".
+# See the launch-readiness gap report.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        service: [hub-api, docs-api, ingestion-worker, retrieval-worker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image (immutable tag, never `latest`)
+        run: |
+          az acr login --name cani
+          docker build -f apps/${{ matrix.service }}/Dockerfile -t cani.azurecr.io/${{ matrix.service }}:${{ github.sha }} .
+          docker push cani.azurecr.io/${{ matrix.service }}:${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: cani-workload-core-dev-rg
+          cluster-name: cani-aks
+
+      - name: Set image tags and apply
+        run: |
+          cd k8s/overlays/dev
+          kustomize edit set image \
+            cani.azurecr.io/hub-api=cani.azurecr.io/hub-api:${{ github.sha }} \
+            cani.azurecr.io/docs-api=cani.azurecr.io/docs-api:${{ github.sha }} \
+            cani.azurecr.io/retrieval-worker=cani.azurecr.io/retrieval-worker:${{ github.sha }} \
+            cani.azurecr.io/ingestion-worker=cani.azurecr.io/ingestion-worker:${{ github.sha }}
+          kubectl apply -k .
+          kubectl rollout status deployment/hub-api -n hub-system
+          kubectl rollout status deployment/docs-api -n docs-platform
+          kubectl rollout status deployment/retrieval-worker -n docs-platform
+
+      - name: Post-deploy smoke check
+        run: |
+          curl -sf https://dev.cani.internal/healthz || (echo "smoke check failed" && exit 1)

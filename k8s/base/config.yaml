@@ -1,0 +1,32 @@
+# Non-secret configuration shared by all docs-platform/hub-system workloads.
+# Secret values (token signing secret, Azure OpenAI/Document Intelligence keys, DB
+# password) come from Key Vault via the CSI driver (secret-provider-class.yaml), never
+# from this ConfigMap or a plaintext Secret checked into git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cani-config
+  namespace: docs-platform
+data:
+  ENV: "dev"
+  QDRANT_URL: "http://qdrant.docs-platform.svc.cluster.local:6333"
+  QDRANT_COLLECTION: "cani_docs_dev"
+  RETRIEVAL_WORKER_URL: "http://retrieval-worker.docs-platform.svc.cluster.local:8003"
+  AZURE_OPENAI_API_VERSION: "2024-10-21"
+  POSTGRES_HOST: "REPLACE_WITH_POSTGRES_FQDN"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "cani"
+  POSTGRES_USER: "caniadmin"
+  AZURE_STORAGE_CONNECTION_STRING: "REPLACE_WITH_MANAGED_IDENTITY_BLOB_CONNECTION"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cani-config
+  namespace: hub-system
+data:
+  ENV: "dev"
+  POSTGRES_HOST: "REPLACE_WITH_POSTGRES_FQDN"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "cani"
+  POSTGRES_USER: "caniadmin"

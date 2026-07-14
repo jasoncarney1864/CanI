@@ -1,0 +1,11 @@
+# Dev/test-only dependencies. Installed on top of each app's own requirements in CI.
+-e apps/shared-lib
+-e apps/hub-api
+-e apps/docs-api
+-e apps/retrieval-worker
+-e apps/ingestion-worker
+
+pytest>=8.2
+httpx>=0.27
+reportlab>=4.2
+ruff>=0.5

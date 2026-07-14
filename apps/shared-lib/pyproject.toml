@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cani-shared"
+version = "0.1.0"
+description = "Shared config, auth, entitlements, data-access, and RAG provider abstractions for CanI services."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "psycopg[binary]>=3.1",
+    "psycopg-pool>=3.2",
+    "pyjwt>=2.8",
+    "qdrant-client>=1.9,<1.10",  # pinned to match the qdrant/qdrant:v1.9.7 server image in docker-compose.yml
+    "azure-storage-blob>=12.19",
+    "azure-ai-documentintelligence>=1.0.0b3",
+    "openai>=1.30",
+    "pypdf>=4.2",
+    "tiktoken>=0.7",
+    "structlog>=24.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["cani_shared*"]
