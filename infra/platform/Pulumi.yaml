@@ -1,0 +1,6 @@
+name: cani-platform
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: CanI platform landing zone - management groups, policy, hub network, shared services (docs/06, docs/11)

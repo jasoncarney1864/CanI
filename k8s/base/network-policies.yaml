@@ -1,0 +1,68 @@
+# NetworkPolicy deny-by-default posture, then explicit allow rules, per
+# docs/10-aks-cluster-design.md §10.10 and docs/14-security-and-compliance.md §14.6.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+  namespace: docs-platform
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+  namespace: hub-system
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# hub-api may call out to Postgres and DNS/HTTPS (Entra External ID once wired for real).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hub-api-egress
+  namespace: hub-system
+spec:
+  podSelector:
+    matchLabels: { app: hub-api }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ port: 5432, protocol: TCP }]
+    - ports: [{ port: 53, protocol: UDP }, { port: 443, protocol: TCP }]
+---
+# docs-api may call retrieval-worker internally, Postgres, and blob storage; never Qdrant
+# directly (§8.11: "Restrict Qdrant network access to CanI Docs backend only" == the
+# retrieval-worker and ingestion-worker pods specifically, not the public docs-api gateway).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: docs-api-egress
+  namespace: docs-platform
+spec:
+  podSelector:
+    matchLabels: { app: docs-api }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: retrieval-worker } } }]
+      ports: [{ port: 8003, protocol: TCP }]
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ port: 5432, protocol: TCP }]
+    - ports: [{ port: 53, protocol: UDP }, { port: 443, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qdrant-restrict-ingress
+  namespace: docs-platform
+spec:
+  podSelector:
+    matchLabels: { app: qdrant }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: retrieval-worker } }
+        - podSelector: { matchLabels: { app: ingestion-worker } }
+      ports: [{ port: 6333, protocol: TCP }]

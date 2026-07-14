@@ -1,0 +1,57 @@
+# Qdrant StatefulSet on the datapool per docs/10-aks-cluster-design.md §10.9. Snapshot
+# export to Blob Storage (§9.10 backup model) is a deferred cron job — see the
+# launch-readiness gap report.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  namespace: docs-platform
+spec:
+  serviceName: qdrant
+  replicas: 1
+  selector:
+    matchLabels: { app: qdrant }
+  template:
+    metadata:
+      labels: { app: qdrant }
+    spec:
+      tolerations:
+        - { key: "dedicated", operator: "Equal", value: "data", effect: "NoSchedule" }
+      nodeSelector:
+        agentpool: datapool
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:v1.9.7
+          ports: [{ containerPort: 6333 }]
+          volumeMounts:
+            - { name: qdrant-storage, mountPath: /qdrant/storage }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+  volumeClaimTemplates:
+    - metadata:
+        name: qdrant-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 20Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: docs-platform
+spec:
+  clusterIP: None
+  selector: { app: qdrant }
+  ports: [{ port: 6333, targetPort: 6333 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: qdrant
+  namespace: docs-platform
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels: { app: qdrant }
