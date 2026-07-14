@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-worker
+  namespace: docs-platform
+  labels: { app: ingestion-worker }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ingestion-worker }
+  template:
+    metadata:
+      labels: { app: ingestion-worker }
+    spec:
+      serviceAccountName: ingestion-worker
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      # Interruption-tolerant per docs/10 §10.5 batchpool guidance: job claims use
+      # SELECT ... FOR UPDATE SKIP LOCKED, so losing a pod mid-job just means another
+      # replica (or this one after reschedule) picks it back up as retry_pending.
+      tolerations:
+        - { key: "dedicated", operator: "Equal", value: "batch", effect: "NoSchedule" }
+      containers:
+        - name: ingestion-worker
+          image: cani.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
+          envFrom:
+            - configMapRef: { name: cani-config }
+            - secretRef: { name: cani-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ingestion-worker
+  namespace: docs-platform
+  annotations:
+    azure.workload.identity/client-id: "REPLACE_WITH_INGESTION_WORKER_WORKLOAD_IDENTITY_CLIENT_ID"
+---
+# KEDA scales replicas with ingestion backlog per docs/10 §10.8. Requires the KEDA
+# postgresql scaler add-on and a read-only DB credential — deferred until the KEDA
+# add-on itself is installed on a real cluster (see docs/implementation-status.md).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ingestion-worker
+  namespace: docs-platform
+spec:
+  scaleTargetRef: { name: ingestion-worker }
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+    - type: postgresql
+      metadata:
+        query: "SELECT count(*) FROM ingestion_jobs WHERE status IN ('queued', 'retry_pending')"
+        targetQueryValue: "5"
+      authenticationRef:
+        name: cani-postgres-keda-auth

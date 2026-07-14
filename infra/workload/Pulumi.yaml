@@ -1,0 +1,6 @@
+name: cani-workload
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: CanI workload landing zone - AKS, Postgres, Blob Storage, workload networking (docs/09, docs/10, docs/11)
