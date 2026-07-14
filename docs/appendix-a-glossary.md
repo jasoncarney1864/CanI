@@ -6,4 +6,4 @@
 
 ---
 
-[← Azure Landing Zone design](06-azure-landing-zone-design.md) | [Back to index](README.md) | Next: [Appendix B — ADR log →](adr/README.md)
+[← Roadmap & phasing](16-roadmap-and-phasing.md) | [Back to index](README.md) | Next: [Appendix B — ADR log →](adr/README.md)
