@@ -1,6 +1,7 @@
 # Implementation status — v1 core loop
 
-**Branch:** `feat/v1-core-loop-checkpoint`
+**Branch:** `main`
+**Checkpoint tag:** `checkpoint-2026-07-14-py313`
 **Scope:** Phase 1 of `16-roadmap-and-phasing.md` — auth → upload → ingest → retrieve →
 cite, plus baseline CI/observability/security and infra/K8s scaffolding.
 **Environment constraint:** no live Azure subscription access during implementation. Every
@@ -9,6 +10,22 @@ written and structurally correct, but has never been applied/deployed against re
 resources). Nothing in this document claims Azure resources were provisioned — where a
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
+
+## 2026-07-14 update (post-merge checkpoint)
+
+- `feat/v1-core-loop-checkpoint` has been merged into `main`; feature branch cleanup is complete.
+- Checkpoint tag created and pushed: `checkpoint-2026-07-14-py313`.
+- Reproducibility baseline is now Python 3.13 for local + CI:
+  - `.python-version` pins `3.13`
+  - CI workflow now uses `actions/setup-python` with `python-version: "3.13"`
+  - Ruff target version is `py313`
+- Reliable local test command added:
+  - `python scripts/run_local_tests.py` (runs unit tests first, then integration tests)
+- Current verification snapshot:
+  - `ruff check .` passes
+  - `ruff format --check .` passes
+  - `pytest tests/unit -q` passes (29)
+  - `pytest tests/integration -q` passes (2)
 
 ## Delivered now, mapped to docs/07–16
 
