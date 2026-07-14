@@ -52,7 +52,7 @@ class DenyPublicNetworkPolicies(ComponentResource):
     """Assigns the two built-in "deny public network access" policies at management
     group scope. Represents the pattern from §6.3 — the remaining baseline policies
     (required tags, allowed locations, TLS enforcement, diagnostic settings) are
-    deferred; see the launch-readiness gap report."""
+    deferred; see docs/implementation-status.md."""
 
     def __init__(self, name: str, *, management_group_id: str, opts: ResourceOptions | None = None):
         super().__init__("cani:platform:DenyPublicNetworkPolicies", name, None, opts)

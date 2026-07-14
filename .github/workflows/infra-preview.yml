@@ -2,8 +2,7 @@ name: infra-preview
 
 # Requires Azure OIDC federated credentials configured as repo/environment secrets
 # (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) before this can run for real —
-# not configured this session (docs/12-cicd-strategy.md §12.6). See the launch-readiness
-# gap report.
+# not configured this session (docs/12-cicd-strategy.md §12.6). See docs/implementation-status.md.
 
 on:
   pull_request:

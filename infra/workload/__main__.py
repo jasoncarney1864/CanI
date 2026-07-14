@@ -1,6 +1,6 @@
 """CanI workload landing zone (docs/09, docs/10, docs/11-iac-strategy.md §11.6 cross-
 stack contract). Consumes cani-platform's outputs via StackReference rather than
-hardcoding resource IDs. Not applied this session — see the launch-readiness gap report.
+hardcoding resource IDs. Not applied this session — see docs/implementation-status.md.
 """
 
 import sys

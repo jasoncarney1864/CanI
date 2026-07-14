@@ -1,7 +1,7 @@
 name: infra-apply-dev
 
 # Requires Azure OIDC federated credentials + a Pulumi state backend — not configured
-# this session. See the launch-readiness gap report before enabling this trigger for real.
+# this session. See docs/implementation-status.md before enabling this trigger for real.
 
 on:
   push:
