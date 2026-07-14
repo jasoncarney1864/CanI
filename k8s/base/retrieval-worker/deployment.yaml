@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: retrieval-worker
+  namespace: docs-platform
+  labels: { app: retrieval-worker }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: retrieval-worker }
+  template:
+    metadata:
+      labels: { app: retrieval-worker }
+    spec:
+      serviceAccountName: retrieval-worker
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: retrieval-worker
+          image: cani.azurecr.io/retrieval-worker:REPLACE_WITH_IMAGE_TAG
+          ports: [{ containerPort: 8003 }]
+          envFrom:
+            - configMapRef: { name: cani-config }
+            - secretRef: { name: cani-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe: { httpGet: { path: /healthz, port: 8003 }, initialDelaySeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: 8003 }, initialDelaySeconds: 15 }
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: retrieval-worker
+  namespace: docs-platform
+spec:
+  selector: { app: retrieval-worker }
+  ports: [{ port: 8003, targetPort: 8003 }]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: retrieval-worker
+  namespace: docs-platform
+  annotations:
+    azure.workload.identity/client-id: "REPLACE_WITH_RETRIEVAL_WORKER_WORKLOAD_IDENTITY_CLIENT_ID"

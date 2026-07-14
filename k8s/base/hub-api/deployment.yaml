@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hub-api
+  namespace: hub-system
+  labels: { app: hub-api }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: hub-api }
+  template:
+    metadata:
+      labels: { app: hub-api }
+    spec:
+      serviceAccountName: hub-api
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: hub-api
+          image: cani.azurecr.io/hub-api:REPLACE_WITH_IMAGE_TAG
+          ports: [{ containerPort: 8001 }]
+          envFrom:
+            - configMapRef: { name: cani-config }
+            - secretRef: { name: cani-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe: { httpGet: { path: /healthz, port: 8001 }, initialDelaySeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: 8001 }, initialDelaySeconds: 15 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hub-api
+  namespace: hub-system
+spec:
+  selector: { app: hub-api }
+  ports: [{ port: 8001, targetPort: 8001 }]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hub-api
+  namespace: hub-system
+  annotations:
+    azure.workload.identity/client-id: "REPLACE_WITH_HUB_API_WORKLOAD_IDENTITY_CLIENT_ID"

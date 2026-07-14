@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "db/**"
+      - "tests/**"
+      - "docker-compose.yml"
+      - ".github/workflows/ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "db/**"
+      - "tests/**"
+      - "docker-compose.yml"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for committed secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  lint-and-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff check)
+        run: ruff check apps tests db
+
+      - name: Format check (ruff format)
+        run: ruff format --check apps tests db
+
+      - name: Unit tests
+        # No Azure OpenAI/Document Intelligence keys are available in CI — provider
+        # factories automatically fall back to deterministic fakes (cani_shared.providers.factory),
+        # so this never depends on live credentials.
+        run: pytest tests/unit -v
+
+  compose-smoke-deploy:
+    runs-on: ubuntu-latest
+    needs: [secret-scan, lint-and-unit-test]
+    # Stands in for a "dev deployment" until a real AKS dev cluster exists (see
+    # docs/implementation-status.md) — builds every service image and drives the real
+    # auth->upload->ingest->retrieve->cite flow against them.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Generate dev secrets
+        run: |
+          cp .env.example .env
+          sed -i "s|CANI_TOKEN_SIGNING_SECRET=|CANI_TOKEN_SIGNING_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(48))')|" .env
+          sed -i "s|CANI_SESSION_SECRET=|CANI_SESSION_SECRET=$(python -c 'import secrets; print(secrets.token_urlsafe(48))')|" .env
+
+      - name: Run integration tests against docker-compose
+        env:
+          CANI_SKIP_COMPOSE: "0"
+        run: pytest tests/integration -v
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs --no-color | tail -500
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

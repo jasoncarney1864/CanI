@@ -1,0 +1,106 @@
+name: cani-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cani}
+      POSTGRES_USER: ${POSTGRES_USER:-cani}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-locally}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cani}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: db/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.7
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite-data:/data
+
+  hub-api:
+    build:
+      context: .
+      dockerfile: apps/hub-api/Dockerfile
+    env_file: .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  docs-api:
+    build:
+      context: .
+      dockerfile: apps/docs-api/Dockerfile
+    env_file: .env
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      azurite:
+        condition: service_started
+      retrieval-worker:
+        condition: service_started
+
+  retrieval-worker:
+    build:
+      context: .
+      dockerfile: apps/retrieval-worker/Dockerfile
+    env_file: .env
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  ingestion-worker:
+    build:
+      context: .
+      dockerfile: apps/ingestion-worker/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+      azurite:
+        condition: service_started
+
+volumes:
+  pg-data:
+  qdrant-data:
+  azurite-data:
