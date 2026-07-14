@@ -11,7 +11,9 @@ from pulumi import ComponentResource, Input, ResourceOptions
 
 
 class SharedContainerRegistry(ComponentResource):
-    def __init__(self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None):
+    def __init__(
+        self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None
+    ):
         super().__init__("cani:platform:SharedContainerRegistry", name, None, opts)
 
         self.registry = azure_native.containerregistry.Registry(
@@ -48,7 +50,9 @@ class WorkloadPostgres(ComponentResource):
             network=azure_native.dbforpostgresql.NetworkArgs(delegated_subnet_resource_id=subnet_id),
             administrator_login=administrator_login,
             storage=azure_native.dbforpostgresql.StorageArgs(storage_size_gb=32),
-            backup=azure_native.dbforpostgresql.BackupArgs(backup_retention_days=7, geo_redundant_backup="Disabled"),
+            backup=azure_native.dbforpostgresql.BackupArgs(
+                backup_retention_days=7, geo_redundant_backup="Disabled"
+            ),
             tags=tags,
             opts=ResourceOptions(parent=self),
         )
@@ -57,7 +61,9 @@ class WorkloadPostgres(ComponentResource):
 
 
 class WorkloadBlobStorage(ComponentResource):
-    def __init__(self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None):
+    def __init__(
+        self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None
+    ):
         super().__init__("cani:workload:WorkloadBlobStorage", name, None, opts)
 
         self.account = azure_native.storage.StorageAccount(

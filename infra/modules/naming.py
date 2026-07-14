@@ -20,7 +20,9 @@ class NamingContext:
         return f"cani-{self.project}-{self.layer}-{self.environment}-{self.region}-{suffix}"
 
 
-def base_tags(*, environment: str, owner: str, spoke: str, cost_center: str = "cani-solo", workload_type: str = "") -> dict[str, str]:
+def base_tags(
+    *, environment: str, owner: str, spoke: str, cost_center: str = "cani-solo", workload_type: str = ""
+) -> dict[str, str]:
     tags = {
         "environment": environment,
         "owner": owner,

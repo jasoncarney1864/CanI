@@ -20,7 +20,9 @@ PRIVATE_DNS_ZONES = (
 
 
 class HubNetwork(ComponentResource):
-    def __init__(self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None):
+    def __init__(
+        self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None
+    ):
         super().__init__("cani:platform:HubNetwork", name, None, opts)
 
         self.vnet = azure_native.network.VirtualNetwork(

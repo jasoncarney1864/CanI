@@ -13,10 +13,10 @@ import pulumi
 import pulumi_azure_native as azure_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.data_services import SharedContainerRegistry
 from modules.naming import NamingContext, base_tags
 from modules.networking import HubNetwork
 from modules.observability import CentralLogAnalytics
-from modules.data_services import SharedContainerRegistry
 from modules.security import DenyPublicNetworkPolicies, PlatformKeyVault
 
 config = pulumi.Config()
