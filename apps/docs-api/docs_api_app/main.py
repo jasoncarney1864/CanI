@@ -91,7 +91,9 @@ async def upload_document(
         existing = get_document_by_checksum(conn, principal.user_id, checksum)
         if existing is not None:
             logger.info("upload_deduplicated", document_id=existing.document_id)
-            return UploadResponse(document_id=existing.document_id, document_version_id="", status=existing.current_status)
+            return UploadResponse(
+                document_id=existing.document_id, document_version_id="", status=existing.current_status
+            )
 
         document = create_document(
             conn,
@@ -104,7 +106,9 @@ async def upload_document(
         blob_store: BlobStore = app.state.blob_store
         artifact_name = f"original.{validated.extension}"
         document_version_id = str(uuid.uuid4())
-        blob_path = BlobStore.artifact_path(principal.user_id, document.document_id, document_version_id, artifact_name)
+        blob_path = BlobStore.artifact_path(
+            principal.user_id, document.document_id, document_version_id, artifact_name
+        )
         blob_uri = blob_store.upload(container=RAW_DOCUMENTS_CONTAINER, path=blob_path, data=raw)
 
         document_version = create_document_version(

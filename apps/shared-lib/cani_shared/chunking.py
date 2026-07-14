@@ -93,7 +93,10 @@ def chunk_document(pages: list[PageText]) -> list[Chunk]:
 
     for page_no, line in lines:
         if _SECTION_HEADING_RE.match(line):
-            if current_lines and _count_tokens("\n".join(t for _, t in current_lines)) >= TARGET_MIN_TOKENS // 2:
+            if (
+                current_lines
+                and _count_tokens("\n".join(t for _, t in current_lines)) >= TARGET_MIN_TOKENS // 2
+            ):
                 flush(next_section_start=[])
             current_section = line.strip()
             current_lines.append((page_no, line))

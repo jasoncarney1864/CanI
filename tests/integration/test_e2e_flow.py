@@ -53,4 +53,6 @@ def _poll_until_terminal(docs_client, document_id: str, headers: dict, timeout_s
         if status in ("indexed", "failed"):
             return status
         time.sleep(2)
-    pytest.fail(f"document {document_id} did not reach a terminal state within {timeout_seconds}s (last: {status})")
+    pytest.fail(
+        f"document {document_id} did not reach a terminal state within {timeout_seconds}s (last: {status})"
+    )

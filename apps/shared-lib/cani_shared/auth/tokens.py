@@ -52,7 +52,9 @@ class SessionClaims(BaseModel):
     exp: int
 
 
-def create_access_token(*, user_id: str, entitlements: list[str], secret: str, auth_time: int | None = None) -> str:
+def create_access_token(
+    *, user_id: str, entitlements: list[str], secret: str, auth_time: int | None = None
+) -> str:
     now = int(time.time())
     claims = {
         "sub": user_id,

@@ -87,7 +87,9 @@ def get_entitlements(conn: Connection, owner_user_id: str) -> list[str]:
         return [r["entitlement"] for r in cur.fetchall()]
 
 
-def record_audit_event(conn: Connection, *, event_type: str, actor_user_id: str, detail: dict[str, Any]) -> None:
+def record_audit_event(
+    conn: Connection, *, event_type: str, actor_user_id: str, detail: dict[str, Any]
+) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO audit_events (audit_event_id, event_type, actor_user_id, detail, created_at) "
@@ -165,7 +167,12 @@ def get_document_title(conn: Connection, owner_user_id: str, document_id: str) -
 
 
 def create_document_version(
-    conn: Connection, owner_user_id: str, document_id: str, *, blob_uri: str, document_version_id: str | None = None
+    conn: Connection,
+    owner_user_id: str,
+    document_id: str,
+    *,
+    blob_uri: str,
+    document_version_id: str | None = None,
 ) -> DocumentVersion:
     _row_conn(conn)
     document_version_id = document_version_id or str(uuid.uuid4())
@@ -183,7 +190,9 @@ def create_document_version(
         return DocumentVersion.model_validate(row)
 
 
-def get_document_version(conn: Connection, owner_user_id: str, document_version_id: str) -> DocumentVersion | None:
+def get_document_version(
+    conn: Connection, owner_user_id: str, document_version_id: str
+) -> DocumentVersion | None:
     _row_conn(conn)
     with conn.cursor() as cur:
         cur.execute(
@@ -288,7 +297,9 @@ def update_ingestion_job_stage(
         conn.commit()
 
 
-def mark_document_status(conn: Connection, owner_user_id: str, document_id: str, status: IngestionStage) -> None:
+def mark_document_status(
+    conn: Connection, owner_user_id: str, document_id: str, status: IngestionStage
+) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE documents SET current_status = %s, updated_at = now() WHERE owner_user_id = %s AND document_id = %s",
