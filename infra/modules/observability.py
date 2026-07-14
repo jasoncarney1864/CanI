@@ -10,7 +10,9 @@ from pulumi import ComponentResource, Input, ResourceOptions
 
 
 class CentralLogAnalytics(ComponentResource):
-    def __init__(self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None):
+    def __init__(
+        self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None
+    ):
         super().__init__("cani:platform:CentralLogAnalytics", name, None, opts)
 
         self.workspace = azure_native.operationalinsights.Workspace(

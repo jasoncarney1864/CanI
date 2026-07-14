@@ -23,7 +23,15 @@ POLICY_DENY_KEYVAULT_PUBLIC_NETWORK = (
 
 
 class PlatformKeyVault(ComponentResource):
-    def __init__(self, name: str, *, resource_group_name: str, tenant_id: str, tags: dict, opts: ResourceOptions | None = None):
+    def __init__(
+        self,
+        name: str,
+        *,
+        resource_group_name: str,
+        tenant_id: str,
+        tags: dict,
+        opts: ResourceOptions | None = None,
+    ):
         super().__init__("cani:platform:PlatformKeyVault", name, None, opts)
 
         self.vault = azure_native.keyvault.Vault(

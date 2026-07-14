@@ -42,7 +42,9 @@ class CaniAksCluster(ComponentResource):
                 network_plugin=azure_native.containerservice.NetworkPlugin.AZURE,
                 network_plugin_mode=azure_native.containerservice.NetworkPluginMode.OVERLAY,
             ),
-            oidc_issuer_profile=azure_native.containerservice.ManagedClusterOIDCIssuerProfileArgs(enabled=True),
+            oidc_issuer_profile=azure_native.containerservice.ManagedClusterOIDCIssuerProfileArgs(
+                enabled=True
+            ),
             security_profile=azure_native.containerservice.ManagedClusterSecurityProfileArgs(
                 workload_identity=azure_native.containerservice.ManagedClusterSecurityProfileWorkloadIdentityArgs(
                     enabled=True
@@ -81,4 +83,6 @@ class CaniAksCluster(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        self.register_outputs({"cluster_id": self.cluster.id, "oidc_issuer_url": self.cluster.oidc_issuer_profile.issuer_url})
+        self.register_outputs(
+            {"cluster_id": self.cluster.id, "oidc_issuer_url": self.cluster.oidc_issuer_profile.issuer_url}
+        )
