@@ -59,7 +59,9 @@ class OwnerScopedQdrant:
                 if exc.status_code != 409:
                     raise
 
-    def upsert_chunk(self, *, owner_user_id: str, vector: list[float], payload: dict, point_id: str | None = None) -> str:
+    def upsert_chunk(
+        self, *, owner_user_id: str, vector: list[float], payload: dict, point_id: str | None = None
+    ) -> str:
         if not owner_user_id:
             raise MissingOwnerFilterError("refusing to index a vector without owner_user_id")
         point_id = point_id or str(uuid.uuid4())
@@ -84,7 +86,9 @@ class OwnerScopedQdrant:
 
         must = [qmodels.FieldCondition(key="owner_user_id", match=qmodels.MatchValue(value=owner_user_id))]
         if taxonomy_tags:
-            must.append(qmodels.FieldCondition(key="taxonomy_tags", match=qmodels.MatchAny(any=taxonomy_tags)))
+            must.append(
+                qmodels.FieldCondition(key="taxonomy_tags", match=qmodels.MatchAny(any=taxonomy_tags))
+            )
 
         # `search()` (not the newer `query_points()` Query API) — pinned qdrant-client
         # 1.9.x to match the qdrant/qdrant:v1.9.7 server image, and query_points() isn't

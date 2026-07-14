@@ -73,7 +73,11 @@ class AzureOpenAIChatGrounder(ChatGrounder):
         text = response.choices[0].message.content or ""
         used = [i for i in range(len(context_chunks)) if f"[chunk:{i}]" in text]
         insufficient = "don't have enough information" in text.lower() or "cannot answer" in text.lower()
-        return GroundedAnswer(answer_text=text, insufficient_evidence=insufficient, used_chunk_indices=used or list(range(len(context_chunks))))
+        return GroundedAnswer(
+            answer_text=text,
+            insufficient_evidence=insufficient,
+            used_chunk_indices=used or list(range(len(context_chunks))),
+        )
 
 
 class FakeGrounder(ChatGrounder):
@@ -85,7 +89,9 @@ class FakeGrounder(ChatGrounder):
 
     def ground(self, *, question: str, context_chunks: list[str]) -> GroundedAnswer:
         if not context_chunks:
-            return GroundedAnswer(answer_text="Insufficient evidence.", insufficient_evidence=True, used_chunk_indices=[])
+            return GroundedAnswer(
+                answer_text="Insufficient evidence.", insufficient_evidence=True, used_chunk_indices=[]
+            )
         snippet = context_chunks[0][:200]
         return GroundedAnswer(
             answer_text=f"Based on your document [chunk:0]: {snippet}",

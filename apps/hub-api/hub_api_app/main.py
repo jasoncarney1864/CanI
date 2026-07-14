@@ -119,7 +119,9 @@ def issue_access_token(request: Request) -> TokenResponse:
         entitlements = get_entitlements(conn, user_id)
         record_audit_event(conn, event_type="access_token_issued", actor_user_id=user_id, detail={})
 
-    token = create_access_token(user_id=user_id, entitlements=entitlements, secret=settings.cani_token_signing_secret)
+    token = create_access_token(
+        user_id=user_id, entitlements=entitlements, secret=settings.cani_token_signing_secret
+    )
     logger.info("access_token_issued", user_id_hash=hash_user_id(user_id))
     return TokenResponse(access_token=token, expires_in=ACCESS_TOKEN_TTL_SECONDS)
 

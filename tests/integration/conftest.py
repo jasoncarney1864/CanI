@@ -27,7 +27,9 @@ def _ensure_env_file() -> None:
     if env_path.exists():
         return
     example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-    generated = example.replace("CANI_TOKEN_SIGNING_SECRET=", f"CANI_TOKEN_SIGNING_SECRET={secrets.token_urlsafe(48)}")
+    generated = example.replace(
+        "CANI_TOKEN_SIGNING_SECRET=", f"CANI_TOKEN_SIGNING_SECRET={secrets.token_urlsafe(48)}"
+    )
     generated = generated.replace("CANI_SESSION_SECRET=", f"CANI_SESSION_SECRET={secrets.token_urlsafe(48)}")
     env_path.write_text(generated, encoding="utf-8")
 

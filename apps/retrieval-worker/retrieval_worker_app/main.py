@@ -68,7 +68,9 @@ def retrieve(
     # Owner filter is mandatory and enforced inside OwnerScopedQdrant.search — it raises
     # rather than silently searching unscoped, so there is no way to reach this line
     # having queried across owners.
-    candidates = qdrant.search(owner_user_id=principal.user_id, query_vector=query_vector, limit=CANDIDATE_POOL_SIZE)
+    candidates = qdrant.search(
+        owner_user_id=principal.user_id, query_vector=query_vector, limit=CANDIDATE_POOL_SIZE
+    )
 
     # Lightweight rerank (§8.8, §8.15 open question): candidates already come back score
     # sorted from Qdrant; truncate to the bounded context window rather than running a

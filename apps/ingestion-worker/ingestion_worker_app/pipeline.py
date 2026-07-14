@@ -59,7 +59,9 @@ def process_job(
     )
 
     # --- extract --------------------------------------------------------------------
-    update_ingestion_job_stage(conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.EXTRACTING, status="processing")
+    update_ingestion_job_stage(
+        conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.EXTRACTING, status="processing"
+    )
     raw_bytes = blob_store.download(document_version.blob_uri)
     extraction = extractor.extract(raw_bytes, document.source_type)
     update_document_version_extraction(
@@ -69,10 +71,14 @@ def process_job(
         extractor_version=extraction.method,
         page_count=len(extraction.pages),
     )
-    log.info("stage_completed", stage="extracting", page_count=len(extraction.pages), method=extraction.method)
+    log.info(
+        "stage_completed", stage="extracting", page_count=len(extraction.pages), method=extraction.method
+    )
 
     # --- chunk ------------------------------------------------------------------------
-    update_ingestion_job_stage(conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.CHUNKING, status="processing")
+    update_ingestion_job_stage(
+        conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.CHUNKING, status="processing"
+    )
     pages = [PageText(page_number=p.page_number, text=p.text) for p in extraction.pages]
     chunks = chunk_document(pages)
     if not chunks:
@@ -80,7 +86,9 @@ def process_job(
     log.info("stage_completed", stage="chunking", chunk_count=len(chunks))
 
     # --- embed + index ------------------------------------------------------------------
-    update_ingestion_job_stage(conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.EMBEDDING, status="processing")
+    update_ingestion_job_stage(
+        conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.EMBEDDING, status="processing"
+    )
     vectors = embedder.embed_batch([c.text for c in chunks])
 
     manifests: list[ChunkManifest] = []
@@ -120,7 +128,9 @@ def process_job(
 
     insert_chunk_manifests(conn, owner_user_id, manifests)
 
-    update_ingestion_job_stage(conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.INDEXED, status="indexed")
+    update_ingestion_job_stage(
+        conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.INDEXED, status="indexed"
+    )
     mark_document_status(conn, owner_user_id, document.document_id, IngestionStage.INDEXED)
     log.info("stage_completed", stage="indexed", chunk_count=len(manifests))
 

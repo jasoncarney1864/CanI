@@ -42,7 +42,9 @@ def run_forever() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
             try:
-                process_job(conn, job, blob_store=blob_store, extractor=extractor, embedder=embedder, qdrant=qdrant)
+                process_job(
+                    conn, job, blob_store=blob_store, extractor=extractor, embedder=embedder, qdrant=qdrant
+                )
             except Exception as exc:  # noqa: BLE001 - top-level job loop must never crash the worker
                 handle_job_failure(conn, job, exc)
                 # Exponential backoff before this job becomes reclaimable again (§8.10) —

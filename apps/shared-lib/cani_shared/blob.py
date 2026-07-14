@@ -31,7 +31,9 @@ class BlobStore:
                 self._client.create_container(name)
 
     @staticmethod
-    def artifact_path(owner_user_id: str, document_id: str, document_version_id: str, artifact_name: str) -> str:
+    def artifact_path(
+        owner_user_id: str, document_id: str, document_version_id: str, artifact_name: str
+    ) -> str:
         return f"{owner_user_id}/{document_id}/{document_version_id}/{artifact_name}"
 
     def upload(self, *, container: str, path: str, data: bytes, overwrite: bool = False) -> str:
