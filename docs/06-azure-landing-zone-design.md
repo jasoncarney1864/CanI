@@ -58,4 +58,4 @@ Two Pulumi programs: `platform` (management groups, policy, hub VNet, Log Analyt
 
 ---
 
-[← Roadmap](05-roadmap.md) | [Back to index](README.md) | Next: [Appendix A — Glossary →](appendix-a-glossary.md)
+[← Roadmap](05-roadmap.md) | [Back to index](README.md) | Next: [Identity & access (CanI Hub) →](07-identity-and-access.md)
