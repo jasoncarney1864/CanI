@@ -1,0 +1,10 @@
+title = "CanI gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Well-known public Azurite Storage Emulator dev account key (not a secret — documented by Microsoft, identical in every Azurite install: https://learn.microsoft.com/azure/storage/common/storage-use-azurite#well-known-storage-account-and-key). Used only in .env.example for local docker-compose dev."
+regexes = [
+  '''Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==''',
+]
