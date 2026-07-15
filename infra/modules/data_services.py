@@ -6,8 +6,34 @@ StatefulSet inside AKS (see k8s/base/qdrant), per docs/10 §10.9.
 
 from __future__ import annotations
 
+import hashlib
+
 import pulumi_azure_native as azure_native
 from pulumi import ComponentResource, Input, ResourceOptions
+
+
+def _normalized_alnum_lower(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _stable_suffix(seed: str, length: int = 8) -> str:
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:length]
+
+
+def _acr_registry_name(base: str, seed: str) -> str:
+    prefix = _normalized_alnum_lower(base) or "cani"
+    candidate = (prefix + _stable_suffix(seed, length=10))[:50]
+    if len(candidate) < 5:
+        candidate = (candidate + "cani0")[:5]
+    return candidate
+
+
+def _storage_account_name(base: str, seed: str) -> str:
+    prefix = _normalized_alnum_lower(base) or "cani"
+    candidate = (prefix + _stable_suffix(seed, length=10))[:24]
+    if len(candidate) < 3:
+        candidate = (candidate + "cani")[:3]
+    return candidate
 
 
 class SharedContainerRegistry(ComponentResource):
@@ -16,8 +42,11 @@ class SharedContainerRegistry(ComponentResource):
     ):
         super().__init__("cani:platform:SharedContainerRegistry", name, None, opts)
 
+        registry_name = _acr_registry_name(base=name, seed=f"{resource_group_name}:{name}:acr")
+
         self.registry = azure_native.containerregistry.Registry(
             f"{name}-acr",
+            registry_name=registry_name,
             resource_group_name=resource_group_name,
             sku=azure_native.containerregistry.SkuArgs(name=azure_native.containerregistry.SkuName.STANDARD),
             admin_user_enabled=False,  # workload identities pull via RBAC, not admin credentials
@@ -66,8 +95,11 @@ class WorkloadBlobStorage(ComponentResource):
     ):
         super().__init__("cani:workload:WorkloadBlobStorage", name, None, opts)
 
+        account_name = _storage_account_name(base=name, seed=f"{resource_group_name}:{name}:storage")
+
         self.account = azure_native.storage.StorageAccount(
             f"{name}-st",
+            account_name=account_name,
             resource_group_name=resource_group_name,
             kind=azure_native.storage.Kind.STORAGE_V2,
             sku=azure_native.storage.SkuArgs(name=azure_native.storage.SkuName.STANDARD_LRS),
