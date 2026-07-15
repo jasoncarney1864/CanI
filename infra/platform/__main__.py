@@ -39,28 +39,28 @@ platform_mg = azure_native.management.ManagementGroup(
     "cani-platform-mg",
     group_id="cani-platform",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=root_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=root_mg.id)
     ),
 )
 landing_zones_mg = azure_native.management.ManagementGroup(
     "cani-landing-zones-mg",
     group_id="cani-landing-zones",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=root_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=root_mg.id)
     ),
 )
 workload_mg = azure_native.management.ManagementGroup(
     "cani-workload-mg",
     group_id="cani-workload",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=landing_zones_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=landing_zones_mg.id)
     ),
 )
 sandbox_mg = azure_native.management.ManagementGroup(
     "cani-sandbox-mg",
     group_id="cani-sandbox",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=root_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=root_mg.id)
     ),
 )
 
