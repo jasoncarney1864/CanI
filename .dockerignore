@@ -10,3 +10,7 @@
 !apps/retrieval-worker/**
 !apps/ingestion-worker/
 !apps/ingestion-worker/**
+# db/Dockerfile (the compose migrate service) builds from the repo root and copies
+# db/migrate.py + db/migrations — without these re-includes its COPY steps fail.
+!db/
+!db/**
