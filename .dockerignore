@@ -1,0 +1,12 @@
+*
+!apps/
+!apps/shared-lib/
+!apps/shared-lib/**
+!apps/hub-api/
+!apps/hub-api/**
+!apps/docs-api/
+!apps/docs-api/**
+!apps/retrieval-worker/
+!apps/retrieval-worker/**
+!apps/ingestion-worker/
+!apps/ingestion-worker/**

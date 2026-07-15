@@ -21,6 +21,10 @@ spec:
           envFrom:
             - configMapRef: { name: cani-config }
             - secretRef: { name: cani-secrets }
+          env:
+            - { name: TMPDIR, value: "/tmp" }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -30,6 +34,8 @@ spec:
           resources:
             requests: { cpu: "200m", memory: "256Mi" }
             limits: { cpu: "1", memory: "512Mi" }
+      volumes:
+        - { name: tmp, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service
