@@ -48,7 +48,8 @@ class SharedContainerRegistry(ComponentResource):
             f"{name}-acr",
             registry_name=registry_name,
             resource_group_name=resource_group_name,
-            sku=azure_native.containerregistry.SkuArgs(name=azure_native.containerregistry.SkuName.STANDARD),
+            # Premium is required when disabling public network access.
+            sku=azure_native.containerregistry.SkuArgs(name=azure_native.containerregistry.SkuName.PREMIUM),
             admin_user_enabled=False,  # workload identities pull via RBAC, not admin credentials
             public_network_access="Disabled",
             tags=tags,
