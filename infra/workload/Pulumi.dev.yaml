@@ -1,3 +1,4 @@
 config:
   cani-workload:platformStackRef: personal/cani-platform/dev
-  cani-workload:aadAdminGroupObjectIds: '[\"<user-object-id>\"]'
+  cani-workload:aadAdminGroupObjectIds:
+    - <user-object-id>
