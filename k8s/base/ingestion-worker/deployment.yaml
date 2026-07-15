@@ -21,7 +21,7 @@ spec:
         - { key: "dedicated", operator: "Equal", value: "batch", effect: "NoSchedule" }
       containers:
         - name: ingestion-worker
-          image: cani.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
+          image: canishareded20367db8.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
           envFrom:
             - configMapRef: { name: cani-config }
             - secretRef: { name: cani-secrets }

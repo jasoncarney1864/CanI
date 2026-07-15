@@ -16,7 +16,7 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: retrieval-worker
-          image: cani.azurecr.io/retrieval-worker:REPLACE_WITH_IMAGE_TAG
+          image: canishareded20367db8.azurecr.io/retrieval-worker:REPLACE_WITH_IMAGE_TAG
           ports: [{ containerPort: 8003 }]
           envFrom:
             - configMapRef: { name: cani-config }
