@@ -22,6 +22,12 @@ environment = pulumi.get_stack()
 owner = config.get("owner") or "solo-operator"
 aad_admin_group_object_ids = config.require_object("aadAdminGroupObjectIds")  # list[str]
 postgres_admin_password = config.require_secret("postgresAdminPassword")
+# Dev stopgap, aligned with live reality (see docs/implementation-status.md production
+# blocker 2): the app reaches blob storage via an account-key connection string over the
+# public endpoint, so dev sets publicDataEndpoints=true. Target state is private
+# endpoints + workload identity, at which point this flag goes away. Stacks that leave
+# it unset get the secure default (Disabled).
+public_data_endpoints = "Enabled" if config.get_bool("publicDataEndpoints") else "Disabled"
 
 
 def _aks_dns_prefix(stack_name: str) -> str:
@@ -73,6 +79,7 @@ blob_storage = WorkloadBlobStorage(
     "cani",
     resource_group_name=resource_group.name,
     tags=tags,
+    public_network_access=public_data_endpoints,
 )
 
 send_diagnostics_to_workspace(

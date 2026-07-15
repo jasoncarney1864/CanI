@@ -38,7 +38,13 @@ def _storage_account_name(base: str, seed: str) -> str:
 
 class SharedContainerRegistry(ComponentResource):
     def __init__(
-        self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None
+        self,
+        name: str,
+        *,
+        resource_group_name: str,
+        tags: dict,
+        public_network_access: str = "Disabled",
+        opts: ResourceOptions | None = None,
     ):
         super().__init__("cani:platform:SharedContainerRegistry", name, None, opts)
 
@@ -51,7 +57,7 @@ class SharedContainerRegistry(ComponentResource):
             # Premium is required when disabling public network access.
             sku=azure_native.containerregistry.SkuArgs(name=azure_native.containerregistry.SkuName.PREMIUM),
             admin_user_enabled=False,  # workload identities pull via RBAC, not admin credentials
-            public_network_access="Disabled",
+            public_network_access=public_network_access,
             tags=tags,
             opts=ResourceOptions(parent=self),
         )
@@ -99,7 +105,13 @@ class WorkloadPostgres(ComponentResource):
 
 class WorkloadBlobStorage(ComponentResource):
     def __init__(
-        self, name: str, *, resource_group_name: str, tags: dict, opts: ResourceOptions | None = None
+        self,
+        name: str,
+        *,
+        resource_group_name: str,
+        tags: dict,
+        public_network_access: str = "Disabled",
+        opts: ResourceOptions | None = None,
     ):
         super().__init__("cani:workload:WorkloadBlobStorage", name, None, opts)
 
@@ -113,7 +125,7 @@ class WorkloadBlobStorage(ComponentResource):
             sku=azure_native.storage.SkuArgs(name=azure_native.storage.SkuName.STANDARD_LRS),
             minimum_tls_version=azure_native.storage.MinimumTlsVersion.TLS1_2,
             allow_blob_public_access=False,
-            public_network_access=azure_native.storage.PublicNetworkAccess.DISABLED,
+            public_network_access=public_network_access,
             tags=tags,
             opts=ResourceOptions(parent=self),
         )

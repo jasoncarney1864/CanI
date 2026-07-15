@@ -5,3 +5,4 @@ config:
     - <user-object-id>
   cani-workload:postgresAdminPassword:
     secure: AAABACng8XJJPNDxsWTfKIjERU9hqhFHysAk6P5Q2dBnDvS9ZAzZGmJnTq8jk6ZLwnSz+A9Dt+dWRJ2yREV8XQ==
+  cani-workload:publicDataEndpoints: "true"

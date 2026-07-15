@@ -23,6 +23,10 @@ config = pulumi.Config()
 environment = pulumi.get_stack()  # "dev" | "prod"
 tenant_id = config.require("tenantId")
 owner = config.get("owner") or "solo-operator"
+# Dev stopgap (see docs/implementation-status.md): GitHub-hosted runners push images
+# over ACR's public endpoint until private networking for CI lands, so dev sets
+# publicDataEndpoints=true. Stacks that leave it unset get the secure default (Disabled).
+public_data_endpoints = "Enabled" if config.get_bool("publicDataEndpoints") else "Disabled"
 
 naming = NamingContext(project="platform", layer="core", environment=environment)
 tags = base_tags(environment=environment, owner=owner, spoke="platform")
@@ -82,6 +86,7 @@ acr = SharedContainerRegistry(
     "cani-shared",
     resource_group_name=resource_group.name,
     tags=tags,
+    public_network_access=public_data_endpoints,
 )
 
 platform_vault = PlatformKeyVault(

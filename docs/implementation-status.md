@@ -127,9 +127,13 @@ what is Live vs Scaffolded since this doc was written:
   stacks applied 2026-07-14/15 (see `17-sprint-1-execution-board.md` B1/B2 notes)
 - Deterministic Azure-name generation (stable hash suffixes) added for ACR/Storage
   global-uniqueness; secret config (Postgres admin password) held encrypted in stack config
-- **Still open:** `prod` stacks untouched; drift detection (§11.9) not scheduled; watch
-  for portal-side drift against IaC (e.g. the storage account's public-network-access
-  posture vs. the account-key connection string currently used by the app)
+- Public-endpoint drift reconciled (2026-07-15): live ACR and storage had been flipped
+  to public access in the portal during C2 while the IaC still said Disabled — the next
+  `pulumi up` would have reverted them and broken image pulls and blob access. Now an
+  explicit per-stack flag (`publicDataEndpoints`, dev=true) with Disabled remaining the
+  secure default; both stacks re-applied so state matches live. The flag is a documented
+  dev stopgap that disappears when private endpoints + workload identity land.
+- **Still open:** `prod` stacks untouched; drift detection (§11.9) not scheduled
 
 ### §12 CI/CD strategy — Live (app CI), Scaffolded (infra CI, prod, GitOps)
 - `ci.yml`: secret scan (gitleaks) → lint (`ruff check`) → format check (`ruff format
@@ -137,10 +141,14 @@ what is Live vs Scaffolded since this doc was written:
   **This is real and runs on every PR.**
 - `infra-preview.yml` / `infra-apply-dev.yml`: OIDC federated credentials configured
   (split platform/workload identities) and preview validated against live Azure (C1)
-- `app-cd-dev.yml`: aligned to live AKS/ACR IDs with a pre-deploy contract check, but
-  **not yet activated** (C3) — and its post-deploy smoke check curls
-  `https://dev.cani.internal/healthz`, which cannot succeed (no Ingress exists and the
-  hostname doesn't resolve from a GitHub runner); replace before first activation
+- `app-cd-dev.yml`: aligned to live AKS/ACR IDs with a pre-deploy contract check, and
+  reworked for the private cluster (2026-07-15): the deploy job renders the kustomize
+  overlay on the runner and applies it via `az aks command invoke` (direct kubectl
+  cannot reach the private API server from a hosted runner), and the old
+  dev.cani.internal curl — which could never succeed — is replaced with in-cluster
+  smoke checks (healthz on all three APIs plus a dev-login POST that proves a live DB
+  write on every deploy). **Not yet activated** (C3); remaining prerequisite is
+  verifying the workload OIDC identity holds `runCommand` rights on the cluster
 - **Not scaffolded at all (explicit MVP-fast deferral):** `infra-apply-prod.yml`,
   `app-cd-prod.yml`, `ops-drift-detection.yml`, GitOps controller (§12.9 Phase 2)
 
