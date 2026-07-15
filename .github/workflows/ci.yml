@@ -20,6 +20,12 @@ on:
 jobs:
   secret-scan:
     runs-on: ubuntu-latest
+    # gitleaks-action enumerates PR commits via the GitHub API and posts findings as PR
+    # comments — without these grants the default read-only token 403s ("Resource not
+    # accessible by integration") before any scanning happens.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
