@@ -1,7 +1,11 @@
 # Non-secret configuration shared by all docs-platform/hub-system workloads.
-# Secret values (token signing secret, Azure OpenAI/Document Intelligence keys, DB
-# password) come from Key Vault via the CSI driver (secret-provider-class.yaml), never
-# from this ConfigMap or a plaintext Secret checked into git.
+# Secret values never live in this ConfigMap or anywhere in git. Current dev reality:
+# the `cani-secrets` Secret is applied out-of-band by scripts/apply_dev_secrets.sh from
+# an operator-held env file (see runbooks/rotate-dev-secrets.md); that Secret also
+# carries POSTGRES_HOST/QDRANT_* today, which override the placeholder values below via
+# envFrom ordering (secretRef is listed after configMapRef in the deployments). Target
+# state remains Key Vault via the CSI driver (secret-provider-class.yaml), at which point
+# the connection/host values return here where they belong.
 apiVersion: v1
 kind: ConfigMap
 metadata:
