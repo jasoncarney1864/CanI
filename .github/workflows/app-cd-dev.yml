@@ -2,6 +2,12 @@ name: app-cd-dev
 
 # Targets the live dev workload stack outputs from infra/workload (Pulumi update v6).
 # Keep these values in sync with `pulumi stack output --stack dev --json`.
+#
+# The dev AKS API server is PRIVATE — GitHub-hosted runners cannot reach it directly,
+# so every kubectl step goes through `az aks command invoke` (runs kubectl inside the
+# cluster; --file attaches the rendered manifest). C3 activation prerequisite: the
+# workload OIDC identity needs Microsoft.ContainerService/managedClusters/runCommand/action
+# on the cluster (Contributor covers it) — verify on first run.
 
 on:
   push:
@@ -57,22 +63,17 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - uses: azure/aks-set-context@v4
-        with:
-          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
-          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
-
       - name: Validate workload contract IDs before deploy
         run: |
-          az aks show -g ${{ env.AKS_RESOURCE_GROUP }} -n ${{ env.AKS_CLUSTER_NAME }} --query id -o tsv > /tmp/aks_id
-          az resource show --ids ${{ env.WORKLOAD_STORAGE_ACCOUNT_ID }} --query id -o tsv > /tmp/storage_id
-          ACR_ID=$(az acr show --name ${{ env.ACR_NAME }} --query id -o tsv)
-          if [ "$ACR_ID" != "${{ env.ACR_ID_REFERENCE }}" ]; then
-            echo "ACR ID mismatch. Expected ${{ env.ACR_ID_REFERENCE }}, got $ACR_ID"
+          az aks show -g "$AKS_RESOURCE_GROUP" -n "$AKS_CLUSTER_NAME" --query id -o tsv > /dev/null
+          az resource show --ids "$WORKLOAD_STORAGE_ACCOUNT_ID" --query id -o tsv > /dev/null
+          ACR_ID=$(az acr show --name "$ACR_NAME" --query id -o tsv)
+          if [ "$ACR_ID" != "$ACR_ID_REFERENCE" ]; then
+            echo "ACR ID mismatch. Expected $ACR_ID_REFERENCE, got $ACR_ID"
             exit 1
           fi
 
-      - name: Set image tags and apply
+      - name: Render manifests with immutable image tags
         run: |
           cd k8s/overlays/dev
           kustomize edit set image \
@@ -80,11 +81,36 @@ jobs:
             ${{ env.ACR_LOGIN_SERVER }}/docs-api=${{ env.ACR_LOGIN_SERVER }}/docs-api:${{ github.sha }} \
             ${{ env.ACR_LOGIN_SERVER }}/retrieval-worker=${{ env.ACR_LOGIN_SERVER }}/retrieval-worker:${{ github.sha }} \
             ${{ env.ACR_LOGIN_SERVER }}/ingestion-worker=${{ env.ACR_LOGIN_SERVER }}/ingestion-worker:${{ github.sha }}
-          kubectl apply -k .
-          kubectl rollout status deployment/hub-api -n hub-system
-          kubectl rollout status deployment/docs-api -n docs-platform
-          kubectl rollout status deployment/retrieval-worker -n docs-platform
+          kustomize build . -o rendered-dev.yaml
+          echo "Rendered $(grep -c '^kind:' rendered-dev.yaml) objects"
 
-      - name: Post-deploy smoke check
+      - name: Apply and wait for rollouts (via command invoke)
         run: |
-          curl -sf https://dev.cani.internal/healthz || (echo "smoke check failed" && exit 1)
+          cd k8s/overlays/dev
+          APPLY_CMD=$(cat <<'EOF'
+          set -e
+          kubectl apply -f rendered-dev.yaml
+          kubectl -n hub-system rollout status deployment/hub-api --timeout=180s
+          kubectl -n docs-platform rollout status deployment/docs-api --timeout=180s
+          kubectl -n docs-platform rollout status deployment/retrieval-worker --timeout=180s
+          kubectl -n docs-platform rollout status deployment/ingestion-worker --timeout=180s
+          EOF
+          )
+          az aks command invoke -g "$AKS_RESOURCE_GROUP" -n "$AKS_CLUSTER_NAME" \
+            --file rendered-dev.yaml --command "$APPLY_CMD"
+
+      - name: Post-deploy smoke checks (in-cluster)
+        # docs/12 §12.8: hub auth + service health. Runs inside the pods themselves —
+        # localhost checks stay valid even once NetworkPolicy enforcement is enabled.
+        # The dev-login POST is the deep check: it proves token minting AND a live
+        # Postgres write on every deploy.
+        run: |
+          SMOKE_CMD=$(cat <<'EOF'
+          set -e
+          kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8001/healthz', timeout=5).status == 200; print('hub-api healthz ok')"
+          kubectl -n docs-platform exec deploy/docs-api -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8002/healthz', timeout=5).status == 200; print('docs-api healthz ok')"
+          kubectl -n docs-platform exec deploy/retrieval-worker -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8003/healthz', timeout=5).status == 200; print('retrieval-worker healthz ok')"
+          kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u, json; r = u.urlopen(u.Request('http://localhost:8001/auth/dev-login', data=json.dumps({'idp_subject': 'cd-smoke-check'}).encode(), headers={'Content-Type': 'application/json'}), timeout=10); assert r.status == 200, r.status; print('dev-login smoke ok')"
+          EOF
+          )
+          az aks command invoke -g "$AKS_RESOURCE_GROUP" -n "$AKS_CLUSTER_NAME" --command "$SMOKE_CMD"
