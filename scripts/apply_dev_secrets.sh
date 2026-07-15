@@ -76,7 +76,29 @@ EOF
 apply_secret docs-platform
 apply_secret hub-system
 
+# KEDA's postgresql scaler reads a scoped connection string (keda_scaler role: SELECT on
+# ingestion_jobs only) via the cani-postgres-keda-auth TriggerAuthentication
+# (k8s/base/ingestion-worker/scaling.yaml). Optional so pre-KEDA env files still work,
+# but warn loudly — without it the ScaledObject cannot reconcile.
+if [[ -n "${KEDA_POSTGRES_CONNECTION:-}" ]]; then
+  kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cani-keda-postgres
+  namespace: docs-platform
+type: Opaque
+stringData:
+  connection: "${KEDA_POSTGRES_CONNECTION}"
+EOF
+else
+  echo "warning: KEDA_POSTGRES_CONNECTION not set - skipping cani-keda-postgres;" >&2
+  echo "         the ingestion-worker ScaledObject will not be able to scale." >&2
+fi
+
 echo "cani-secrets applied to docs-platform and hub-system."
 echo "Restart workloads to pick up new values:"
 echo "  kubectl -n hub-system rollout restart deployment/hub-api"
 echo "  kubectl -n docs-platform rollout restart deployment/docs-api deployment/retrieval-worker deployment/ingestion-worker"
+echo "If the KEDA connection changed, force a scaler refresh:"
+echo "  kubectl -n docs-platform annotate scaledobject ingestion-worker cani.io/reconcile-nudge=\$(date +%s) --overwrite"

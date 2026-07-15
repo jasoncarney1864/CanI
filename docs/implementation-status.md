@@ -105,10 +105,16 @@ what is Live vs Scaffolded since this doc was written:
   SecretProviderClass, workload-identity service account annotations
 - Runtime hardening landed for the strict pod security context: images run as non-root
   (UID 10001), `readOnlyRootFilesystem` kept with `emptyDir` tmp mounts
-- **Still open:** full overlay apply as the routine deploy path (C2), KEDA and Key Vault
-  CSI add-ons not yet installed (ScaledObject/SecretProviderClass will fail to apply
-  until they are), workload-identity client-id annotations still placeholders — secrets
-  currently arrive via `scripts/apply_dev_secrets.sh`, not the CSI driver
+- KEDA 2.14.0 live and wired (2026-07-15): a partial CRD install had left the operator
+  crashlooping (`ScaledJob` informer could never sync); fixed by server-side applying the
+  complete v2.14.0 CRD bundle. The ingestion-worker ScaledObject is now Ready, scaling on
+  queue depth via the scoped `keda_scaler` Postgres role (SELECT on `ingestion_jobs`
+  only) through the `cani-postgres-keda-auth` TriggerAuthentication
+  (`k8s/base/ingestion-worker/scaling.yaml`)
+- **Still open:** full overlay apply as the routine deploy path (C2);
+  workload-identity client-id annotations still placeholders — the Key Vault CSI driver
+  add-on is installed but SecretProviderClass values are unset, so secrets currently
+  arrive via `scripts/apply_dev_secrets.sh`, not the CSI driver
 
 ### §11 IaC strategy — Applied to dev
 - `infra/platform` and `infra/workload` Pulumi Python projects following the exact
