@@ -1,6 +1,7 @@
 """CanI workload landing zone (docs/09, docs/10, docs/11-iac-strategy.md §11.6 cross-
 stack contract). Consumes cani-platform's outputs via StackReference rather than
-hardcoding resource IDs. Not applied this session — see docs/implementation-status.md.
+hardcoding resource IDs. Applied to the `dev` stack on 2026-07-14/15 (Sprint 1, B2) —
+live status in docs/implementation-status.md.
 """
 
 import sys
@@ -27,6 +28,7 @@ def _aks_dns_prefix(stack_name: str) -> str:
     safe_stack = "".join(ch if ch.isalnum() else "-" for ch in stack_name.lower()).strip("-")
     candidate = f"cani-{safe_stack or 'env'}-aks"[:54].rstrip("-")
     return candidate or "cani-aks"
+
 
 platform_stack_ref = pulumi.StackReference(config.require("platformStackRef"))  # e.g. "org/cani-platform/dev"
 hub_vnet_id = platform_stack_ref.get_output("hub_vnet_id")
