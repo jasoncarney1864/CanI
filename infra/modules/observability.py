@@ -33,15 +33,15 @@ def send_diagnostics_to_workspace(
     target_resource_id: Input[str],
     workspace_id: Input[str],
     opts: ResourceOptions | None = None,
-) -> azure_native.insights.DiagnosticSetting:
+) -> azure_native.monitor.DiagnosticSetting:
     """§6.3: "Require diagnostic settings routed to the central Log Analytics workspace."
     Call once per resource that needs to forward logs/metrics — makes observability
     complete-by-construction rather than opt-in per resource."""
-    return azure_native.insights.DiagnosticSetting(
+    return azure_native.monitor.DiagnosticSetting(
         f"{name}-diag",
         resource_uri=target_resource_id,
         workspace_id=workspace_id,
-        logs=[azure_native.insights.LogSettingsArgs(category_group="allLogs", enabled=True)],
-        metrics=[azure_native.insights.MetricSettingsArgs(category="AllMetrics", enabled=True)],
+        logs=[azure_native.monitor.LogSettingsArgs(category_group="allLogs", enabled=True)],
+        metrics=[azure_native.monitor.MetricSettingsArgs(category="AllMetrics", enabled=True)],
         opts=opts,
     )
