@@ -1,15 +1,21 @@
 name: app-cd-dev
 
-# Targets a real AKS dev cluster once infra/workload has actually been applied and OIDC
-# federated credentials + ACR push access are configured — not live this session. Until
-# then, ci.yml's compose-smoke-deploy job is the working proxy for "dev deployment".
-# See docs/implementation-status.md.
+# Targets the live dev workload stack outputs from infra/workload (Pulumi update v6).
+# Keep these values in sync with `pulumi stack output --stack dev --json`.
 
 on:
   push:
     branches: [main]
     paths:
       - "apps/**"
+
+env:
+  AKS_RESOURCE_GROUP: cani-workload-core-dev-eastus2-rg9c8e66d0
+  AKS_CLUSTER_NAME: cani-aks64bdb7d1
+  ACR_NAME: canishareded20367db8
+  ACR_LOGIN_SERVER: canishareded20367db8.azurecr.io
+  ACR_ID_REFERENCE: /subscriptions/6591cee6-ee26-4155-ae71-3777bf7e9c73/resourceGroups/cani-platform-core-dev-eastus2-rg1227b5a0/providers/Microsoft.ContainerRegistry/registries/canishareded20367db8
+  WORKLOAD_STORAGE_ACCOUNT_ID: /subscriptions/6591cee6-ee26-4155-ae71-3777bf7e9c73/resourceGroups/cani-workload-core-dev-eastus2-rg9c8e66d0/providers/Microsoft.Storage/storageAccounts/cani9820b2c229
 
 jobs:
   build-and-push:
@@ -31,9 +37,9 @@ jobs:
 
       - name: Build and push image (immutable tag, never `latest`)
         run: |
-          az acr login --name cani
-          docker build -f apps/${{ matrix.service }}/Dockerfile -t cani.azurecr.io/${{ matrix.service }}:${{ github.sha }} .
-          docker push cani.azurecr.io/${{ matrix.service }}:${{ github.sha }}
+          az acr login --name ${{ env.ACR_NAME }}
+          docker build -f apps/${{ matrix.service }}/Dockerfile -t ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -53,17 +59,27 @@ jobs:
 
       - uses: azure/aks-set-context@v4
         with:
-          resource-group: cani-workload-core-dev-rg
-          cluster-name: cani-aks
+          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+
+      - name: Validate workload contract IDs before deploy
+        run: |
+          az aks show -g ${{ env.AKS_RESOURCE_GROUP }} -n ${{ env.AKS_CLUSTER_NAME }} --query id -o tsv > /tmp/aks_id
+          az resource show --ids ${{ env.WORKLOAD_STORAGE_ACCOUNT_ID }} --query id -o tsv > /tmp/storage_id
+          ACR_ID=$(az acr show --name ${{ env.ACR_NAME }} --query id -o tsv)
+          if [ "$ACR_ID" != "${{ env.ACR_ID_REFERENCE }}" ]; then
+            echo "ACR ID mismatch. Expected ${{ env.ACR_ID_REFERENCE }}, got $ACR_ID"
+            exit 1
+          fi
 
       - name: Set image tags and apply
         run: |
           cd k8s/overlays/dev
           kustomize edit set image \
-            cani.azurecr.io/hub-api=cani.azurecr.io/hub-api:${{ github.sha }} \
-            cani.azurecr.io/docs-api=cani.azurecr.io/docs-api:${{ github.sha }} \
-            cani.azurecr.io/retrieval-worker=cani.azurecr.io/retrieval-worker:${{ github.sha }} \
-            cani.azurecr.io/ingestion-worker=cani.azurecr.io/ingestion-worker:${{ github.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/hub-api=${{ env.ACR_LOGIN_SERVER }}/hub-api:${{ github.sha }} \
+            ${{ env.ACR_LOGIN_SERVER }}/docs-api=${{ env.ACR_LOGIN_SERVER }}/docs-api:${{ github.sha }} \
+            ${{ env.ACR_LOGIN_SERVER }}/retrieval-worker=${{ env.ACR_LOGIN_SERVER }}/retrieval-worker:${{ github.sha }} \
+            ${{ env.ACR_LOGIN_SERVER }}/ingestion-worker=${{ env.ACR_LOGIN_SERVER }}/ingestion-worker:${{ github.sha }}
           kubectl apply -k .
           kubectl rollout status deployment/hub-api -n hub-system
           kubectl rollout status deployment/docs-api -n docs-platform

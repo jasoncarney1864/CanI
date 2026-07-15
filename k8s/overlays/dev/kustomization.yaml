@@ -24,11 +24,11 @@ patches:
         value: 1
 
 images:
-  - name: cani.azurecr.io/hub-api
+  - name: canishareded20367db8.azurecr.io/hub-api
     newTag: dev
-  - name: cani.azurecr.io/docs-api
+  - name: canishareded20367db8.azurecr.io/docs-api
     newTag: dev
-  - name: cani.azurecr.io/retrieval-worker
+  - name: canishareded20367db8.azurecr.io/retrieval-worker
     newTag: dev
-  - name: cani.azurecr.io/ingestion-worker
+  - name: canishareded20367db8.azurecr.io/ingestion-worker
     newTag: dev
