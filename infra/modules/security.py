@@ -15,7 +15,7 @@ from pulumi import ComponentResource, ResourceOptions
 
 # Built-in Azure Policy definition IDs (stable, tenant-agnostic).
 POLICY_DENY_STORAGE_PUBLIC_NETWORK = (
-    "/providers/Microsoft.Authorization/policyDefinitions/34c877ad-507e-4c82-993e-3452a6e0523b"
+    "/providers/Microsoft.Authorization/policyDefinitions/b2982f36-99f2-4db5-8eff-283140c09693"
 )
 POLICY_DENY_KEYVAULT_PUBLIC_NETWORK = (
     "/providers/Microsoft.Authorization/policyDefinitions/55615ac9-af46-4a59-874e-391cc3dfb490"
@@ -67,12 +67,14 @@ class DenyPublicNetworkPolicies(ComponentResource):
 
         self.storage_policy = azure_native.authorization.PolicyAssignment(
             f"{name}-deny-storage-public",
+            policy_assignment_name="cani-deny-stg-pub",
             policy_definition_id=POLICY_DENY_STORAGE_PUBLIC_NETWORK,
             scope=management_group_id,
             opts=ResourceOptions(parent=self),
         )
         self.keyvault_policy = azure_native.authorization.PolicyAssignment(
             f"{name}-deny-keyvault-public",
+            policy_assignment_name="cani-deny-kv-pub",
             policy_definition_id=POLICY_DENY_KEYVAULT_PUBLIC_NETWORK,
             scope=management_group_id,
             opts=ResourceOptions(parent=self),

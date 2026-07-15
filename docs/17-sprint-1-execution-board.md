@@ -24,7 +24,7 @@ explicit acceptance checks.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 0 | -60 | B1 platform apply not started yet | A1 and A2 complete; infra-preview passed on run 29389080854 |
+| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 0 | -60 | B2 workload apply not started yet | A1, A2, and B1 complete; platform outputs captured from pulumi up |
 | Week 2 | 2026-07-21 to 2026-07-28 | App CD activation, Entra swap, entitlement revocation, sprint closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -106,16 +106,30 @@ Execution notes (2026-07-14):
 
 - Owner: Jason
 - Due: 2026-07-17
-- Status: [ ] Not started
+- Status: [x] Done
 - Dependencies: A1, A2
 - Checklist:
-  - [ ] Complete elevated access step for management group bootstrap.
-  - [ ] Initialize Pulumi dev stack for platform.
-  - [ ] Set required platform config values.
-  - [ ] Run pulumi up in infra/platform.
-  - [ ] Capture stack outputs for downstream contract.
+  - [x] Complete elevated access step for management group bootstrap.
+  - [x] Initialize Pulumi dev stack for platform.
+  - [x] Set required platform config values.
+  - [x] Run pulumi up in infra/platform.
+  - [x] Capture stack outputs for downstream contract.
 - Done criteria:
-  - [ ] Management groups, hub VNet, central Log Analytics, shared ACR, and platform Key Vault exist.
+  - [x] Management groups, hub VNet, central Log Analytics, shared ACR, and platform Key Vault exist.
+
+Execution notes (2026-07-14):
+- Local preflight `pulumi preview --stack dev` succeeded for `infra/platform`.
+- Initial `pulumi up` surfaced and resolved real IaC defects:
+  - ACR Standard SKU + public network disabled incompatibility.
+  - Policy assignment name length limit (24 chars).
+  - Outdated built-in Storage public network policy definition ID.
+- Final `pulumi up --stack dev` succeeded and exported contract outputs:
+  - `hub_vnet_id`
+  - `log_analytics_workspace_id`
+  - `acr_login_server`
+  - `acr_id`
+  - `platform_key_vault_id`
+  - `workload_management_group_id`
 
 ### B2. Workload apply to dev with StackReference contract (P0)
 
@@ -221,4 +235,4 @@ Execution notes (2026-07-14):
 
 Use one line per day.
 
-- 2026-07-14: Board created. A1 completed after management-group access unblocked and root-scope User Access Administrator confirmed. A2 completed after OIDC identities, repo secrets, federated credentials, and workflow auth validation were verified in infra-preview. Latest infra-preview run 29389080854 is green; next step is B1 platform apply.
+- 2026-07-14: Board created. A1 completed after management-group access unblocked and root-scope User Access Administrator confirmed. A2 completed after OIDC identities, repo secrets, federated credentials, and workflow auth validation were verified in infra-preview. B1 completed with successful `pulumi up` on platform dev and outputs captured.
