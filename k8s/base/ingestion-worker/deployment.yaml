@@ -21,10 +21,14 @@ spec:
         - { key: "dedicated", operator: "Equal", value: "batch", effect: "NoSchedule" }
       containers:
         - name: ingestion-worker
-          image: cani.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
+          image: canishareded20367db8.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
           envFrom:
             - configMapRef: { name: cani-config }
             - secretRef: { name: cani-secrets }
+          env:
+            - { name: TMPDIR, value: "/tmp" }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -32,6 +36,8 @@ spec:
           resources:
             requests: { cpu: "200m", memory: "256Mi" }
             limits: { cpu: "1", memory: "512Mi" }
+      volumes:
+        - { name: tmp, emptyDir: {} }
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -40,23 +46,6 @@ metadata:
   namespace: docs-platform
   annotations:
     azure.workload.identity/client-id: "REPLACE_WITH_INGESTION_WORKER_WORKLOAD_IDENTITY_CLIENT_ID"
----
-# KEDA scales replicas with ingestion backlog per docs/10 §10.8. Requires the KEDA
-# postgresql scaler add-on and a read-only DB credential — deferred until the KEDA
-# add-on itself is installed on a real cluster (see docs/implementation-status.md).
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: ingestion-worker
-  namespace: docs-platform
-spec:
-  scaleTargetRef: { name: ingestion-worker }
-  minReplicaCount: 1
-  maxReplicaCount: 5
-  triggers:
-    - type: postgresql
-      metadata:
-        query: "SELECT count(*) FROM ingestion_jobs WHERE status IN ('queued', 'retry_pending')"
-        targetQueryValue: "5"
-      authenticationRef:
-        name: cani-postgres-keda-auth
+# KEDA scaling objects live in scaling.yaml (separate file so it can be applied on its
+# own — this file contains the REPLACE_WITH_IMAGE_TAG placeholder and must only be
+# applied through the kustomize overlay).

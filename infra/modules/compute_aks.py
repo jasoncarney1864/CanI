@@ -17,6 +17,7 @@ class CaniAksCluster(ComponentResource):
         *,
         resource_group_name: str,
         subnet_id: Input[str],
+        dns_prefix: Input[str],
         aad_admin_group_object_ids: list[str],
         tags: dict,
         opts: ResourceOptions | None = None,
@@ -26,6 +27,7 @@ class CaniAksCluster(ComponentResource):
         self.cluster = azure_native.containerservice.ManagedCluster(
             f"{name}-aks",
             resource_group_name=resource_group_name,
+            dns_prefix=dns_prefix,
             sku=azure_native.containerservice.ManagedClusterSKUArgs(
                 name=azure_native.containerservice.ManagedClusterSKUName.BASE,
                 tier=azure_native.containerservice.ManagedClusterSKUTier.STANDARD,
@@ -58,7 +60,7 @@ class CaniAksCluster(ComponentResource):
                     name="systempool",
                     mode=azure_native.containerservice.AgentPoolMode.SYSTEM,
                     count=2,
-                    vm_size="Standard_D2s_v5",
+                    vm_size="Standard_D2s_v4",
                     vnet_subnet_id=subnet_id,
                 ),
                 azure_native.containerservice.ManagedClusterAgentPoolProfileArgs(
@@ -67,14 +69,14 @@ class CaniAksCluster(ComponentResource):
                     min_count=1,
                     max_count=4,
                     enable_auto_scaling=True,
-                    vm_size="Standard_D2s_v5",
+                    vm_size="Standard_D2s_v4",
                     vnet_subnet_id=subnet_id,
                 ),
                 azure_native.containerservice.ManagedClusterAgentPoolProfileArgs(
                     name="datapool",
                     mode=azure_native.containerservice.AgentPoolMode.USER,
                     count=1,
-                    vm_size="Standard_D4s_v5",
+                    vm_size="Standard_D4s_v4",
                     vnet_subnet_id=subnet_id,
                     node_taints=["dedicated=data:NoSchedule"],
                 ),

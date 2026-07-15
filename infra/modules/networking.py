@@ -39,7 +39,7 @@ class HubNetwork(ComponentResource):
         )
 
         self.private_dns_zones = {
-            zone: azure_native.network.PrivateZone(
+            zone: azure_native.privatedns.PrivateZone(
                 f"{name}-pdz-{zone.split('.')[1]}",
                 resource_group_name=resource_group_name,
                 location="global",
@@ -72,7 +72,40 @@ class WorkloadNetwork(ComponentResource):
             subnets=[
                 azure_native.network.SubnetArgs(name="AksNodesSubnet", address_prefix="10.1.0.0/22"),
                 azure_native.network.SubnetArgs(name="PrivateEndpointsSubnet", address_prefix="10.1.4.0/24"),
+                azure_native.network.SubnetArgs(
+                    name="PostgresSubnet",
+                    address_prefix="10.1.5.0/24",
+                    delegations=[
+                        azure_native.network.DelegationArgs(
+                            name="postgres-flexible-server",
+                            service_name="Microsoft.DBforPostgreSQL/flexibleServers",
+                        )
+                    ],
+                ),
             ],
+            tags=tags,
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.aks_subnet_id = self.vnet.subnets[0].id
+        self.postgres_subnet_id = self.vnet.subnets[2].id
+
+        self.postgres_private_dns_zone = azure_native.privatedns.PrivateZone(
+            f"{name}-pdz-postgres",
+            resource_group_name=resource_group_name,
+            location="global",
+            private_zone_name="privatelink.postgres.database.azure.com",
+            tags=tags,
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.postgres_private_dns_link = azure_native.privatedns.VirtualNetworkLink(
+            f"{name}-pdz-postgres-link",
+            resource_group_name=resource_group_name,
+            location="global",
+            private_zone_name=self.postgres_private_dns_zone.name,
+            virtual_network=azure_native.privatedns.SubResourceArgs(id=self.vnet.id),
+            registration_enabled=False,
             tags=tags,
             opts=ResourceOptions(parent=self),
         )
@@ -89,4 +122,11 @@ class WorkloadNetwork(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        self.register_outputs({"vnet_id": self.vnet.id})
+        self.register_outputs(
+            {
+                "vnet_id": self.vnet.id,
+                "aks_subnet_id": self.aks_subnet_id,
+                "postgres_subnet_id": self.postgres_subnet_id,
+                "postgres_private_dns_zone_id": self.postgres_private_dns_zone.id,
+            }
+        )

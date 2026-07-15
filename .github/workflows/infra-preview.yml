@@ -1,7 +1,7 @@
 name: infra-preview
 
 # Requires Azure OIDC federated credentials configured as repo/environment secrets
-# (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) before this can run for real —
+# (AZURE_CLIENT_ID_PLATFORM, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) before this can run for real —
 # not configured this session (docs/12-cicd-strategy.md §12.6). See docs/implementation-status.md.
 
 on:
@@ -24,7 +24,7 @@ jobs:
 
       - uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 

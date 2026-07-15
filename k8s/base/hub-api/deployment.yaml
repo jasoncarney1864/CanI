@@ -16,11 +16,15 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: hub-api
-          image: cani.azurecr.io/hub-api:REPLACE_WITH_IMAGE_TAG
+          image: canishareded20367db8.azurecr.io/hub-api:REPLACE_WITH_IMAGE_TAG
           ports: [{ containerPort: 8001 }]
           envFrom:
             - configMapRef: { name: cani-config }
             - secretRef: { name: cani-secrets }
+          env:
+            - { name: TMPDIR, value: "/tmp" }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -30,6 +34,8 @@ spec:
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
             limits: { cpu: "500m", memory: "256Mi" }
+      volumes:
+        - { name: tmp, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service
