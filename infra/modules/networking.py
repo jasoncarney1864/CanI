@@ -39,7 +39,7 @@ class HubNetwork(ComponentResource):
         )
 
         self.private_dns_zones = {
-            zone: azure_native.network.PrivateZone(
+            zone: azure_native.privatedns.PrivateZone(
                 f"{name}-pdz-{zone.split('.')[1]}",
                 resource_group_name=resource_group_name,
                 location="global",
