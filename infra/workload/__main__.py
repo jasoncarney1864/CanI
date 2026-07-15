@@ -20,6 +20,13 @@ config = pulumi.Config()
 environment = pulumi.get_stack()
 owner = config.get("owner") or "solo-operator"
 aad_admin_group_object_ids = config.require_object("aadAdminGroupObjectIds")  # list[str]
+postgres_admin_password = config.require_secret("postgresAdminPassword")
+
+
+def _aks_dns_prefix(stack_name: str) -> str:
+    safe_stack = "".join(ch if ch.isalnum() else "-" for ch in stack_name.lower()).strip("-")
+    candidate = f"cani-{safe_stack or 'env'}-aks"[:54].rstrip("-")
+    return candidate or "cani-aks"
 
 platform_stack_ref = pulumi.StackReference(config.require("platformStackRef"))  # e.g. "org/cani-platform/dev"
 hub_vnet_id = platform_stack_ref.get_output("hub_vnet_id")
@@ -44,7 +51,8 @@ network = WorkloadNetwork(
 aks = CaniAksCluster(
     "cani",
     resource_group_name=resource_group.name,
-    subnet_id=network.vnet.subnets[0].id,
+    subnet_id=network.aks_subnet_id,
+    dns_prefix=_aks_dns_prefix(environment),
     aad_admin_group_object_ids=aad_admin_group_object_ids,
     tags=tags,
 )
@@ -52,8 +60,10 @@ aks = CaniAksCluster(
 postgres = WorkloadPostgres(
     "cani",
     resource_group_name=resource_group.name,
-    subnet_id=network.vnet.subnets[1].id,
+    subnet_id=network.postgres_subnet_id,
+    private_dns_zone_arm_resource_id=network.postgres_private_dns_zone.id,
     administrator_login="caniadmin",
+    administrator_login_password=postgres_admin_password,
     tags=tags,
 )
 
