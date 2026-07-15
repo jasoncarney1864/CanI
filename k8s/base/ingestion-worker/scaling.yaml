@@ -1,0 +1,35 @@
+# KEDA scales ingestion-worker replicas with queue backlog per docs/10 §10.8.
+#
+# The postgresql trigger authenticates via the TriggerAuthentication below, which reads
+# a full connection string from the `cani-keda-postgres` Secret (key `connection`). That
+# Secret is applied out-of-band by scripts/apply_dev_secrets.sh — never committed — and
+# its credential is the `keda_scaler` Postgres role: LOGIN + SELECT on ingestion_jobs
+# only, so a KEDA compromise cannot read document data (least privilege per docs/14).
+# Role creation/rotation: runbooks/rotate-dev-secrets.md.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: cani-postgres-keda-auth
+  namespace: docs-platform
+spec:
+  secretTargetRef:
+    - parameter: connection
+      name: cani-keda-postgres
+      key: connection
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ingestion-worker
+  namespace: docs-platform
+spec:
+  scaleTargetRef: { name: ingestion-worker }
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+    - type: postgresql
+      metadata:
+        query: "SELECT count(*) FROM ingestion_jobs WHERE status IN ('queued', 'retry_pending')"
+        targetQueryValue: "5"
+      authenticationRef:
+        name: cani-postgres-keda-auth

@@ -10,4 +10,5 @@ resources:
   - docs-api/deployment.yaml
   - retrieval-worker/deployment.yaml
   - ingestion-worker/deployment.yaml
+  - ingestion-worker/scaling.yaml
   - qdrant/statefulset.yaml

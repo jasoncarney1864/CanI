@@ -15,8 +15,8 @@ Covers the `cani-secrets` Kubernetes Secret consumed by all four services in dev
   (`infra/workload`, key `postgresAdminPassword`) — Pulumi is the source of truth for
   what the *server* accepts; the env file must be kept in sync with it.
 
-Required keys (all seven are required by `cani_shared.config.Settings` in every service,
-even where a service doesn't functionally use them):
+Required keys (the first seven are required by `cani_shared.config.Settings` in every
+service, even where a service doesn't functionally use them; the last one feeds KEDA):
 
 ```
 CANI_TOKEN_SIGNING_SECRET=   # >=32 chars
@@ -26,13 +26,24 @@ POSTGRES_HOST=               # Postgres Flexible Server FQDN
 QDRANT_URL=
 QDRANT_COLLECTION=
 AZURE_STORAGE_CONNECTION_STRING=
+KEDA_POSTGRES_CONNECTION=    # postgresql://keda_scaler:<pass>@<host>:5432/cani?sslmode=require
 ```
+
+`KEDA_POSTGRES_CONNECTION` uses the dedicated `keda_scaler` Postgres role (LOGIN +
+SELECT on `ingestion_jobs` only — never the admin credential), consumed by the
+`cani-postgres-keda-auth` TriggerAuthentication in
+`k8s/base/ingestion-worker/scaling.yaml` via the `cani-keda-postgres` Secret.
 
 ## Applying to the cluster
 
 ```bash
 bash scripts/apply_dev_secrets.sh
 ```
+
+> **Private cluster note:** the dev AKS API server is private — plain `kubectl` only
+> works from inside the VNet. From an outside machine, wrap the kubectl steps in
+> `az aks command invoke -g <workload-rg> -n <cluster> --command "..."` (attach files
+> with `--file` where a command needs one).
 
 The script reads `~/.cani/dev-secrets.env` (override with `CANI_DEV_SECRETS_FILE`),
 validates all keys are present and the signing secrets meet the app's 32-char minimum,
@@ -98,7 +109,27 @@ az storage account keys renew --account-name <storage-account-name> -g <workload
 target state per `k8s/base/secret-provider-class.yaml`; account-key auth is a dev
 stopgap.)
 
-### 4. Verify after any rotation
+### 4. KEDA scaler credential (`KEDA_POSTGRES_CONNECTION`)
+
+The `keda_scaler` role's password is set with `ALTER ROLE`, executed through a running
+docs-api pod (it holds the admin credential in env). Generate a new password, then:
+
+```bash
+kubectl -n docs-platform exec -i deploy/docs-api -- python -c '
+import os, sys, psycopg
+with psycopg.connect(host=os.environ["POSTGRES_HOST"], port=os.environ.get("POSTGRES_PORT","5432"),
+                     dbname=os.environ["POSTGRES_DB"], user=os.environ["POSTGRES_USER"],
+                     password=os.environ["POSTGRES_PASSWORD"]) as conn:
+    conn.execute("ALTER ROLE keda_scaler WITH LOGIN PASSWORD %s", (sys.stdin.read().strip(),))
+print("keda_scaler password updated")' <<< "<new-password>"
+# rebuild KEDA_POSTGRES_CONNECTION in ~/.cani/dev-secrets.env with the new password
+bash scripts/apply_dev_secrets.sh
+kubectl -n docs-platform annotate scaledobject ingestion-worker cani.io/reconcile-nudge=$(date +%s) --overwrite
+```
+
+Verify with `kubectl get scaledobject -n docs-platform` — READY must return to `True`.
+
+### 5. Verify after any rotation
 
 ```bash
 kubectl -n hub-system get pods && kubectl -n docs-platform get pods   # all Running
