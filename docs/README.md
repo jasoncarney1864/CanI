@@ -1,7 +1,7 @@
 # CanI Platform — Architecture Design Document (Living Draft)
 
 **Status:** Draft — in progress
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-14
 **Owner:** Solo developer
 **Purpose:** Working design document for the CanI hub-and-spoke RAG platform, built iteratively, section by section.
 
@@ -25,6 +25,8 @@ This document is split into one file per section. Start with [Vision & goals](01
 14. [Security & compliance](14-security-and-compliance.md)
 15. [Cost management](15-cost-management.md)
 16. [Roadmap & phasing](16-roadmap-and-phasing.md)
+17. [Sprint 1 execution board](17-sprint-1-execution-board.md)
+18. [Sprint 2 operational readiness board](18-sprint-2-operational-readiness-board.md)
 
 Appendices:
 - [Appendix A — Glossary](appendix-a-glossary.md)
@@ -33,3 +35,5 @@ Appendices:
 Implementation (v1 core loop, `feat/v1-core-loop-checkpoint`):
 - [Implementation status](implementation-status.md) — delivered vs. scaffolded vs. deferred, mapped to sections 7-16
 - [PR summary](pr-summary-v1-core-loop.md)
+- [Sprint 1 execution board](17-sprint-1-execution-board.md) — tracked checklist with owners, due dates, and done criteria
+- [Sprint 2 operational readiness board](18-sprint-2-operational-readiness-board.md) — tracked checklist with owners, due dates, and done criteria

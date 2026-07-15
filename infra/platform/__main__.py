@@ -1,9 +1,9 @@
 """CanI platform landing zone (docs/06-azure-landing-zone-design.md, docs/11-iac-strategy.md).
 
-Not applied this session (no live Azure subscription in this environment) — see the
-docs/implementation-status.md. §6.6 bootstrapping note applies: management-group-scope
-resources require an interactive `pulumi up` under an "elevated access" admin session
-the first time; after that, the platform GitHub identity holds a narrower permanent role.
+Applied to the `dev` stack on 2026-07-14 (Sprint 1, B1) — live status in
+docs/implementation-status.md. §6.6 bootstrapping note: management-group-scope resources
+required the one-time interactive `pulumi up` under an "elevated access" admin session
+(completed); the platform GitHub identity now holds the narrower permanent role.
 """
 
 import sys
@@ -23,6 +23,10 @@ config = pulumi.Config()
 environment = pulumi.get_stack()  # "dev" | "prod"
 tenant_id = config.require("tenantId")
 owner = config.get("owner") or "solo-operator"
+# Dev stopgap (see docs/implementation-status.md): GitHub-hosted runners push images
+# over ACR's public endpoint until private networking for CI lands, so dev sets
+# publicDataEndpoints=true. Stacks that leave it unset get the secure default (Disabled).
+public_data_endpoints = "Enabled" if config.get_bool("publicDataEndpoints") else "Disabled"
 
 naming = NamingContext(project="platform", layer="core", environment=environment)
 tags = base_tags(environment=environment, owner=owner, spoke="platform")
@@ -39,28 +43,28 @@ platform_mg = azure_native.management.ManagementGroup(
     "cani-platform-mg",
     group_id="cani-platform",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=root_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=root_mg.id)
     ),
 )
 landing_zones_mg = azure_native.management.ManagementGroup(
     "cani-landing-zones-mg",
     group_id="cani-landing-zones",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=root_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=root_mg.id)
     ),
 )
 workload_mg = azure_native.management.ManagementGroup(
     "cani-workload-mg",
     group_id="cani-workload",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=landing_zones_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=landing_zones_mg.id)
     ),
 )
 sandbox_mg = azure_native.management.ManagementGroup(
     "cani-sandbox-mg",
     group_id="cani-sandbox",
     details=azure_native.management.CreateManagementGroupDetailsArgs(
-        parent=azure_native.management.CreateManagementGroupDetailsParentGroupIdArgs(id=root_mg.id)
+        parent=azure_native.management.CreateParentGroupInfoArgs(id=root_mg.id)
     ),
 )
 
@@ -82,6 +86,7 @@ acr = SharedContainerRegistry(
     "cani-shared",
     resource_group_name=resource_group.name,
     tags=tags,
+    public_network_access=public_data_endpoints,
 )
 
 platform_vault = PlatformKeyVault(

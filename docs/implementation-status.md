@@ -11,6 +11,30 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-07-15 update (live dev apply — B1/B2/C1)
+
+Sprint 1 execution (tracked in `17-sprint-1-execution-board.md`) has materially changed
+what is Live vs Scaffolded since this doc was written:
+
+- **Platform stack applied to dev** (B1): management groups, hub VNet, central Log
+  Analytics, shared ACR (Premium — required once public network access is disabled),
+  platform Key Vault.
+- **Workload stack applied to dev** (B2): AKS cluster, Postgres Flexible Server
+  (delegated subnet + private DNS + public access disabled, admin password held as
+  encrypted Pulumi config), Storage account, workload VNet peered to hub.
+- **CI/manifests aligned to live resource IDs** (C1): `app-cd-dev.yml` and `k8s/`
+  reference the real ACR/AKS names; OIDC federated credentials are configured as repo
+  secrets (split platform/workload identities) and `infra-preview.yml` has been
+  validated against them.
+- **C2 (overlay apply / runtime stabilization) in progress:** images now run as non-root
+  (UID 10001) with `emptyDir` tmp mounts to satisfy the strict pod security context;
+  dev secrets are applied out-of-band via `scripts/apply_dev_secrets.sh` from an env
+  file kept outside the repo (see `runbooks/rotate-dev-secrets.md`); schema is applied
+  via `scripts/aks_apply_core_schema.sh`, which runs the repo's real `db/migrate.py`
+  inside a pod. C3 (app-cd activation) not started.
+- Sections §10–§12 below have been updated to match; the per-section labels are the
+  source of truth for what remains scaffolded.
+
 ## 2026-07-14 update (post-merge checkpoint)
 
 - `feat/v1-core-loop-checkpoint` has been merged into `main`; feature branch cleanup is complete.
@@ -73,33 +97,58 @@ not that it has run.
   (§9.12), deletion orchestrator (§9.9) — all require either real Azure Storage/Postgres
   Flexible Server or are out of MVP-fast scope
 
-### §10 AKS cluster design — Scaffolded only
+### §10 AKS cluster design — Live cluster (dev), workload rollout in progress
+- Dev AKS cluster provisioned via `infra/workload` (B2 apply, 2026-07-15)
 - `k8s/base` + `k8s/overlays/dev`: namespaces matching §10.2 exactly, NetworkPolicy
   deny-by-default with explicit allows, Qdrant StatefulSet with PodDisruptionBudget,
   HPA on docs-api, KEDA ScaledObject stub on ingestion-worker, Key Vault CSI
   SecretProviderClass, workload-identity service account annotations
-- **Not live:** no AKS cluster exists. Manifests have not been `kubectl apply`'d anywhere.
-  KEDA/Key Vault CSI add-ons referenced are not installed on any cluster because no
-  cluster exists.
+- Runtime hardening landed for the strict pod security context: images run as non-root
+  (UID 10001), `readOnlyRootFilesystem` kept with `emptyDir` tmp mounts
+- KEDA 2.14.0 live and wired (2026-07-15): a partial CRD install had left the operator
+  crashlooping (`ScaledJob` informer could never sync); fixed by server-side applying the
+  complete v2.14.0 CRD bundle. The ingestion-worker ScaledObject is now Ready, scaling on
+  queue depth via the scoped `keda_scaler` Postgres role (SELECT on `ingestion_jobs`
+  only) through the `cani-postgres-keda-auth` TriggerAuthentication
+  (`k8s/base/ingestion-worker/scaling.yaml`)
+- **Still open:** full overlay apply as the routine deploy path (C2);
+  workload-identity client-id annotations still placeholders — the Key Vault CSI driver
+  add-on is installed but SecretProviderClass values are unset, so secrets currently
+  arrive via `scripts/apply_dev_secrets.sh`, not the CSI driver
 
-### §11 IaC strategy — Scaffolded only
+### §11 IaC strategy — Applied to dev
 - `infra/platform` and `infra/workload` Pulumi Python projects following the exact
   project/stack split in §11.2–§11.4, with `infra/modules` component resources
   (networking, security, observability, compute-aks, data-services) per §11.7's
   recommended module families
 - `infra/workload/__main__.py` consumes `infra/platform` outputs via `StackReference` —
-  §11.6 contract
-- **Not live:** `pulumi preview`/`pulumi up` has never been run. No Pulumi state backend,
-  no Azure OIDC federated identity, no management group bootstrap (§6.6) has happened.
+  §11.6 contract, exercised for real by the B2 apply
+- Management-group bootstrap (§6.6 elevated-access path) completed 2026-07-14; both dev
+  stacks applied 2026-07-14/15 (see `17-sprint-1-execution-board.md` B1/B2 notes)
+- Deterministic Azure-name generation (stable hash suffixes) added for ACR/Storage
+  global-uniqueness; secret config (Postgres admin password) held encrypted in stack config
+- Public-endpoint drift reconciled (2026-07-15): live ACR and storage had been flipped
+  to public access in the portal during C2 while the IaC still said Disabled — the next
+  `pulumi up` would have reverted them and broken image pulls and blob access. Now an
+  explicit per-stack flag (`publicDataEndpoints`, dev=true) with Disabled remaining the
+  secure default; both stacks re-applied so state matches live. The flag is a documented
+  dev stopgap that disappears when private endpoints + workload identity land.
+- **Still open:** `prod` stacks untouched; drift detection (§11.9) not scheduled
 
 ### §12 CI/CD strategy — Live (app CI), Scaffolded (infra CI, prod, GitOps)
 - `ci.yml`: secret scan (gitleaks) → lint (`ruff check`) → format check (`ruff format
   --check`) → unit tests → docker-compose integration tests as the "dev deployment" proxy.
   **This is real and runs on every PR.**
-- `infra-preview.yml`, `infra-apply-dev.yml`, `app-cd-dev.yml`: written correctly, will
-  not run successfully today — they require `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/
-  `AZURE_SUBSCRIPTION_ID`/`PULUMI_ACCESS_TOKEN` repo secrets that don't exist, an AKS
-  cluster to deploy to, and (for `app-cd-dev.yml`) a real ACR
+- `infra-preview.yml` / `infra-apply-dev.yml`: OIDC federated credentials configured
+  (split platform/workload identities) and preview validated against live Azure (C1)
+- `app-cd-dev.yml`: aligned to live AKS/ACR IDs with a pre-deploy contract check, and
+  reworked for the private cluster (2026-07-15): the deploy job renders the kustomize
+  overlay on the runner and applies it via `az aks command invoke` (direct kubectl
+  cannot reach the private API server from a hosted runner), and the old
+  dev.cani.internal curl — which could never succeed — is replaced with in-cluster
+  smoke checks (healthz on all three APIs plus a dev-login POST that proves a live DB
+  write on every deploy). **Not yet activated** (C3); remaining prerequisite is
+  verifying the workload OIDC identity holds `runCommand` rights on the cluster
 - **Not scaffolded at all (explicit MVP-fast deferral):** `infra-apply-prod.yml`,
   `app-cd-prod.yml`, `ops-drift-detection.yml`, GitOps controller (§12.9 Phase 2)
 
@@ -143,49 +192,29 @@ not that it has run.
 - Milestone B/C (operational readiness, production launch readiness) are blocked on the
   items in "Production blockers" below
 
-## Production blockers (require live Azure access)
+## Production blockers (updated 2026-07-15)
 
-These cannot be closed from this environment — they are hard blockers for anything beyond
-local dev, not implementation gaps:
+Original blockers 1 (subscription access), 2 (no AKS cluster), and 4 (OIDC/state backend)
+are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
 
-1. **Azure subscription access** — nothing in `infra/` has been applied. No resource
-   groups, networking, Key Vault, Postgres Flexible Server, Storage account, or ACR exist.
-2. **AKS cluster** — `k8s/` manifests have never been applied anywhere. KEDA and the Key
-   Vault CSI driver add-ons are referenced but not installed anywhere.
-3. **Entra External ID tenant** — no tenant/app registration exists; auth runs on the
+1. **Entra External ID tenant** — no tenant/app registration exists; auth runs on the
    dev-mode stub IdP only.
-4. **Pulumi state backend + OIDC federated credentials** — `infra-preview.yml` and
-   `infra-apply-dev.yml` cannot authenticate to Azure without these being configured as
-   repo/environment secrets.
-5. **Azure Monitor / Log Analytics / Application Insights** — no cloud observability
-   exists; only local structured logs.
-6. **Cost budgets/alerts** — need a live subscription and billing data to configure.
+2. **Secrets delivery is a manual stopgap** — `scripts/apply_dev_secrets.sh` from an
+   operator-held env file, using a storage account key. Target state is workload identity
+   + Key Vault CSI (`k8s/base/secret-provider-class.yaml`); the exposed pre-migration
+   values must be rotated per `runbooks/rotate-dev-secrets.md` §"One-time migration note".
+3. **Azure Monitor / Application Insights / Container Insights** — central Log Analytics
+   workspace exists (B1), but no app/container telemetry flows to it and no alert rules
+   exist; only local structured logs.
+4. **Cost budgets/alerts** — subscription is live and billable (private AKS, Premium ACR,
+   three node pools) but no budget thresholds (§15.3) are configured yet.
+5. **CD not activated** — `app-cd-dev.yml` (C3) unproven end-to-end; smoke-check step
+   must be replaced first (see §12 above).
 
-## Recommended next 2 sprints
+## Sprint planning
 
-**Sprint 1 — unblock live infrastructure (priority: highest)**
-1. Get Azure subscription access into an environment that can run `pulumi up` (P0 — every
-   other blocker is downstream of this)
-2. Run the one-time management-group bootstrap (§6.6: elevate access, interactive
-   `pulumi up` for `infra/platform`) — P0
-3. Apply `infra/platform` then `infra/workload` to `dev`; wire the OIDC federated
-   credentials `infra-preview.yml`/`infra-apply-dev.yml` already expect — P0
-4. Stand up an Entra External ID tenant + app registration; replace `hub-api`'s dev-login
-   route with the real OIDC callback (isolated change, downstream token
-   validation/entitlement code does not change) — P1
-5. Apply `k8s/` manifests to the new AKS cluster; get `app-cd-dev.yml` actually deploying
-   — P1
-6. Implement entitlement-revocation session invalidation (§7.7 gap noted above) — P1
+Sprint-level planning and live status now live in the execution boards, which supersede
+the sprint recommendations that used to be in this file:
 
-**Sprint 2 — operational readiness (priority: high, unblocked once Sprint 1 lands)**
-1. Application Insights + Container Insights wiring; at minimum the P1/P2 alert set from
-   §13.8 (elevated 5xx rate, retrieval latency SLO breach, ingestion dead-letter growth,
-   node not-ready) — P1
-2. Budget alerts at the 50/75/90/100% thresholds from §15.3 — P1
-3. Backup/restore validation: Postgres PITR, Qdrant snapshot-to-blob, one real restore
-   drill (§9.10, §14.13) — P1
-4. Malware scanning on upload before it reaches extraction (§8.11) — P2
-5. Rate limiting on public endpoints (§14.8) — P2
-6. Complete the deferred baseline policy set in `infra/modules/security.py` (required
-   tags, allowed locations, TLS enforcement, diagnostic-settings deploy-if-not-exists)
-   — P2
+- `17-sprint-1-execution-board.md` — live infrastructure unblock (in progress)
+- `18-sprint-2-operational-readiness-board.md` — operational readiness
