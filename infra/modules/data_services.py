@@ -66,7 +66,9 @@ class WorkloadPostgres(ComponentResource):
         *,
         resource_group_name: str,
         subnet_id: Input[str],
+        private_dns_zone_arm_resource_id: Input[str],
         administrator_login: str,
+        administrator_login_password: Input[str],
         tags: dict,
         opts: ResourceOptions | None = None,
     ):
@@ -77,8 +79,13 @@ class WorkloadPostgres(ComponentResource):
             resource_group_name=resource_group_name,
             sku=azure_native.dbforpostgresql.SkuArgs(name="Standard_B2s", tier="Burstable"),
             version="16",
-            network=azure_native.dbforpostgresql.NetworkArgs(delegated_subnet_resource_id=subnet_id),
+            network=azure_native.dbforpostgresql.NetworkArgs(
+                delegated_subnet_resource_id=subnet_id,
+                private_dns_zone_arm_resource_id=private_dns_zone_arm_resource_id,
+                public_network_access="Disabled",
+            ),
             administrator_login=administrator_login,
+            administrator_login_password=administrator_login_password,
             storage=azure_native.dbforpostgresql.StorageArgs(storage_size_gb=32),
             backup=azure_native.dbforpostgresql.BackupArgs(
                 backup_retention_days=7, geo_redundant_backup="Disabled"

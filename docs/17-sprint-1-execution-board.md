@@ -10,7 +10,7 @@ explicit acceptance checks.
 - Owner: Jason
 - Start date: 2026-07-14
 - Target end date: 2026-07-28
-- Last updated: 2026-07-14
+- Last updated: 2026-07-15
 - Overall status: In progress
 
 ## Status legend
@@ -24,7 +24,7 @@ explicit acceptance checks.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 0 | -60 | B2 workload apply not started yet | A1, A2, and B1 complete; platform outputs captured from pulumi up |
+| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 0 | -60 | C1 name alignment not started yet | A1, A2, B1, and B2 complete; workload outputs captured from pulumi up |
 | Week 2 | 2026-07-21 to 2026-07-28 | App CD activation, Entra swap, entitlement revocation, sprint closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -135,17 +135,32 @@ Execution notes (2026-07-14):
 
 - Owner: Jason
 - Due: 2026-07-18
-- Status: [ ] Not started
+- Status: [x] Done
 - Dependencies: B1
 - Checklist:
-  - [ ] Initialize Pulumi dev stack for workload.
-  - [ ] Set workload config values:
-    - [ ] platformStackRef
-    - [ ] aadAdminGroupObjectIds
-  - [ ] Run pulumi up in infra/workload.
-  - [ ] Validate AKS, Postgres, Storage, and diagnostics resources are present.
+  - [x] Initialize Pulumi dev stack for workload.
+  - [x] Set workload config values:
+    - [x] platformStackRef
+    - [x] aadAdminGroupObjectIds
+  - [x] Run pulumi up in infra/workload.
+  - [x] Validate AKS, Postgres, Storage, and diagnostics resources are present.
 - Done criteria:
-  - [ ] All required workload outputs resolve without errors.
+  - [x] All required workload outputs resolve without errors.
+
+Execution notes (2026-07-15):
+- Initial workload apply surfaced IaC and platform constraints that were fixed in code:
+  - Added required Postgres admin password configuration (`postgresAdminPassword`).
+  - Added deterministic AKS `dnsPrefix` generation.
+  - Added delegated Postgres subnet and private DNS zone wiring (`privatelink.postgres.database.azure.com`).
+  - Switched AKS nodepool VM sizes from DSv5 to DSv4 to match eastus2 quota.
+- During convergence, Azure reported a stale in-progress AKS operation tied to an already-created managed cluster name (`cani-aks64bdb7d1`) while Pulumi logical name remained `cani-aks`.
+- Recovery: aborted the latest AKS operation using the actual Azure cluster name, then re-ran `pulumi up`.
+- Final result: Pulumi update version 6 succeeded (1 created, 1 updated), and outputs resolved:
+  - `aks_cluster_id`
+  - `aks_oidc_issuer_url`
+  - `postgres_fqdn`
+  - `storage_account_id`
+  - `acr_id_reference`
 
 ## Workstream C - AKS and deployment activation
 
@@ -236,3 +251,4 @@ Execution notes (2026-07-14):
 Use one line per day.
 
 - 2026-07-14: Board created. A1 completed after management-group access unblocked and root-scope User Access Administrator confirmed. A2 completed after OIDC identities, repo secrets, federated credentials, and workflow auth validation were verified in infra-preview. B1 completed with successful `pulumi up` on platform dev and outputs captured.
+- 2026-07-15: B2 completed after fixing workload IaC gaps (Postgres password, AKS dnsPrefix, Postgres private DNS/delegated subnet, DSv4 nodepools), resolving a stuck AKS long-running operation, and successfully finishing `pulumi up` update 6.

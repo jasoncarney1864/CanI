@@ -3,3 +3,5 @@ config:
   cani-workload:platformStackRef: jasonbrookecarney-gmail-com/cani-platform/dev
   cani-workload:aadAdminGroupObjectIds:
     - 9b14372c-a8ab-4d09-822d-578178fb0812
+  cani-workload:postgresAdminPassword:
+    secure: AAABAK3w/3kXN10nqBFLFJzsNK610KrtAyOT0imYEWenCjpSS7Pt+YYQShzQgg3C
