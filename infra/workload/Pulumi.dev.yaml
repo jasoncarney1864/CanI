@@ -1,0 +1,3 @@
+config:
+  cani-workload:platformStackRef: jasonbrookecarney-gmail-com/cani-platform/dev
+  cani-workload:aadAdminGroupObjectIds: '[\"9b14372c-a8ab-4d09-822d-578178fb0812\"]'
