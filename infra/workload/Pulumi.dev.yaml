@@ -1,4 +1,5 @@
 config:
+  azure-native:location: eastus2
   cani-workload:platformStackRef: personal/cani-platform/dev
   cani-workload:aadAdminGroupObjectIds:
     - <user-object-id>
