@@ -60,10 +60,14 @@ what is Live vs Scaffolded since this doc was written:
   (`cani_shared.auth.entitlements`), never trusting network placement alone — matches
   §7.4's "spokes must re-check on every call"
 - Audit events for login, token issuance, logout (`record_audit_event`) — §7.8
-- **Live via dev-login stub** (`hub-api-app POST /auth/dev-login`, 404s outside `ENV=dev`).
-  **Not live:** real Entra External ID OIDC — no tenant/app registration exists. Swapping
-  it in is scoped to `hub_api_app/main.py`'s login route only; token issuance/validation
-  downstream is unchanged.
+- **Real Entra External ID OIDC implemented and wired (2026-07-16, D1):** tenant
+  `caniauth.onmicrosoft.com` + `cani-hub` app registration live; hub-api's
+  `/auth/login` → `/auth/callback` does authorization code + PKCE with full ID-token
+  validation (RS256/JWKS, audience, discovered issuer, expiry, nonce), 12 unit tests on
+  the rejection paths. Outside dev, hub-api refuses to start without OIDC config.
+  Verified headlessly against the live tenant (authorize redirect + flow cookie);
+  final interactive browser login pending before D1 is called fully verified.
+- dev-login stub remains for local/compose/tests only (404s outside `ENV=dev`)
 - **Gap:** entitlement revocation does not force session/token invalidation (§7.7 requires
   it). Documented as a known limitation in `runbooks/suspected-cross-tenant-access.md`.
 
@@ -197,8 +201,10 @@ what is Live vs Scaffolded since this doc was written:
 Original blockers 1 (subscription access), 2 (no AKS cluster), and 4 (OIDC/state backend)
 are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
 
-1. **Entra External ID tenant** — no tenant/app registration exists; auth runs on the
-   dev-mode stub IdP only.
+1. **Entra External ID tenant** — ~~closed 2026-07-16~~: `caniauth` tenant + `cani-hub`
+   app registration live, OIDC flow implemented in hub-api (D1). Residual: one
+   interactive browser-login validation, and a public redirect URI once ingress exists
+   (localhost-only today).
 2. **Secrets delivery is a manual stopgap** — `scripts/apply_dev_secrets.sh` from an
    operator-held env file, using a storage account key. Target state is workload identity
    + Key Vault CSI (`k8s/base/secret-provider-class.yaml`); the exposed pre-migration
