@@ -24,7 +24,7 @@ explicit acceptance checks.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 75 | +15 | None - D1 (Entra tenant) is the next gating item | A1, A2, B1, B2, C1, C2, C3 complete (C3 ahead of Week 2 plan); CD pipeline verified end to end on 2026-07-15; 42 of 56 boxes checked |
+| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 82 | +22 | None - D2 (entitlement revocation) is the next item | A1, A2, B1, B2, C1, C2, C3, D1 complete (C3 and D1 both ahead of Week 2 plan); real Entra login verified in browser 2026-07-16; 46 of 56 boxes checked |
 | Week 2 | 2026-07-21 to 2026-07-28 | App CD activation, Entra swap, entitlement revocation, sprint closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -246,17 +246,18 @@ Execution notes (2026-07-15):
 
 - Owner: Jason
 - Due: 2026-07-24
-- Status: [-] In progress
+- Status: [x] Done
 - Dependencies: A1, A2
 - Checklist:
   - [x] Create Entra External ID tenant and app registration.
   - [x] Implement OIDC callback flow in hub-api auth entrypoint.
   - [x] Validate whoami and token issuance behavior remains compatible.
 - Done criteria:
-  - [ ] Non-dev environment auth no longer depends on the dev login route.
-        (Code-true: hub-api fails startup outside dev without OIDC config, and the
-        real flow is implemented and wired. Held open pending one interactive
-        browser login through the live tenant to call it verified.)
+  - [x] Non-dev environment auth no longer depends on the dev login route.
+        (Verified 2026-07-16: interactive browser sign-up through the live caniauth
+        tenant — email verification code, password set, callback returned the session
+        JSON with user_id + can_access_docs; first customer identity created. hub-api
+        additionally fails startup outside dev without OIDC config.)
 
 Execution notes (2026-07-16):
 - Tenant `caniauth.onmicrosoft.com` (43189f5e-8c1b-4e3f-9cf7-d17babc03e36) created
@@ -311,3 +312,4 @@ Use one line per day.
 - 2026-07-15: B2 completed after fixing workload IaC gaps (Postgres password, AKS dnsPrefix, Postgres private DNS/delegated subnet, DSv4 nodepools), resolving a stuck AKS long-running operation, and successfully finishing `pulumi up` update 6.
 - 2026-07-15: C1 completed by aligning app-cd and k8s manifests to live AKS/ACR/storage names and IDs from workload outputs.
 - 2026-07-15: C2 and C3 completed. PR #2 (secret handling, KEDA repair, private-cluster CD rework, public-endpoint drift fix) merged as d18a855; first app-cd-dev activation failed on missing `environment:dev` federated credentials, fixed and rerun green end to end — 4 SHA-tagged images deployed, all rollouts and in-cluster smoke checks passed, infra applies no-op. Week 1 actual now 75% vs 60% planned.
+- 2026-07-16: D1 completed. caniauth external tenant + cani-hub app registration created entirely via ARM/Graph (no portal); hub-api gained /auth/login + /auth/callback (authorization code + PKCE, full ID-token validation, 12 security unit tests); PR #5 merged as 7ae532c after all checks green. Verified with a real interactive browser sign-up — first customer identity created, callback returned session JSON. Week 1 actual now 82% vs 60% planned.
