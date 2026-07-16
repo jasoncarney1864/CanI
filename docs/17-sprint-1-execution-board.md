@@ -24,7 +24,7 @@ explicit acceptance checks.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 0 | -60 | C2 overlays apply not started yet | A1, A2, B1, B2, and C1 complete; app-cd and manifests aligned to live resource names |
+| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 75 | +15 | None - D1 (Entra tenant) is the next gating item | A1, A2, B1, B2, C1, C2, C3 complete (C3 ahead of Week 2 plan); CD pipeline verified end to end on 2026-07-15; 42 of 56 boxes checked |
 | Week 2 | 2026-07-21 to 2026-07-28 | App CD activation, Entra swap, entitlement revocation, sprint closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -190,29 +190,55 @@ Execution notes (2026-07-15):
 
 - Owner: Jason
 - Due: 2026-07-20
-- Status: [ ] Not started
+- Status: [x] Done
 - Dependencies: C1
 - Checklist:
-  - [ ] Set AKS context.
-  - [ ] Apply k8s/overlays/dev.
-  - [ ] Validate rollouts for hub-api, docs-api, retrieval-worker.
-  - [ ] Validate qdrant statefulset and core namespaces.
+  - [x] Set AKS context. (Adapted: cluster API server is private, so all kubectl runs
+        via `az aks command invoke` instead of a local context — from operator machines
+        and from CI alike.)
+  - [x] Apply k8s/overlays/dev.
+  - [x] Validate rollouts for hub-api, docs-api, retrieval-worker.
+  - [x] Validate qdrant statefulset and core namespaces.
 - Done criteria:
-  - [ ] All target deployments are available and healthy.
+  - [x] All target deployments are available and healthy.
+
+Execution notes (2026-07-15):
+- Overlay applied twice: manually during runtime stabilization, then by the first
+  app-cd-dev run (31 rendered objects; all pre-existing objects `unchanged`, image
+  tags updated to the merge SHA).
+- All four rollouts (incl. ingestion-worker) reported "successfully rolled out";
+  qdrant StatefulSet Running; KEDA ScaledObject Ready=True on live queue depth.
+- Secrets arrive out-of-band via scripts/apply_dev_secrets.sh (see
+  runbooks/rotate-dev-secrets.md); Key Vault CSI remains the target state.
 
 ### C3. Activate app-cd-dev workflow path (P1)
 
 - Owner: Jason
 - Due: 2026-07-21
-- Status: [ ] Not started
+- Status: [x] Done
 - Dependencies: C2
 - Checklist:
-  - [ ] Trigger apps change to run app-cd-dev.
-  - [ ] Verify image build and push for each service.
-  - [ ] Verify kustomize image updates and apply step.
-  - [ ] Verify post-deploy smoke check.
+  - [x] Trigger apps change to run app-cd-dev.
+  - [x] Verify image build and push for each service.
+  - [x] Verify kustomize image updates and apply step.
+  - [x] Verify post-deploy smoke check.
 - Done criteria:
-  - [ ] One full successful app deployment to dev AKS from GitHub Actions.
+  - [x] One full successful app deployment to dev AKS from GitHub Actions.
+
+Execution notes (2026-07-15):
+- Activated by the PR #2 merge (d18a855). First run failed at azure/login for jobs
+  using the GitHub `dev` environment: OIDC subject becomes
+  `repo:...:environment:dev`, and only `pull_request` / `ref:refs/heads/main`
+  federated credentials existed. Fixed by adding `cani-env-dev` federated
+  credentials to both app registrations; also pre-granted the workload identity
+  "Azure Kubernetes Service RBAC Cluster Admin" scoped to the dev cluster only
+  (Contributor covers the ARM runcommand action but no Kubernetes data actions).
+- Rerun succeeded end to end (run 29459516493): 4/4 images built and pushed with the
+  merge SHA, contract preflight passed, overlay applied via command invoke, all four
+  rollout gates green, in-cluster smoke checks passed (hub/docs/retrieval healthz +
+  dev-login POST proving a live Postgres write).
+- infra-apply-dev on the same merge: pure no-ops (platform 23 unchanged, workload 17
+  unchanged) — the public-endpoint drift reconciliation held.
 
 ## Workstream D - Auth hardening gap closure
 
@@ -262,3 +288,4 @@ Use one line per day.
 - 2026-07-14: Board created. A1 completed after management-group access unblocked and root-scope User Access Administrator confirmed. A2 completed after OIDC identities, repo secrets, federated credentials, and workflow auth validation were verified in infra-preview. B1 completed with successful `pulumi up` on platform dev and outputs captured.
 - 2026-07-15: B2 completed after fixing workload IaC gaps (Postgres password, AKS dnsPrefix, Postgres private DNS/delegated subnet, DSv4 nodepools), resolving a stuck AKS long-running operation, and successfully finishing `pulumi up` update 6.
 - 2026-07-15: C1 completed by aligning app-cd and k8s manifests to live AKS/ACR/storage names and IDs from workload outputs.
+- 2026-07-15: C2 and C3 completed. PR #2 (secret handling, KEDA repair, private-cluster CD rework, public-endpoint drift fix) merged as d18a855; first app-cd-dev activation failed on missing `environment:dev` federated credentials, fixed and rerun green end to end — 4 SHA-tagged images deployed, all rollouts and in-cluster smoke checks passed, infra applies no-op. Week 1 actual now 75% vs 60% planned.
