@@ -27,6 +27,10 @@ QDRANT_URL=
 QDRANT_COLLECTION=
 AZURE_STORAGE_CONNECTION_STRING=
 KEDA_POSTGRES_CONNECTION=    # postgresql://keda_scaler:<pass>@<host>:5432/cani?sslmode=require
+ENTRA_OIDC_AUTHORITY=        # https://caniauth.ciamlogin.com/<tenant-id>/v2.0
+ENTRA_OIDC_CLIENT_ID=
+ENTRA_OIDC_CLIENT_SECRET=    # rotate: az ad app credential reset (see section 5)
+ENTRA_OIDC_REDIRECT_URI=
 ```
 
 `KEDA_POSTGRES_CONNECTION` uses the dedicated `keda_scaler` Postgres role (LOGIN +
@@ -129,7 +133,27 @@ kubectl -n docs-platform annotate scaledobject ingestion-worker cani.io/reconcil
 
 Verify with `kubectl get scaledobject -n docs-platform` — READY must return to `True`.
 
-### 5. Verify after any rotation
+### 5. Entra OIDC client secret (`ENTRA_OIDC_CLIENT_SECRET`)
+
+The `cani-hub` app registration lives in the `caniauth` external tenant
+(43189f5e-8c1b-4e3f-9cf7-d17babc03e36), not the workforce tenant — authenticate there
+first, then reset the credential:
+
+```
+az login --tenant 43189f5e-8c1b-4e3f-9cf7-d17babc03e36 --allow-no-subscriptions
+az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416 \
+  --display-name "hub-api-dev" --years 1 --query password -o tsv
+# update ENTRA_OIDC_CLIENT_SECRET in ~/.cani/dev-secrets.env (never echo/commit it)
+az account set --subscription 6591cee6-ee26-4155-ae71-3777bf7e9c73   # switch CLI back
+bash scripts/apply_dev_secrets.sh
+kubectl -n hub-system rollout restart deployment/hub-api
+```
+
+Note `credential reset` replaces ALL existing secrets on the app by default — in-flight
+hub-api pods keep working until restart because the token exchange only happens at
+login time, but restart promptly.
+
+### 6. Verify after any rotation
 
 ```bash
 kubectl -n hub-system get pods && kubectl -n docs-platform get pods   # all Running

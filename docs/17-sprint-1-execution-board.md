@@ -246,14 +246,36 @@ Execution notes (2026-07-15):
 
 - Owner: Jason
 - Due: 2026-07-24
-- Status: [ ] Not started
+- Status: [-] In progress
 - Dependencies: A1, A2
 - Checklist:
-  - [ ] Create Entra External ID tenant and app registration.
-  - [ ] Implement OIDC callback flow in hub-api auth entrypoint.
-  - [ ] Validate whoami and token issuance behavior remains compatible.
+  - [x] Create Entra External ID tenant and app registration.
+  - [x] Implement OIDC callback flow in hub-api auth entrypoint.
+  - [x] Validate whoami and token issuance behavior remains compatible.
 - Done criteria:
   - [ ] Non-dev environment auth no longer depends on the dev login route.
+        (Code-true: hub-api fails startup outside dev without OIDC config, and the
+        real flow is implemented and wired. Held open pending one interactive
+        browser login through the live tenant to call it verified.)
+
+Execution notes (2026-07-16):
+- Tenant `caniauth.onmicrosoft.com` (43189f5e-8c1b-4e3f-9cf7-d17babc03e36) created
+  via ARM ciamDirectories in `cani-ciam-rg`; app registration `cani-hub`
+  (1f0927a0-fe19-4661-93e0-019e94b05416) with redirect http://localhost:8001/auth/callback;
+  Graph delegated sign-in scopes granted; email+password sign-up/sign-in user flow
+  created via Graph and app association verified.
+- hub-api: /auth/login (authorization code + PKCE, state/nonce in a signed 10-min
+  flow cookie) and /auth/callback (code exchange, full ID-token validation: RS256 via
+  JWKS, audience, discovered issuer, expiry, nonce; idp_subject = entra:tid:oid).
+  dev-login and OIDC share one `_establish_session` path, so whoami/token issuance are
+  unchanged by construction — existing tests pass untouched.
+- 12 new unit tests cover the rejection paths (bad signature, alg=none, wrong
+  aud/iss, expiry, nonce replay, state CSRF, flow-cookie tampering/purpose).
+- Verified live headlessly: /auth/login on the compose stack 302s to the real
+  caniauth authorize endpoint with S256 challenge and sets the HttpOnly flow cookie.
+- Secrets: ENTRA_OIDC_* in ~/.cani/dev-secrets.env; new hub-system-only
+  `cani-hub-oidc` Secret in apply_dev_secrets.sh (docs-platform never sees the
+  client secret); rotation procedure added to rotate-dev-secrets.md section 5.
 
 ### D2. Entitlement revocation session invalidation (P1)
 
