@@ -65,8 +65,8 @@ what is Live vs Scaffolded since this doc was written:
   `/auth/login` → `/auth/callback` does authorization code + PKCE with full ID-token
   validation (RS256/JWKS, audience, discovered issuer, expiry, nonce), 12 unit tests on
   the rejection paths. Outside dev, hub-api refuses to start without OIDC config.
-  Verified headlessly against the live tenant (authorize redirect + flow cookie);
-  final interactive browser login pending before D1 is called fully verified.
+  Verified end to end 2026-07-16: interactive browser sign-up through the live
+  tenant created the first customer identity and returned the session JSON.
 - dev-login stub remains for local/compose/tests only (404s outside `ENV=dev`)
 - **Gap:** entitlement revocation does not force session/token invalidation (§7.7 requires
   it). Documented as a known limitation in `runbooks/suspected-cross-tenant-access.md`.
@@ -202,8 +202,8 @@ Original blockers 1 (subscription access), 2 (no AKS cluster), and 4 (OIDC/state
 are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
 
 1. **Entra External ID tenant** — ~~closed 2026-07-16~~: `caniauth` tenant + `cani-hub`
-   app registration live, OIDC flow implemented in hub-api (D1). Residual: one
-   interactive browser-login validation, and a public redirect URI once ingress exists
+   app registration live, OIDC flow implemented in hub-api and verified with a real
+   browser sign-up (D1). Residual: a public redirect URI once ingress exists
    (localhost-only today).
 2. **Secrets delivery is a manual stopgap** — `scripts/apply_dev_secrets.sh` from an
    operator-held env file, using a storage account key. Target state is workload identity
