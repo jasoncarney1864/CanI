@@ -46,6 +46,20 @@ class Settings(BaseSettings):
 
     retrieval_worker_url: str = Field(default="http://retrieval-worker:8003", alias="RETRIEVAL_WORKER_URL")
 
+    # Entra External ID (hub-api only; docs/07 §7.2). Optional in dev — the dev-login
+    # stub carries local auth — but hub-api refuses to start outside dev without these
+    # (enforced in its lifespan, not here, since the other services never use them).
+    entra_oidc_authority: str = Field(default="", alias="ENTRA_OIDC_AUTHORITY")
+    entra_oidc_client_id: str = Field(default="", alias="ENTRA_OIDC_CLIENT_ID")
+    entra_oidc_client_secret: str = Field(default="", alias="ENTRA_OIDC_CLIENT_SECRET")
+    entra_oidc_redirect_uri: str = Field(
+        default="http://localhost:8001/auth/callback", alias="ENTRA_OIDC_REDIRECT_URI"
+    )
+
+    @property
+    def entra_oidc_configured(self) -> bool:
+        return bool(self.entra_oidc_authority and self.entra_oidc_client_id)
+
     @field_validator("cani_token_signing_secret", "cani_session_secret")
     @classmethod
     def _require_strong_secret(cls, value: str, info) -> str:
