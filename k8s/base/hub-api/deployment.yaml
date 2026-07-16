@@ -21,6 +21,9 @@ spec:
           envFrom:
             - configMapRef: { name: cani-config }
             - secretRef: { name: cani-secrets }
+            # Entra OIDC config (applied by scripts/apply_dev_secrets.sh when set);
+            # optional so the pod still starts pre-D1 or in stub-auth-only environments.
+            - secretRef: { name: cani-hub-oidc, optional: true }
           env:
             - { name: TMPDIR, value: "/tmp" }
           volumeMounts:

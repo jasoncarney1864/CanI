@@ -76,6 +76,28 @@ EOF
 apply_secret docs-platform
 apply_secret hub-system
 
+# Entra External ID OIDC (hub-api only, D1). Optional: dev-login still covers local
+# auth, but hub-api in a non-dev ENV refuses to start without these. Applied as a
+# separate hub-system-only Secret so the docs-platform namespace never sees the
+# client secret.
+if [[ -n "${ENTRA_OIDC_CLIENT_SECRET:-}" ]]; then
+  kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cani-hub-oidc
+  namespace: hub-system
+type: Opaque
+stringData:
+  ENTRA_OIDC_AUTHORITY: "${ENTRA_OIDC_AUTHORITY}"
+  ENTRA_OIDC_CLIENT_ID: "${ENTRA_OIDC_CLIENT_ID}"
+  ENTRA_OIDC_CLIENT_SECRET: "${ENTRA_OIDC_CLIENT_SECRET}"
+  ENTRA_OIDC_REDIRECT_URI: "${ENTRA_OIDC_REDIRECT_URI}"
+EOF
+else
+  echo "note: ENTRA_OIDC_* not set - skipping cani-hub-oidc (dev-login remains the only auth path)." >&2
+fi
+
 # KEDA's postgresql scaler reads a scoped connection string (keda_scaler role: SELECT on
 # ingestion_jobs only) via the cani-postgres-keda-auth TriggerAuthentication
 # (k8s/base/ingestion-worker/scaling.yaml). Optional so pre-KEDA env files still work,
