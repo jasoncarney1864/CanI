@@ -68,8 +68,13 @@ what is Live vs Scaffolded since this doc was written:
   Verified end to end 2026-07-16: interactive browser sign-up through the live
   tenant created the first customer identity and returned the session JSON.
 - dev-login stub remains for local/compose/tests only (404s outside `ENV=dev`)
-- **Gap:** entitlement revocation does not force session/token invalidation (§7.7 requires
-  it). Documented as a known limitation in `runbooks/suspected-cross-tenant-access.md`.
+- **Revocation live (2026-07-16, D2):** per-user revocation epoch (`users.auth_revoked_at`,
+  migration 0002) enforced on every authenticated request — a session or access token
+  with `iat <= auth_revoked_at` is rejected even while otherwise valid, so revoking a
+  user kills their already-issued credentials immediately rather than waiting out the
+  TTL (§7.7). Operator tool `scripts/revoke_user_access.py` (no admin HTTP endpoint until
+  admin RBAC exists); verified by an integration test where a live token and session both
+  die post-revocation. `suspected-cross-tenant-access.md` containment updated to use it.
 
 ### §8 RAG pipeline — Live
 - Full pipeline running end to end: upload → extract (native PDF; OCR-ready via Document
@@ -178,11 +183,11 @@ what is Live vs Scaffolded since this doc was written:
   the secret keys present-but-empty (exactly what a naive `cp .env.example .env` produces)
   previously passed validation and ran with a forgeable JWT signing key
 - Secret scanning now runs in CI (`gitleaks-action`, `.gitleaks.toml`)
-- **Not implemented:** malware scanning (§8.11/§14.9), rate limiting (§14.8), real Entra
-  External ID, session/token revocation on entitlement change, customer-managed keys,
-  most of the documented policy set (only 2 of the "deny public network access" built-in
-  policies are wired in `infra/modules/security.py` — explicitly noted as a
-  representative-not-complete example in that file's docstring)
+- **Not implemented:** malware scanning (§8.11/§14.9), rate limiting (§14.8),
+  customer-managed keys, most of the documented policy set (only 2 of the "deny public
+  network access" built-in policies are wired in `infra/modules/security.py` — explicitly
+  noted as a representative-not-complete example in that file's docstring). (Real Entra
+  External ID landed in D1; session/token revocation on entitlement change in D2.)
 
 ### §15 Cost management — Not implemented (needs live subscription)
 - Budgets, alerts, cost dashboards, tag compliance checks all require a real Azure
