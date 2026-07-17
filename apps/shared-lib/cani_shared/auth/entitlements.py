@@ -3,6 +3,12 @@ token and re-check entitlement on every call, per docs/07-identity-and-access.md
 "Spokes must re-check entitlement and ownership on every API call." Hub-issued claims
 are trusted only after signature+expiry verification here — never trust an unverified
 token or a client-supplied user_id.
+
+D2 (§7.7): when constructed with a postgres_dsn, the dependency also enforces the
+per-user revocation epoch on every request — a token whose iat is at or before
+users.auth_revoked_at is rejected even though its signature and expiry are valid, so
+revoking a user kills their already-issued 15-minute access tokens immediately instead
+of waiting out the TTL.
 """
 
 from __future__ import annotations
@@ -26,9 +32,20 @@ CAN_ACCESS_HEALTH = "can_access_health"
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def make_principal_dependency(*, token_signing_secret: str):
+def is_issued_before_revocation(iat: int, revoked_epoch: int | None) -> bool:
+    """True when a credential predates (or coincides with) the user's revocation epoch.
+    `<=` on purpose: a token minted in the same second as the revocation dies too, and
+    legacy tokens without iat (iat=0) die the moment any revocation exists."""
+    return revoked_epoch is not None and iat <= revoked_epoch
+
+
+def make_principal_dependency(*, token_signing_secret: str, postgres_dsn: str | None = None):
     """Bind the deployment's signing secret once at app startup and return a FastAPI
-    dependency that resolves the caller's RequestPrincipal, denying by default."""
+    dependency that resolves the caller's RequestPrincipal, denying by default.
+
+    Pass postgres_dsn in real services so the D2 revocation check runs per request;
+    omitting it (pure-unit-test setups) skips only the revocation lookup.
+    """
 
     async def get_principal(
         credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
@@ -41,6 +58,17 @@ def make_principal_dependency(*, token_signing_secret: str):
         except TokenError as exc:
             logger.warning("authz_denied", reason="invalid_token", detail=str(exc))
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired token") from exc
+
+        if postgres_dsn is not None:
+            from cani_shared.db.pool import get_pool
+            from cani_shared.db.repositories import get_auth_revoked_epoch
+
+            with get_pool(postgres_dsn).connection() as conn:
+                revoked_epoch = get_auth_revoked_epoch(conn, claims.sub)
+            if is_issued_before_revocation(claims.iat, revoked_epoch):
+                logger.warning("authz_denied", reason="token_issued_before_revocation")
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "credentials revoked — re-authenticate")
+
         return RequestPrincipal(user_id=claims.sub, entitlements=claims.entitlements)
 
     return get_principal
