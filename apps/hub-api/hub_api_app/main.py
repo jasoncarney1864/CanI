@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+from cani_shared.auth.entitlements import is_issued_before_revocation
 from cani_shared.auth.tokens import (
     ACCESS_TOKEN_TTL_SECONDS,
     TokenError,
@@ -22,7 +23,12 @@ from cani_shared.auth.tokens import (
 )
 from cani_shared.config import get_settings
 from cani_shared.db.pool import get_pool
-from cani_shared.db.repositories import get_entitlements, get_or_create_user, record_audit_event
+from cani_shared.db.repositories import (
+    get_auth_revoked_epoch,
+    get_entitlements,
+    get_or_create_user,
+    record_audit_event,
+)
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import TraceIdMiddleware
 from fastapi import FastAPI, HTTPException, Request, Response, status
@@ -82,6 +88,16 @@ def _get_session_user_id(request: Request) -> str:
         claims = verify_session_token(token, settings.cani_session_secret)
     except TokenError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session invalid or expired") from exc
+
+    # D2 (§7.7): a session issued before the user's revocation epoch is dead even
+    # though its signature and expiry are valid — revocation must not wait out the
+    # 12-hour session TTL.
+    pool = get_pool(settings.postgres_dsn)
+    with pool.connection() as conn:
+        revoked_epoch = get_auth_revoked_epoch(conn, claims.sub)
+    if is_issued_before_revocation(claims.iat, revoked_epoch):
+        logger.warning("session_rejected", reason="issued_before_revocation")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session revoked — sign in again")
     return claims.sub
 
 

@@ -17,7 +17,7 @@ import uuid
 from typing import Any
 
 from psycopg import Connection
-from psycopg.rows import dict_row
+from psycopg.rows import dict_row, tuple_row
 
 from cani_shared.models import ChunkManifest, Document, DocumentVersion, IngestionJob, IngestionStage
 
@@ -85,6 +85,88 @@ def get_entitlements(conn: Connection, owner_user_id: str) -> list[str]:
             (owner_user_id,),
         )
         return [r["entitlement"] for r in cur.fetchall()]
+
+
+def get_auth_revoked_epoch(conn: Connection, user_id: str) -> int | None:
+    """Per-user revocation epoch (unix seconds) for D2 (§7.7), or None if never revoked.
+    Checked on every authenticated request: any token/session with iat <= this epoch is
+    dead regardless of its own expiry.
+
+    Pins tuple_row on its own cursor: pooled connections retain whatever row_factory a
+    prior call set (e.g. _row_conn's dict_row), so positional access here would otherwise
+    break depending on call order within the connection's lifetime."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute(
+            "SELECT EXTRACT(EPOCH FROM auth_revoked_at)::bigint FROM users WHERE user_id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            # Unknown user: treat as revoked-from-the-beginning (fail closed).
+            return 2**53
+        value = row[0]
+        return int(value) if value is not None else None
+
+
+def revoke_entitlement(
+    conn: Connection,
+    user_id: str,
+    entitlement: str,
+    *,
+    revoke_sessions: bool,
+    actor: str,
+    reason: str,
+) -> None:
+    """Marks the entitlement revoked; when revoke_sessions is set (§7.7 'critical
+    entitlement removals'), also stamps the user's revocation epoch so every
+    previously issued session and access token dies immediately."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE entitlements SET revoked_at = now() "
+            "WHERE user_id = %s AND entitlement = %s AND revoked_at IS NULL",
+            (user_id, entitlement),
+        )
+        if revoke_sessions:
+            cur.execute(
+                "UPDATE users SET auth_revoked_at = now(), updated_at = now() WHERE user_id = %s", (user_id,)
+            )
+        cur.execute(
+            "INSERT INTO audit_events (audit_event_id, event_type, actor_user_id, detail, created_at) "
+            "VALUES (%s, %s, NULL, %s, now())",
+            (
+                str(uuid.uuid4()),
+                "entitlement_revoked",
+                json.dumps(
+                    {
+                        "target_user_id": user_id,
+                        "entitlement": entitlement,
+                        "sessions_revoked": revoke_sessions,
+                        "actor": actor,
+                        "reason": reason,
+                    }
+                ),
+            ),
+        )
+        conn.commit()
+
+
+def revoke_all_user_auth(conn: Connection, user_id: str, *, actor: str, reason: str) -> None:
+    """Kills every live session and access token for the user without touching
+    entitlements — the runbook containment action for credential compromise."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET auth_revoked_at = now(), updated_at = now() WHERE user_id = %s", (user_id,)
+        )
+        cur.execute(
+            "INSERT INTO audit_events (audit_event_id, event_type, actor_user_id, detail, created_at) "
+            "VALUES (%s, %s, NULL, %s, now())",
+            (
+                str(uuid.uuid4()),
+                "user_auth_revoked",
+                json.dumps({"target_user_id": user_id, "actor": actor, "reason": reason}),
+            ),
+        )
+        conn.commit()
 
 
 def record_audit_event(
@@ -157,7 +239,9 @@ def get_document_by_checksum(conn: Connection, owner_user_id: str, checksum: str
 
 
 def get_document_title(conn: Connection, owner_user_id: str, document_id: str) -> str | None:
-    with conn.cursor() as cur:
+    # tuple_row pinned for the same reason as get_auth_revoked_epoch: don't depend on
+    # the pooled connection's inherited row_factory for positional access.
+    with conn.cursor(row_factory=tuple_row) as cur:
         cur.execute(
             "SELECT title FROM documents WHERE owner_user_id = %s AND document_id = %s",
             (owner_user_id, document_id),
