@@ -43,7 +43,16 @@ Formula: Actual complete (%) = round((number of checked boxes [x] in sprint chec
 - Dependencies: Sprint 1 closeout
 - Checklist:
   - [x] Wire Application Insights for application telemetry. (`ApplicationInsights` module, workspace-based, PR #14.)
-  - [x] Wire Container Insights for AKS cluster telemetry. (`omsagent` addon with `useAADAuth`; 5 `ama-logs` pods Running.)
+  - [x] Wire Container Insights for AKS cluster telemetry. (**Correction 2026-07-17
+    evening:** the original done-claim was wrong — agents were Running but NO data ever
+    flowed. `omsagent` with `useAADAuth` deploys agents without the Data Collection Rule
+    that makes them collect anything; found when A2 recon queried the workspace and got
+    zero `ContainerLogV2`/`KubeNodeInventory` rows. Fixed in PR #17:
+    `ContainerInsightsCollection` DCR + association, association name
+    `ContainerInsightsExtension` as required by the agent. Verified genuinely flowing
+    2026-07-17 ~18:15Z — `ContainerLogV2` climbed past 4,600 rows once the restarted
+    `ama-logs` agents picked up the new DCR (a flat zero before). Lesson recorded:
+    "agents Running" is not verification — table rows are.)
   - [x] Ensure logs and metrics correlate with trace identifiers. (Azure Monitor OTel Distro propagates W3C `traceparent`; verified below.)
   - [x] Verify telemetry ingestion from hub-api, docs-api, ingestion-worker, retrieval-worker. (All four emitting; verified below.)
 - Done criteria:
@@ -88,16 +97,62 @@ trim ingestion cost as traffic grows (section 15).
 
 - Owner: Jason
 - Due: 2026-08-01
-- Status: [ ] Not started — unblocked (A1 done 2026-07-17)
+- Status: [-] In progress — all four alerts live as IaC (PR #17); routing validated;
+  fire-in-test validation in progress
 - Dependencies: A1 (met)
 - Checklist:
-  - [ ] Create elevated 5xx rate alert.
-  - [ ] Create retrieval latency SLO breach alert.
-  - [ ] Create ingestion dead-letter growth alert.
-  - [ ] Create node not-ready alert.
-  - [ ] Validate alert routing and runbook references.
+  - [x] Create elevated 5xx rate alert. (P1, `AppRequests`, >=5 server errors/15m,
+    eval 5m.)
+  - [x] Create retrieval latency SLO breach alert. (P2, P95 of `POST /query` > 5s
+    sustained 30m — the docs/02 SLO.)
+  - [x] Create ingestion dead-letter growth alert. (P2, `ContainerLogV2`
+    `job_dead_lettered`, any occurrence/15m. Container stdout is the ONLY place this
+    signal exists: structlog bypasses stdlib logging so it never reaches AppTraces, and
+    psycopg emits no spans.)
+  - [x] Create node not-ready alert. (P1, platform metric `kube_node_status_condition`
+    condition=Ready/status2=NotReady — deliberately metric-based, not log-based, so it
+    still fires when the agent/log pipeline is itself what broke.)
+  - [x] Validate alert routing and runbook references. (Action-group test notification
+    delivered to ops email, status Succeeded, 2026-07-17 16:54Z. Each alert description
+    carries owning service + runbook/docs reference.)
 - Done criteria:
-  - [ ] All target alerts fire in test scenarios and resolve cleanly.
+  - [ ] All target alerts fire in test scenarios and resolve cleanly. (In progress:
+    5xx tripped with a real upstream outage — retrieval-worker scaled to 0, six failed
+    `POST /query` — and dead-letter tripped with a genuine end-to-end pipeline failure
+    (blank PDF -> `PermanentJobFailure` -> `job_dead_lettered` at 16:53Z). Signal
+    landing delayed by the daily-cap incident below; re-trip after the 18:00Z quota
+    reset. Node not-ready validated by signal + action-group test rather than by
+    breaking a node — the cluster runs at the 10-core regional quota ceiling, so a
+    deliberately failed node could not be replaced by scale-out.)
+
+Findings from A2 recon/validation (2026-07-17):
+
+1. **Cost leak (fixed):** the `allLogs` AKS diagnostic setting was ingesting
+   **5.78 GB/day (~$400/month)** into the workspace, 76% of it the read-inclusive
+   `kube-audit` category. Trimmed to `kube-audit-admin` + `guard` (every write/delete
+   audit event kept) — expected ~1.2 GB/day. B1's budget alerts would not have existed
+   to catch this.
+2. **Workspace daily cap added (3 GB/day)** as a runaway-source circuit breaker. It
+   promptly proved itself by tripping on the same day's pre-trim kube-audit volume
+   (`dataIngestionStatus: OverQuota`, resets 18:00Z) — suspending ALL ingestion,
+   including the alert-validation signals. Working as designed, awkward timing. Metric
+   alerts (node not-ready) are unaffected by the cap — they do not ride the workspace
+   pipeline.
+3. **`AppTraces` was 100% exporter self-noise:** azure.core logs each telemetry upload
+   at INFO; default root-logger capture re-exports it, forever (55k rows/2h, zero app
+   events). Fixed with `logger_name="cani"` in `configure_azure_monitor` (PR #17,
+   deployed).
+4. **OCR fallback is broken in dev (open bug):** the blank-PDF dead-letter test failed
+   through the OCR path with "No connection adapters were found" — a relative URL,
+   meaning `AZURE_DOCUMENTINTELLIGENCE_ENDPOINT` is empty in the cluster. Any scanned
+   document requiring OCR will dead-letter. Needs the DI endpoint/key delivered to
+   cani-secrets (docs-platform ns) or an explicit skip-OCR-in-dev decision.
+5. **infra-apply-dev raced its own stacks (fixed, PR #18):** the parallel matrix let
+   workload read `ops_action_group_id` before platform exported it, and fail-fast then
+   canceled the platform `pulumi up` mid-create, orphaning three query rules (existed
+   in Azure, absent from state — a rerun would have created duplicates). Orphans
+   deleted, state verified clean, jobs made sequential (`needs:`), `workflow_dispatch`
+   added for manual retriggers.
 
 ## Workstream B - Cost controls
 
@@ -199,3 +254,11 @@ Use one line per day.
   services, and docs-api -> retrieval-worker -> Qdrant confirmed as a single 12-span
   distributed trace. Logged the psycopg-spans gap rather than implying DB latency is
   visible. A2 (alert baseline) now unblocked.
+- 2026-07-17 (evening): A2 nearly done. All four §13.8 alerts live as IaC (PR #17) with
+  routing validated by action-group test notification. A1's Container Insights claim
+  corrected: it had never flowed (missing DCR — agents Running is not data flowing);
+  fixed in the same PR. Cost leak found and fixed (5.78 GB/day kube-audit -> trimmed
+  categories + 3 GB/day cap; the cap immediately tripped on the pre-trim volume,
+  pausing ingestion until 18:00Z — validation re-trip after reset). Apply-workflow race
+  fixed (PR #18, sequential stacks). Open bug filed: dev OCR fallback broken
+  (`AZURE_DOCUMENTINTELLIGENCE_ENDPOINT` empty) — OCR-requiring docs dead-letter.

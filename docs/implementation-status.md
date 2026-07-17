@@ -187,8 +187,23 @@ what is Live vs Scaffolded since this doc was written:
   docs-api → retrieval-worker → Qdrant call confirmed as a **single 12-span distributed
   trace** (§13.5). Health probes excluded from tracing; `TELEMETRY_SAMPLING_RATIO` is the
   ingestion-cost lever (dev = 1.0).
-- **Container Insights — live.** `omsagent` addon with AAD auth on the AKS cluster;
-  `ama-logs` agents Running on all nodes, flowing to the central Log Analytics workspace.
+- **Container Insights — live (fixed 2026-07-17 evening).** Correction: the original
+  claim here was wrong — `omsagent` with AAD auth deploys agents but no Data Collection
+  Rule, so nothing ever flowed (agents Running ≠ data flowing). Fixed with
+  `ContainerInsightsCollection` (DCR + association named `ContainerInsightsExtension`)
+  in the workload stack (PR #17).
+- **Alert baseline — live (Sprint 2 A2, PR #17).** Four §13.8 alerts as IaC: P1
+  elevated 5xx (AppRequests), P2 retrieval-latency SLO (P95 `POST /query` > 5s), P2
+  ingestion dead-letter (`ContainerLogV2` `job_dead_lettered` — container stdout is the
+  only place that signal exists), P1 node not-ready (platform metric
+  `kube_node_status_condition`, immune to log-pipeline failures and to the workspace
+  daily cap). Email action group routing validated by test notification.
+- **Ingestion cost controls (§15):** AKS diagnostics trimmed from `allLogs`
+  (5.78 GB/day, 76% read-inclusive kube-audit, ~$400/month) to `kube-audit-admin` +
+  `guard`; workspace hard cap 3 GB/day as a runaway-source circuit breaker (when hit,
+  ALL workspace ingestion pauses until the daily reset — metric alerts unaffected);
+  `logger_name="cani"` stops the azure.core exporter-log feedback loop that made
+  AppTraces 100% self-noise.
 - Known gap: psycopg is not instrumented, so Postgres calls emit no dependency spans
   (Qdrant is visible only because qdrant-client rides httpx). DB latency lives inside the
   enclosing server span only. Fix when needed: `opentelemetry-instrumentation-psycopg`.
@@ -238,13 +253,21 @@ are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
    operator-held env file, using a storage account key. Target state is workload identity
    + Key Vault CSI (`k8s/base/secret-provider-class.yaml`); the exposed pre-migration
    values must be rotated per `runbooks/rotate-dev-secrets.md` §"One-time migration note".
-3. **Azure Monitor alerting** — App Insights and Container Insights are live and
-   verified (Sprint 2 A1, 2026-07-17): app telemetry from all four services and cluster
-   telemetry flow to the central Log Analytics workspace. Residual gap: no alert rules
-   yet (§13.8 baseline is Sprint 2 A2, next) and no dashboards (§13.9).
-4. **Cost budgets/alerts** — subscription is live and billable (private AKS, Premium ACR,
-   three node pools) but no budget thresholds (§15.3) are configured yet.
-5. ~~CD not activated~~ — closed: `app-cd-dev.yml` activated 2026-07-16 and now gates on
+3. **Azure Monitor alerting** — mostly closed (Sprint 2 A2, 2026-07-17): §13.8 baseline
+   of four alerts live as IaC with routing validated (see §13 above). Container
+   Insights required a same-day fix (missing DCR — the A1 claim of "flowing" was wrong
+   until PR #17). Residual gap: dashboards (§13.9).
+4. **Cost budgets/alerts** — partially mitigated: workspace ingestion is now bounded
+   (category trim + 3 GB/day hard cap after A2 recon found a 5.78 GB/day kube-audit
+   leak), but subscription-level budget thresholds (§15.3) are still not configured —
+   that is Sprint 2 B1.
+5. **Dev OCR fallback is broken (found 2026-07-17 during A2 validation)** —
+   `AZURE_DOCUMENTINTELLIGENCE_ENDPOINT` is empty in the cluster, so the extraction OCR
+   fallback builds a relative URL ("No connection adapters were found") and any
+   scanned/no-text-layer document dead-letters after retries. Fix: deliver the DI
+   endpoint + key to cani-secrets (docs-platform namespace) via
+   `scripts/apply_dev_secrets.sh`, or make an explicit skip-OCR-in-dev decision.
+6. ~~CD not activated~~ — closed: `app-cd-dev.yml` activated 2026-07-16 and now gates on
    a migration Job before rollout (see §12 above).
 
 ## Sprint planning
