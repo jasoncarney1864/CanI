@@ -5,15 +5,17 @@ name: app-cd-dev
 #
 # The dev AKS API server is PRIVATE — GitHub-hosted runners cannot reach it directly,
 # so every kubectl step goes through `az aks command invoke` (runs kubectl inside the
-# cluster; --file attaches the rendered manifest). C3 activation prerequisite: the
-# workload OIDC identity needs Microsoft.ContainerService/managedClusters/runCommand/action
-# on the cluster (Contributor covers it) — verify on first run.
+# cluster; --file attaches the rendered manifest/job). Database migrations run as a
+# gating Job BEFORE the app rollout, so a schema change can never reach the cluster
+# behind the code that depends on it.
 
 on:
   push:
     branches: [main]
     paths:
       - "apps/**"
+      - "db/**"
+  workflow_dispatch: {} # manual on-demand deploy (e.g. to exercise the migration gate)
 
 env:
   AKS_RESOURCE_GROUP: cani-workload-core-dev-eastus2-rg9c8e66d0
@@ -31,7 +33,14 @@ jobs:
       contents: read
     strategy:
       matrix:
-        service: [hub-api, docs-api, ingestion-worker, retrieval-worker]
+        # `migrate` is built from db/Dockerfile (root context) and run as a Job by the
+        # deploy job; the four services build from their own app Dockerfiles.
+        include:
+          - { service: hub-api, dockerfile: apps/hub-api/Dockerfile }
+          - { service: docs-api, dockerfile: apps/docs-api/Dockerfile }
+          - { service: ingestion-worker, dockerfile: apps/ingestion-worker/Dockerfile }
+          - { service: retrieval-worker, dockerfile: apps/retrieval-worker/Dockerfile }
+          - { service: migrate, dockerfile: db/Dockerfile }
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +53,7 @@ jobs:
       - name: Build and push image (immutable tag, never `latest`)
         run: |
           az acr login --name ${{ env.ACR_NAME }}
-          docker build -f apps/${{ matrix.service }}/Dockerfile -t ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
+          docker build -f ${{ matrix.dockerfile }} -t ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
           docker push ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
 
   deploy:
@@ -72,6 +81,50 @@ jobs:
             echo "ACR ID mismatch. Expected $ACR_ID_REFERENCE, got $ACR_ID"
             exit 1
           fi
+
+      - name: Run database migrations (gates the rollout)
+        # Runs the real db/migrate.py image against the live DB and blocks the rollout on
+        # failure, so app pods never start against an un-migrated schema. Idempotent:
+        # migrate.py tracks applied files in schema_migrations. envFrom pulls DB config
+        # from cani-config and the host/password from cani-secrets (secretRef last wins).
+        run: |
+          JOB_NAME="cani-migrate-$(echo ${{ github.sha }} | cut -c1-12)"
+          cat > migrate-job.yaml <<EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ${JOB_NAME}
+            namespace: docs-platform
+          spec:
+            backoffLimit: 2
+            ttlSecondsAfterFinished: 600
+            template:
+              spec:
+                restartPolicy: Never
+                securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+                containers:
+                  - name: migrate
+                    image: ${{ env.ACR_LOGIN_SERVER }}/migrate:${{ github.sha }}
+                    securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+                    envFrom:
+                      - configMapRef: { name: cani-config }
+                      - secretRef: { name: cani-secrets }
+          EOF
+          MIGRATE_CMD=$(cat <<EOF
+          set -e
+          kubectl -n docs-platform delete job ${JOB_NAME} --ignore-not-found
+          kubectl -n docs-platform apply -f migrate-job.yaml
+          if ! kubectl -n docs-platform wait --for=condition=complete job/${JOB_NAME} --timeout=180s; then
+            echo "migration job did not complete:"
+            kubectl -n docs-platform describe job/${JOB_NAME} | tail -20
+            kubectl -n docs-platform logs job/${JOB_NAME} --tail=100 || true
+            exit 1
+          fi
+          kubectl -n docs-platform logs job/${JOB_NAME} --tail=20
+          EOF
+          )
+          az aks command invoke -g "$AKS_RESOURCE_GROUP" -n "$AKS_CLUSTER_NAME" \
+            --file migrate-job.yaml --command "$MIGRATE_CMD"
 
       - name: Render manifests with immutable image tags
         run: |
@@ -102,15 +155,16 @@ jobs:
       - name: Post-deploy smoke checks (in-cluster)
         # docs/12 §12.8: hub auth + service health. Runs inside the pods themselves —
         # localhost checks stay valid even once NetworkPolicy enforcement is enabled.
-        # The dev-login POST is the deep check: it proves token minting AND a live
-        # Postgres write on every deploy.
+        # dev-login + whoami is the deep check: it proves token minting, a live Postgres
+        # write, AND (via whoami's revocation-epoch query) that the schema the deployed
+        # code expects actually exists — the gap that let a missing migration ship silently.
         run: |
           SMOKE_CMD=$(cat <<'EOF'
           set -e
           kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8001/healthz', timeout=5).status == 200; print('hub-api healthz ok')"
           kubectl -n docs-platform exec deploy/docs-api -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8002/healthz', timeout=5).status == 200; print('docs-api healthz ok')"
           kubectl -n docs-platform exec deploy/retrieval-worker -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8003/healthz', timeout=5).status == 200; print('retrieval-worker healthz ok')"
-          kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u, json; r = u.urlopen(u.Request('http://localhost:8001/auth/dev-login', data=json.dumps({'idp_subject': 'cd-smoke-check'}).encode(), headers={'Content-Type': 'application/json'}), timeout=10); assert r.status == 200, r.status; print('dev-login smoke ok')"
+          kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u, json, http.cookiejar; cj=http.cookiejar.CookieJar(); op=u.build_opener(u.HTTPCookieProcessor(cj)); r=op.open(u.Request('http://localhost:8001/auth/dev-login', data=json.dumps({'idp_subject':'cd-smoke-check'}).encode(), headers={'Content-Type':'application/json'}), timeout=10); assert r.status==200; w=op.open('http://localhost:8001/auth/whoami', timeout=10); assert w.status==200, w.status; print('dev-login + whoami smoke ok')"
           EOF
           )
           az aks command invoke -g "$AKS_RESOURCE_GROUP" -n "$AKS_CLUSTER_NAME" --command "$SMOKE_CMD"

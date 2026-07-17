@@ -150,14 +150,15 @@ what is Live vs Scaffolded since this doc was written:
   **This is real and runs on every PR.**
 - `infra-preview.yml` / `infra-apply-dev.yml`: OIDC federated credentials configured
   (split platform/workload identities) and preview validated against live Azure (C1)
-- `app-cd-dev.yml`: aligned to live AKS/ACR IDs with a pre-deploy contract check, and
-  reworked for the private cluster (2026-07-15): the deploy job renders the kustomize
-  overlay on the runner and applies it via `az aks command invoke` (direct kubectl
-  cannot reach the private API server from a hosted runner), and the old
-  dev.cani.internal curl — which could never succeed — is replaced with in-cluster
-  smoke checks (healthz on all three APIs plus a dev-login POST that proves a live DB
-  write on every deploy). **Not yet activated** (C3); remaining prerequisite is
-  verifying the workload OIDC identity holds `runCommand` rights on the cluster
+- `app-cd-dev.yml`: **live and activated** (C3, 2026-07-16). Reworked for the private
+  cluster: applies the kustomize overlay via `az aks command invoke` (hosted runners
+  can't reach the private API server), with a pre-deploy contract check and in-cluster
+  smoke checks. Runs unattended on every `apps/**`/`db/**` push to main.
+- Migrations now run in CD (2026-07-16): a gating Job built from `db/Dockerfile`
+  executes `migrate.py` against the live DB **before** the app rollout, so a schema
+  change can't ship behind the code that needs it. Added after D2's migration 0002 had
+  to be applied by hand — the smoke check now also calls `whoami` (which queries the
+  revocation column), so a missing migration fails the deploy instead of passing silently.
 - **Not scaffolded at all (explicit MVP-fast deferral):** `infra-apply-prod.yml`,
   `app-cd-prod.yml`, `ops-drift-detection.yml`, GitOps controller (§12.9 Phase 2)
 
@@ -219,8 +220,8 @@ are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
    exist; only local structured logs.
 4. **Cost budgets/alerts** — subscription is live and billable (private AKS, Premium ACR,
    three node pools) but no budget thresholds (§15.3) are configured yet.
-5. **CD not activated** — `app-cd-dev.yml` (C3) unproven end-to-end; smoke-check step
-   must be replaced first (see §12 above).
+5. ~~CD not activated~~ — closed: `app-cd-dev.yml` activated 2026-07-16 and now gates on
+   a migration Job before rollout (see §12 above).
 
 ## Sprint planning
 
