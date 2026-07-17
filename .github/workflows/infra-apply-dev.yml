@@ -1,21 +1,25 @@
 name: infra-apply-dev
 
-# Requires Azure OIDC federated credentials + a Pulumi state backend — not configured
-# this session. See docs/implementation-status.md before enabling this trigger for real.
+# Platform MUST fully apply before workload starts: workload consumes platform stack
+# outputs via StackReference (§11.6 contract — log_analytics_workspace_id,
+# ops_action_group_id, ...), and a StackReference read races a concurrent platform
+# apply. The original parallel matrix hit exactly that on 2026-07-17: workload read
+# ops_action_group_id before platform exported it (MetricAlert 400), and matrix
+# fail-fast then CANCELED the platform `pulumi up` mid-create — a canceled apply can
+# leave pending operations in state, which is strictly worse than a failed one.
+# Sequential jobs make the dependency explicit and remove the cancellation hazard.
 
 on:
   push:
     branches: [main]
     paths:
       - "infra/**"
+  workflow_dispatch: {}
 
 jobs:
-  apply:
+  apply-platform:
     runs-on: ubuntu-latest
     environment: dev
-    strategy:
-      matrix:
-        project: [platform, workload]
     permissions:
       id-token: write
       contents: read
@@ -32,6 +36,30 @@ jobs:
         with:
           command: up
           stack-name: dev
-          work-dir: infra/${{ matrix.project }}
+          work-dir: infra/platform
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+  apply-workload:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs: apply-platform
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PLATFORM }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: dev
+          work-dir: infra/workload
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
