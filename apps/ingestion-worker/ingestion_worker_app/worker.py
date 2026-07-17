@@ -14,6 +14,7 @@ from cani_shared.db.pool import get_pool
 from cani_shared.db.repositories import claim_next_ingestion_job
 from cani_shared.logging import configure_logging, get_logger
 from cani_shared.providers.factory import build_embedder, build_extractor
+from cani_shared.telemetry import configure_telemetry
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 
 from ingestion_worker_app.pipeline import handle_job_failure, process_job
@@ -26,6 +27,9 @@ logger = get_logger(__name__)
 
 def run_forever() -> None:
     settings = get_settings()
+    # No FastAPI app here (queue poller, no inbound server) — telemetry still captures
+    # dependency calls and the stage events this worker emits.
+    configure_telemetry("ingestion-worker", settings)
     pool = get_pool(settings.postgres_dsn)
     blob_store = BlobStore(settings.azure_storage_connection_string)
     blob_store.ensure_containers()
