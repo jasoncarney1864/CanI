@@ -2,3 +2,4 @@ config:
   azure-native:location: eastus2
   cani-platform:tenantId: ddb3853e-a709-42c4-8841-8e69da7a1c45
   cani-platform:publicDataEndpoints: "true"
+  cani-platform:opsAlertEmail: jasoncarney1864@gmail.com
