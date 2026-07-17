@@ -1,14 +1,20 @@
-# NetworkPolicy deny-by-default posture, then explicit allow rules, per
-# docs/10-aks-cluster-design.md §10.10 and docs/14-security-and-compliance.md §14.6.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: deny-all-default
-  namespace: docs-platform
-spec:
-  podSelector: {}
-  policyTypes: [Ingress, Egress]
----
+# NetworkPolicy: deny-by-default, then explicit allows (docs/10 §10.10, docs/14 §14.6).
+#
+# Written for the ACTUAL dev topology, which is not pure pod-to-pod:
+#   - Postgres is Azure Flexible Server on the delegated subnet 10.1.5.0/24 (an IP block,
+#     not a pod) — reached on 5432.
+#   - Azure OpenAI / Document Intelligence / Blob / Entra are external HTTPS (443); Calico
+#     can't match FQDNs or service tags, so 443 egress is allowed to the internet with the
+#     internal ranges excluded.
+#   - CoreDNS lives in kube-system; DNS egress targets its pods (post-DNAT), not the
+#     10.0.0.10 service IP.
+#   - kubelet health probes originate from the node subnet 10.1.0.0/22, so each pod that
+#     has probes allows ingress from that block on its port.
+#
+# These objects are inert until the cluster runs a network-policy engine (Calico); enabling
+# it is a separate, deliberate step (az aks update --network-policy calico).
+
+# =========================== hub-system ===========================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -18,51 +24,145 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# hub-api may call out to Postgres and DNS/HTTPS (Entra External ID once wired for real).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: hub-api-egress
+  name: hub-api
   namespace: hub-system
 spec:
-  podSelector:
-    matchLabels: { app: hub-api }
-  policyTypes: [Egress]
+  podSelector: { matchLabels: { app: hub-api } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ ipBlock: { cidr: 10.1.0.0/22 } }] # kubelet health probes
+      ports: [{ port: 8001, protocol: TCP }]
   egress:
-    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+    - to: [{ ipBlock: { cidr: 10.1.5.0/24 } }] # Postgres Flexible Server
       ports: [{ port: 5432, protocol: TCP }]
-    - ports: [{ port: 53, protocol: UDP }, { port: 443, protocol: TCP }]
+    - to: # CoreDNS
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: # external HTTPS (Entra OIDC), internal ranges excluded
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.244.0.0/16, 10.0.0.0/16, 10.1.0.0/16] }
+      ports: [{ port: 443, protocol: TCP }]
 ---
-# docs-api may call retrieval-worker internally, Postgres, and blob storage; never Qdrant
-# directly (§8.11: "Restrict Qdrant network access to CanI Docs backend only" == the
-# retrieval-worker and ingestion-worker pods specifically, not the public docs-api gateway).
+# =========================== docs-platform ===========================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: docs-api-egress
+  name: deny-all-default
   namespace: docs-platform
 spec:
-  podSelector:
-    matchLabels: { app: docs-api }
-  policyTypes: [Egress]
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: docs-api
+  namespace: docs-platform
+spec:
+  podSelector: { matchLabels: { app: docs-api } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ ipBlock: { cidr: 10.1.0.0/22 } }] # kubelet health probes
+      ports: [{ port: 8002, protocol: TCP }]
   egress:
     - to: [{ podSelector: { matchLabels: { app: retrieval-worker } } }]
       ports: [{ port: 8003, protocol: TCP }]
-    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+    - to: [{ ipBlock: { cidr: 10.1.5.0/24 } }] # Postgres
       ports: [{ port: 5432, protocol: TCP }]
-    - ports: [{ port: 53, protocol: UDP }, { port: 443, protocol: TCP }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: # Blob Storage over HTTPS
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.244.0.0/16, 10.0.0.0/16, 10.1.0.0/16] }
+      ports: [{ port: 443, protocol: TCP }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: qdrant-restrict-ingress
+  name: retrieval-worker
   namespace: docs-platform
 spec:
-  podSelector:
-    matchLabels: { app: qdrant }
-  policyTypes: [Ingress]
+  podSelector: { matchLabels: { app: retrieval-worker } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: docs-api } } # docs-api gateway calls
+        - ipBlock: { cidr: 10.1.0.0/22 } # kubelet health probes
+      ports: [{ port: 8003, protocol: TCP }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: qdrant } } }]
+      ports: [{ port: 6333, protocol: TCP }]
+    - to: [{ ipBlock: { cidr: 10.1.5.0/24 } }] # Postgres
+      ports: [{ port: 5432, protocol: TCP }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: # Azure OpenAI (embeddings + chat) over HTTPS
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.244.0.0/16, 10.0.0.0/16, 10.1.0.0/16] }
+      ports: [{ port: 443, protocol: TCP }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingestion-worker
+  namespace: docs-platform
+spec:
+  podSelector: { matchLabels: { app: ingestion-worker } }
+  # Egress only — the worker is a queue poller with no inbound server.
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: qdrant } } }]
+      ports: [{ port: 6333, protocol: TCP }]
+    - to: [{ ipBlock: { cidr: 10.1.5.0/24 } }] # Postgres
+      ports: [{ port: 5432, protocol: TCP }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to: # Azure OpenAI (embeddings) + Document Intelligence (OCR) + Blob over HTTPS
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.244.0.0/16, 10.0.0.0/16, 10.1.0.0/16] }
+      ports: [{ port: 443, protocol: TCP }]
+---
+# Qdrant: reachable only by the two workers (§8.11), plus node-subnet probes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qdrant
+  namespace: docs-platform
+spec:
+  podSelector: { matchLabels: { app: qdrant } }
+  policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - podSelector: { matchLabels: { app: retrieval-worker } }
         - podSelector: { matchLabels: { app: ingestion-worker } }
+        - ipBlock: { cidr: 10.1.0.0/22 } # kubelet health probes
       ports: [{ port: 6333, protocol: TCP }]
+  egress:
+    - to: # DNS only (snapshot-to-blob is deferred)
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+---
+# The CD migration Job (labelled app=migrate by the workflow) needs Postgres + DNS under
+# deny-all, or the migration gate in app-cd-dev would fail once enforcement is on.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: migrate-job
+  namespace: docs-platform
+spec:
+  podSelector: { matchLabels: { app: migrate } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ ipBlock: { cidr: 10.1.5.0/24 } }]
+      ports: [{ port: 5432, protocol: TCP }]
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
