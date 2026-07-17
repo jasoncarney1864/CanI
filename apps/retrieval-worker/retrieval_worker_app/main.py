@@ -19,7 +19,7 @@ from cani_shared.db.pool import get_pool
 from cani_shared.db.repositories import get_document_title, record_query_audit
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import TraceIdMiddleware
-from cani_shared.models import Citation, RetrievalAnswer
+from cani_shared.models import Citation, RetrievalAnswer, Verdict
 from cani_shared.providers.factory import build_chat_grounder, build_embedder
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
@@ -103,6 +103,9 @@ def retrieve(
                     page_end=chunk.payload["page_end"],
                     section_label=chunk.payload.get("section_label"),
                     chunk_id=chunk.payload["chunk_id"],
+                    # Same owner-filtered chunk the grounder cited — safe to surface verbatim
+                    # so the client can render and spotlight the source passage.
+                    snippet=chunk.payload.get("chunk_text"),
                 )
             )
 
@@ -123,10 +126,13 @@ def retrieve(
         insufficient_evidence=grounded.insufficient_evidence,
     )
 
+    verdict = Verdict.from_kind(grounded.verdict) if grounded.verdict else None
+
     return RetrievalAnswer(
         answer=grounded.answer_text,
         citations=citations,
         insufficient_evidence=grounded.insufficient_evidence,
+        verdict=verdict,
     )
 
 

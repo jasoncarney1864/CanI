@@ -21,6 +21,21 @@ class IngestionStage(StrEnum):
     FAILED = "failed"
 
 
+class VerdictKind(StrEnum):
+    YES = "yes"
+    YES_WITH_CONDITIONS = "yes_with_conditions"
+    NO = "no"
+    INSUFFICIENT = "insufficient"
+
+
+_VERDICT_LABELS = {
+    VerdictKind.YES: "Yes",
+    VerdictKind.YES_WITH_CONDITIONS: "Yes, with conditions",
+    VerdictKind.NO: "No",
+    VerdictKind.INSUFFICIENT: "Insufficient evidence",
+}
+
+
 class Document(BaseModel):
     document_id: str
     owner_user_id: str
@@ -76,9 +91,29 @@ class Citation(BaseModel):
     page_end: int
     section_label: str | None
     chunk_id: str
+    # Verbatim text of the cited chunk, so the client Document Viewer can render the
+    # source passage and spotlight it (docs/13 §5 "Spotlight" layout). Optional: absent
+    # when a chunk payload predates snippet capture. This can never contain another
+    # owner's content — citations are built only from the caller's own owner-filtered
+    # chunks (see retrieval-worker OwnerScopedQdrant enforcement).
+    snippet: str | None = None
+
+
+class Verdict(BaseModel):
+    """Structured yes/no answer for permissibility questions, surfaced as the client's
+    verdict badge (docs/13 §5). Absent for open-ended Q&A."""
+
+    kind: VerdictKind
+    label: str
+
+    @classmethod
+    def from_kind(cls, kind: VerdictKind | str) -> Verdict:
+        resolved = VerdictKind(kind)
+        return cls(kind=resolved, label=_VERDICT_LABELS[resolved])
 
 
 class RetrievalAnswer(BaseModel):
     answer: str
     citations: list[Citation]
     insufficient_evidence: bool = False
+    verdict: Verdict | None = None
