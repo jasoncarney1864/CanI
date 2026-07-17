@@ -7,10 +7,10 @@ implementation-status.
 
 - Sprint: Sprint 2 - Operational readiness
 - Owner: Jason
-- Start date: 2026-07-29
+- Start date: 2026-07-17 (pulled forward — Sprint 1 closed 12 days early)
 - Target end date: 2026-08-12
-- Last updated: 2026-07-14
-- Overall status: Not started
+- Last updated: 2026-07-17
+- Overall status: In progress — started A1 (observability wiring)
 
 ## Status legend
 
@@ -30,8 +30,8 @@ Formula: Actual complete (%) = round((number of checked boxes [x] in sprint chec
 
 ## Entry criteria
 
-- [ ] Sprint 1 closeout gate is complete.
-- [ ] Dev AKS environment is stable enough for operational hardening work.
+- [x] Sprint 1 closeout gate is complete. (Closed 2026-07-16.)
+- [x] Dev AKS environment is stable enough for operational hardening work. (Healthy, Calico enforcing.)
 
 ## Workstream A - Observability and alerting
 

@@ -62,6 +62,7 @@ aks = CaniAksCluster(
     subnet_id=network.aks_subnet_id,
     dns_prefix=_aks_dns_prefix(environment),
     aad_admin_group_object_ids=aad_admin_group_object_ids,
+    log_analytics_workspace_id=log_analytics_workspace_id,
     tags=tags,
 )
 

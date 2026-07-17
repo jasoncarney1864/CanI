@@ -27,6 +27,43 @@ class CentralLogAnalytics(ComponentResource):
         self.register_outputs({"workspace_id": self.workspace.id})
 
 
+class ApplicationInsights(ComponentResource):
+    """Workspace-based Application Insights for app telemetry (docs/13 §13.7). Traces,
+    logs, and metrics from the four services flow here via the Azure Monitor
+    OpenTelemetry distro; it shares the central Log Analytics workspace so app and
+    cluster signals correlate in one place. Workspace-based is required — classic
+    (key-only) App Insights is retired."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        resource_group_name: str,
+        workspace_id: Input[str],
+        tags: dict,
+        opts: ResourceOptions | None = None,
+    ):
+        super().__init__("cani:platform:ApplicationInsights", name, None, opts)
+
+        self.component = azure_native.applicationinsights.Component(
+            f"{name}-appi",
+            resource_group_name=resource_group_name,
+            kind="web",
+            application_type=azure_native.applicationinsights.ApplicationType.WEB,
+            workspace_resource_id=workspace_id,
+            ingestion_mode=azure_native.applicationinsights.IngestionMode.LOG_ANALYTICS,
+            tags=tags,
+            opts=ResourceOptions(parent=self),
+        )
+
+        self.register_outputs(
+            {
+                "component_id": self.component.id,
+                "connection_string": self.component.connection_string,
+            }
+        )
+
+
 def send_diagnostics_to_workspace(
     name: str,
     *,
