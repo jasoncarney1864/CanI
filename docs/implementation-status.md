@@ -192,12 +192,16 @@ what is Live vs Scaffolded since this doc was written:
   Rule, so nothing ever flowed (agents Running ≠ data flowing). Fixed with
   `ContainerInsightsCollection` (DCR + association named `ContainerInsightsExtension`)
   in the workload stack (PR #17).
-- **Alert baseline — live (Sprint 2 A2, PR #17).** Four §13.8 alerts as IaC: P1
-  elevated 5xx (AppRequests), P2 retrieval-latency SLO (P95 `POST /query` > 5s), P2
-  ingestion dead-letter (`ContainerLogV2` `job_dead_lettered` — container stdout is the
-  only place that signal exists), P1 node not-ready (platform metric
-  `kube_node_status_condition`, immune to log-pipeline failures and to the workspace
-  daily cap). Email action group routing validated by test notification.
+- **Alert baseline — live and validated (Sprint 2 A2 done 2026-07-17, PR #17).** Four
+  §13.8 alerts as IaC: P1 elevated 5xx (AppRequests), P2 retrieval-latency SLO (P95
+  `POST /query` > 5s), P2 ingestion dead-letter (`ContainerLogV2` `job_dead_lettered` —
+  container stdout is the only place that signal exists), P1 node not-ready (platform
+  metric `kube_node_status_condition`, immune to log-pipeline failures and to the
+  workspace daily cap). Email action group routing validated by test notification.
+  Fire-in-test passed: a 47-second forced outage produced six 500s + a genuine
+  dead-letter, and all three testable alerts completed the full Fired → Resolved cycle
+  (`auto_mitigate` confirmed); node not-ready validated by signal + action-group test
+  (cluster at the 10-core vCPU ceiling, so not tripped by breaking a node).
 - **Ingestion cost controls (§15):** AKS diagnostics trimmed from `allLogs`
   (5.78 GB/day, 76% read-inclusive kube-audit, ~$400/month) to `kube-audit-admin` +
   `guard`; workspace hard cap 3 GB/day as a runaway-source circuit breaker (when hit,
