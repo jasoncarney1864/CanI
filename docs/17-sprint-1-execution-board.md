@@ -10,8 +10,8 @@ explicit acceptance checks.
 - Owner: Jason
 - Start date: 2026-07-14
 - Target end date: 2026-07-28
-- Last updated: 2026-07-15
-- Overall status: In progress
+- Last updated: 2026-07-16
+- Overall status: COMPLETE (all workstreams + closeout gate done 2026-07-16, 12 days early)
 
 ## Status legend
 
@@ -24,8 +24,8 @@ explicit acceptance checks.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 89 | +29 | None - only the sprint closeout gate remains | A1, A2, B1, B2, C1, C2, C3, D1, D2 complete (C3/D1/D2 all pulled ahead of Week 2 plan); real Entra login browser-verified and D2 revocation integration-verified 2026-07-16; 50 of 56 boxes checked |
-| Week 2 | 2026-07-21 to 2026-07-28 | App CD activation, Entra swap, entitlement revocation, sprint closeout | 100 | 0 | -100 | TBD | Fill at week close |
+| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 100 | +40 | None | Entire sprint completed within Week 1: A1-A2, B1-B2, C1-C3, D1-D2, and the closeout gate all done by 2026-07-16. Every Week-2-planned item (CD activation, Entra swap, revocation, closeout) was pulled forward. |
+| Week 2 | 2026-07-21 to 2026-07-28 | (all planned items completed early in Week 1) | 100 | 100 | 0 | None | Nothing left for Week 2 - Sprint 1 closed 2026-07-16, 12 days ahead of the 07-28 target. NetworkPolicy enforcement (a mid-sprint watch-item) also closed. |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
 
@@ -317,14 +317,29 @@ Execution notes (2026-07-16):
 
 - Owner: Jason
 - Due: 2026-07-28
-- Status: [ ] Not started
+- Status: [x] Done (closed 2026-07-16, ahead of the 07-28 target)
 - Checklist:
-  - [ ] CI remains green for lint, format check, unit, and integration.
-  - [ ] infra-preview and infra-apply-dev both succeed with OIDC.
-  - [ ] app-cd-dev succeeds end to end on dev AKS.
-  - [ ] implementation-status updated to reflect scaffolded versus live deltas.
+  - [x] CI remains green for lint, format check, unit, and integration.
+  - [x] infra-preview and infra-apply-dev both succeed with OIDC.
+  - [x] app-cd-dev succeeds end to end on dev AKS.
+  - [x] implementation-status updated to reflect scaffolded versus live deltas.
 - Done criteria:
-  - [ ] Sprint 1 marked complete with blockers reduced to operational readiness items.
+  - [x] Sprint 1 marked complete with blockers reduced to operational readiness items.
+
+Closeout evidence (2026-07-16):
+- CI: green on main (lint + `ruff format --check` + 52 unit tests; the compose
+  integration suite — e2e, isolation, revocation — green in the last PR runs).
+- infra-apply-dev: succeeded on main after the NetworkPolicy merge as an in-place
+  update (ManagedCluster `~addonProfiles`, not a replace); OIDC federated login works.
+  infra-preview green on recent infra PRs.
+- app-cd-dev: activated (C3) and repeatedly green end to end, including the migration
+  gate and a workflow_dispatch verification run; deploys unattended with rollout gates
+  and an in-cluster smoke check.
+- implementation-status.md kept current through D1/D2/CD-gate/NetworkPolicy.
+- Remaining open items are operational-readiness / Phase 2, not Sprint 1 blockers:
+  Application Insights + alerts (§13), backup/restore drills (§9.10), malware scan on
+  upload (§8.11), Key Vault CSI cutover for secrets, a public ingress + redirect URI,
+  and a regional vCPU quota increase (cluster is at the 10-vCPU ceiling).
 
 ## Daily standup log
 
@@ -337,3 +352,4 @@ Use one line per day.
 - 2026-07-16: D1 completed. caniauth external tenant + cani-hub app registration created entirely via ARM/Graph (no portal); hub-api gained /auth/login + /auth/callback (authorization code + PKCE, full ID-token validation, 12 security unit tests); PR #5 merged as 7ae532c after all checks green. Verified with a real interactive browser sign-up — first customer identity created, callback returned session JSON. Week 1 actual now 82% vs 60% planned.
 - 2026-07-16: D2 completed. Per-user revocation epoch (migration 0002 auth_revoked_at) + iat on all tokens; enforced every request in both spokes and the hub. Operator script scripts/revoke_user_access.py (no admin API until admin RBAC exists). 11 unit + 1 integration test proving a live token and session both die immediately post-revocation; incident runbook containment rewritten off the old signing-secret-rotation workaround. A row-factory bug (KeyError on a pooled dict_row connection) was caught by integration verification and fixed. Only the sprint closeout gate remains; Week 1 actual now 89% vs 60% planned.
 - 2026-07-16: Closed the NetworkPolicy-enforcement watch-item. Cluster ran networkPolicy=none so the deny-by-default policies were inert (proven: docs-api reached Qdrant freely). Rewrote the policies to the real topology (external Postgres/Azure-AI via ipBlock/443, worker egress, DNS, node-subnet probe ingress — the old set would have caused an outage if enforced), enabled Calico in-place, and verified enforcement (docs-api→Qdrant now blocked, legit paths intact). Surfaced and fixed two latent defects on the way: Qdrant PDB maxUnavailable:0 (blocked all node drains) and no surge headroom under the maxed regional vCPU quota (user pools now roll in-place). IaC + Pulumi state reconciled so no destructive replace is pending.
+- 2026-07-16: SPRINT 1 CLOSED. Closeout gate passed — CI green (lint/format/52 unit/integration), infra-apply-dev succeeded on main as an in-place update (verified not a replace; cluster healthy, Calico intact), app-cd-dev green end to end incl. the migration gate, implementation-status current. Sprint 1 done 12 days ahead of the 07-28 target; all remaining items are Phase-2 operational-readiness, not blockers.
