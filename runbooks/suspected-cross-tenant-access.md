@@ -20,13 +20,33 @@ P1 per docs/14-security-and-compliance.md §14.11. Any confirmed instance is a h
 
 ## 2. Contain
 
-- Revoke the affected user(s)' entitlements immediately (`entitlements.revoked_at`) —
-  forces re-auth and blocks further access (§7.7: "Existing sessions are revoked on
-  critical entitlement removals" — session revocation on entitlement change is not yet
-  implemented in this MVP pass; see docs/implementation-status.md. Until it is, also rotate
-  `CANI_TOKEN_SIGNING_SECRET` to invalidate all outstanding access tokens platform-wide).
+- Kill the affected user's live credentials immediately (D2, §7.7). This invalidates
+  every already-issued session and access token on its next use — no waiting out the
+  token TTL, and no platform-wide signing-secret rotation:
+
+  ```bash
+  python scripts/revoke_user_access.py --user-id <uuid> --all-auth \
+      --actor <you> --reason "suspected cross-tenant access, incident <id>"
+  ```
+
+  On the private AKS cluster the script runs inside a pod that already has the DB env
+  and psycopg — copy it in and exec it (same shape as `scripts/aks_apply_core_schema.sh`):
+
+  ```bash
+  POD=$(kubectl -n docs-platform get pod -l app=docs-api -o jsonpath='{.items[0].metadata.name}')
+  kubectl -n docs-platform cp scripts/revoke_user_access.py "$POD":/tmp/revoke.py
+  kubectl -n docs-platform exec "$POD" -- python /tmp/revoke.py --user-id <uuid> --all-auth \
+      --actor <you> --reason "incident <id>"
+  ```
+
+  `--all-auth` stamps `users.auth_revoked_at` without touching entitlements; use
+  `--entitlement <name> --revoke-sessions` instead if you also want to strip a specific
+  spoke grant. Both emit an audit event.
 - If the cause is a code defect in ownership scoping, take the affected service out of
   rotation before deploying a fix.
+- Platform-wide `CANI_TOKEN_SIGNING_SECRET` rotation (per `rotate-dev-secrets.md`) is no
+  longer required for single-user containment — reserve it for signing-key compromise,
+  where every user's tokens must die at once.
 
 ## 3. Eradicate & recover
 
