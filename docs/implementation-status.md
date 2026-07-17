@@ -172,16 +172,29 @@ what is Live vs Scaffolded since this doc was written:
 - **Not scaffolded at all (explicit MVP-fast deferral):** `infra-apply-prod.yml`,
   `app-cd-prod.yml`, `ops-drift-detection.yml`, GitOps controller (§12.9 Phase 2)
 
-### §13 Observability — Live (app-level), Scaffolded/absent (cloud-level)
+### §13 Observability — Live (app + cluster telemetry); alerts/dashboards pending
 - Structured JSON logs with `trace_id` correlation propagated across service boundaries
   (`cani_shared.logging`, `cani_shared.middleware.TraceIdMiddleware`)
-- Unhandled exceptions now log a structured, trace_id-correlated `request_failed` event
-  before Starlette returns its generic (non-leaking) 500 — added this pass, see below
+- Unhandled exceptions log a structured, trace_id-correlated `request_failed` event
+  before Starlette returns its generic (non-leaking) 500
 - Ingestion stage events (`stage_completed`, `job_retry_scheduled`, `job_dead_lettered`)
   with owner-id hashing (never raw `owner_user_id` in logs)
-- **Not implemented:** Application Insights, Container Insights, Azure Monitor alert
-  rules, dashboards (§13.6–§13.9) — all require a live subscription. No metrics
-  endpoint/counters exist yet, only structured log events.
+- **Application Insights — live and verified (Sprint 2 A1, 2026-07-17).** Workspace-based
+  component (`infra/modules/observability.py`); all four services instrumented via the
+  Azure Monitor OTel Distro (`cani_shared.telemetry`, opt-in on
+  `APPLICATIONINSIGHTS_CONNECTION_STRING`, no-op locally/CI). Verified with real traffic
+  against live dev: requests + dependencies from all four `cloud_RoleName`s, and a
+  docs-api → retrieval-worker → Qdrant call confirmed as a **single 12-span distributed
+  trace** (§13.5). Health probes excluded from tracing; `TELEMETRY_SAMPLING_RATIO` is the
+  ingestion-cost lever (dev = 1.0).
+- **Container Insights — live.** `omsagent` addon with AAD auth on the AKS cluster;
+  `ama-logs` agents Running on all nodes, flowing to the central Log Analytics workspace.
+- Known gap: psycopg is not instrumented, so Postgres calls emit no dependency spans
+  (Qdrant is visible only because qdrant-client rides httpx). DB latency lives inside the
+  enclosing server span only. Fix when needed: `opentelemetry-instrumentation-psycopg`.
+- **Not implemented:** Azure Monitor alert rules (§13.8 — Sprint 2 A2, next) and
+  dashboards (§13.9). No custom metrics endpoint/counters; metrics derive from traces
+  and logs.
 
 ### §14 Security & compliance — Live (app-level), partial
 - Fail-closed ownership enforcement (structural, not convention) — see §9 above
@@ -225,9 +238,10 @@ are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
    operator-held env file, using a storage account key. Target state is workload identity
    + Key Vault CSI (`k8s/base/secret-provider-class.yaml`); the exposed pre-migration
    values must be rotated per `runbooks/rotate-dev-secrets.md` §"One-time migration note".
-3. **Azure Monitor / Application Insights / Container Insights** — central Log Analytics
-   workspace exists (B1), but no app/container telemetry flows to it and no alert rules
-   exist; only local structured logs.
+3. **Azure Monitor alerting** — App Insights and Container Insights are live and
+   verified (Sprint 2 A1, 2026-07-17): app telemetry from all four services and cluster
+   telemetry flow to the central Log Analytics workspace. Residual gap: no alert rules
+   yet (§13.8 baseline is Sprint 2 A2, next) and no dashboards (§13.9).
 4. **Cost budgets/alerts** — subscription is live and billable (private AKS, Premium ACR,
    three node pools) but no budget thresholds (§15.3) are configured yet.
 5. ~~CD not activated~~ — closed: `app-cd-dev.yml` activated 2026-07-16 and now gates on
