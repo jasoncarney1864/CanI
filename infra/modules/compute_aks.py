@@ -19,6 +19,7 @@ class CaniAksCluster(ComponentResource):
         subnet_id: Input[str],
         dns_prefix: Input[str],
         aad_admin_group_object_ids: list[str],
+        log_analytics_workspace_id: Input[str],
         tags: dict,
         opts: ResourceOptions | None = None,
     ):
@@ -62,12 +63,20 @@ class CaniAksCluster(ComponentResource):
             identity=azure_native.containerservice.ManagedClusterIdentityArgs(
                 type=azure_native.containerservice.ResourceIdentityType.SYSTEM_ASSIGNED
             ),
-            # Key Vault Secrets Provider (CSI) addon — the target delivery path for
-            # runtime secrets (docs/10 §10.6); enabled on the live cluster, declared here
-            # so a pulumi up doesn't strip it.
             addon_profiles={
+                # Key Vault Secrets Provider (CSI) — target delivery path for runtime
+                # secrets (docs/10 §10.6); enabled live, declared so pulumi up won't strip it.
                 "azureKeyvaultSecretsProvider": azure_native.containerservice.ManagedClusterAddonProfileArgs(
                     enabled=True
+                ),
+                # Container Insights (docs/13 §13.6): cluster/pod health + logs to the
+                # central Log Analytics workspace. AAD auth (no workspace keys in the addon).
+                "omsagent": azure_native.containerservice.ManagedClusterAddonProfileArgs(
+                    enabled=True,
+                    config={
+                        "logAnalyticsWorkspaceResourceID": log_analytics_workspace_id,
+                        "useAADAuth": "true",
+                    },
                 ),
             },
             agent_pool_profiles=[

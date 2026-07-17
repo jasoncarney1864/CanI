@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from modules.data_services import SharedContainerRegistry
 from modules.naming import NamingContext, base_tags
 from modules.networking import HubNetwork
-from modules.observability import CentralLogAnalytics
+from modules.observability import ApplicationInsights, CentralLogAnalytics
 from modules.security import DenyPublicNetworkPolicies, PlatformKeyVault
 
 config = pulumi.Config()
@@ -82,6 +82,13 @@ log_analytics = CentralLogAnalytics(
     tags=tags,
 )
 
+app_insights = ApplicationInsights(
+    "cani-central",
+    resource_group_name=resource_group.name,
+    workspace_id=log_analytics.workspace.id,
+    tags=tags,
+)
+
 acr = SharedContainerRegistry(
     "cani-shared",
     resource_group_name=resource_group.name,
@@ -99,6 +106,10 @@ platform_vault = PlatformKeyVault(
 # Stable output contract consumed by cani-workload via StackReference (§11.6).
 pulumi.export("hub_vnet_id", hub_network.vnet.id)
 pulumi.export("log_analytics_workspace_id", log_analytics.workspace.id)
+pulumi.export(
+    "app_insights_connection_string",
+    pulumi.Output.secret(app_insights.component.connection_string),
+)
 pulumi.export("acr_login_server", acr.registry.login_server)
 pulumi.export("acr_id", acr.registry.id)
 pulumi.export("platform_key_vault_id", platform_vault.vault.id)
