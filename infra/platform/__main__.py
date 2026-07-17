@@ -13,6 +13,7 @@ import pulumi
 import pulumi_azure_native as azure_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.alerting import OpsAlerting
 from modules.data_services import SharedContainerRegistry
 from modules.naming import NamingContext, base_tags
 from modules.networking import HubNetwork
@@ -80,12 +81,24 @@ log_analytics = CentralLogAnalytics(
     "cani-central",
     resource_group_name=resource_group.name,
     tags=tags,
+    # ~2x headroom over expected volume (~1.2 GB/day after the AKS diagnostic-category
+    # trim in infra/workload) — a runaway-source circuit breaker, not a throttle.
+    daily_quota_gb=3,
 )
 
 app_insights = ApplicationInsights(
     "cani-central",
     resource_group_name=resource_group.name,
     workspace_id=log_analytics.workspace.id,
+    tags=tags,
+)
+
+ops_alerting = OpsAlerting(
+    "cani-ops",
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    workspace_id=log_analytics.workspace.id,
+    alert_email=config.require("opsAlertEmail"),
     tags=tags,
 )
 
@@ -114,3 +127,4 @@ pulumi.export("acr_login_server", acr.registry.login_server)
 pulumi.export("acr_id", acr.registry.id)
 pulumi.export("platform_key_vault_id", platform_vault.vault.id)
 pulumi.export("workload_management_group_id", workload_mg.id)
+pulumi.export("ops_action_group_id", ops_alerting.action_group.id)
