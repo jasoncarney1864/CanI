@@ -52,6 +52,10 @@ metadata:
   name: qdrant
   namespace: docs-platform
 spec:
-  maxUnavailable: 0
+  # maxUnavailable: 1, not 0 — Qdrant is single-replica, so a PDB of 0 would forbid ALL
+  # voluntary disruption and permanently block node drains/upgrades (it blocked the
+  # Calico enablement roll, error UnsatisfiablePDB). Data survives on the PVC across a
+  # reschedule; revisit toward minAvailable if Qdrant ever runs multi-replica.
+  maxUnavailable: 1
   selector:
     matchLabels: { app: qdrant }

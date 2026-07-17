@@ -114,6 +114,16 @@ what is Live vs Scaffolded since this doc was written:
   SecretProviderClass, workload-identity service account annotations
 - Runtime hardening landed for the strict pod security context: images run as non-root
   (UID 10001), `readOnlyRootFilesystem` kept with `emptyDir` tmp mounts
+- **NetworkPolicy now enforced (2026-07-16):** the cluster ran `networkPolicy: none`, so
+  the deny-by-default objects were inert (proven: docs-api reached Qdrant freely). Enabled
+  Calico in-place (`az aks update`, reconciled into IaC + Pulumi state). The policies were
+  also rewritten to the real topology — they had modeled Postgres as a pod (it's external
+  Azure Flexible Server) and gave the workers no egress, so enforcing them as-written would
+  have caused an outage. Verified post-enablement: docs-api→Qdrant is now blocked while
+  retrieval-worker→Qdrant and all auth/DNS/Postgres paths still work. Two incidental fixes
+  came out of the node roll: the Qdrant PDB was `maxUnavailable: 0` (blocked all node
+  drains) and the user node pools now roll in-place (`maxSurge: 0`) because regional vCPU
+  quota (10) leaves no surge headroom.
 - KEDA 2.14.0 live and wired (2026-07-15): a partial CRD install had left the operator
   crashlooping (`ScaledJob` informer could never sync); fixed by server-side applying the
   complete v2.14.0 CRD bundle. The ingestion-worker ScaledObject is now Ready, scaling on
