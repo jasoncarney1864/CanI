@@ -1,8 +1,9 @@
 # CanI Web — "Illuminated Clarity" prototype
 
-A **static, mock-data** Next.js (App Router + TypeScript) prototype of the CanI
-design language: the **Spotlight** dual-pane layout and the **Spoke** token
-framework. No backend is called — all data is mocked in `lib/mockData.ts`.
+A Next.js (App Router + TypeScript) prototype of the CanI design language: the
+**Spotlight** dual-pane layout and the **Spoke** token framework. The workspace
+seeds with the Oakwood mock sample, and the **ask box is wired to the live
+docs-api `/query` endpoint** via a server-side proxy (see below).
 
 ## Run
 
@@ -14,6 +15,28 @@ npm run dev
 
 Then open http://localhost:3000. The app opens on the **Legal** spoke to mirror
 the design-language blueprint.
+
+### Live queries against the dev stack
+
+Asking a question calls `POST /api/query` (a Next server Route Handler), which
+reproduces the dev auth flow and proxies to docs-api — so the browser never
+handles tokens/cookies and there is no CORS. Start the backend first:
+
+```bash
+docker compose up -d   # from the repo root; brings up hub-api/docs-api/etc.
+```
+
+The proxy targets these defaults (override via env if your ports differ):
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `HUB_API_URL` | `http://localhost:8001` | dev-login + token minting |
+| `DOCS_API_URL` | `http://localhost:8002` | the `/query` gateway |
+| `CANI_DEV_IDP_SUBJECT` | `web-prototype-user` | dev-login identity |
+
+> The `/auth/dev-login` path only exists when the backend runs with `ENV=dev`.
+> If the stack is down, the ask box shows a friendly "could not reach backend"
+> message and the seeded sample stays visible.
 
 ## What it demonstrates
 
@@ -33,14 +56,19 @@ the design-language blueprint.
 | `app/layout.tsx` | Root layout; loads fonts; imports global tokens |
 | `app/globals.css` | Design tokens (§2/§3) + all component styles |
 | `app/page.tsx` | Renders `AppShell` on the Legal spoke |
+| `app/api/query/route.ts` | Server proxy: dev-login → token → docs-api `/query` |
 | `lib/spokes.ts` | Spoke token config (the token-mapping table, §6) |
-| `lib/mockData.ts` | Oakwood HOA mock verdict + source document |
-| `lib/types.ts` | Types mirroring `cani_shared` for future API wiring |
+| `lib/mockData.ts` | Oakwood HOA seed answer + source document |
+| `lib/types.ts` | Types mirroring `cani_shared` for the API contract |
 | `components/*` | `AppShell`, `LeftRail`, `SpokeSwitcher`, `ConversationPane`, `VerdictBadge`, `DocumentViewer` |
 
 ## Deliberately out of scope (deferred)
 
-- Live API calls, auth/login, token flow, CORS/ingress.
+- Real Entra sign-in / session UI — the proxy uses dev-login for local wiring.
+- Document **upload** and the ingestion status UI.
+- Driving the **Document Viewer** from live data — it still renders the mock
+  Oakwood document (the API returns citation snippets, not full paginated
+  source text with highlight spans).
 - Mobile/responsive polish beyond the left-rail collapse.
 - A **Finance** backend entitlement (design shows it; code has DOCS/LEGAL/HEALTH).
 

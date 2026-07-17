@@ -315,6 +315,22 @@ button {
   color: var(--charcoal);
 }
 
+.conversation__summary[aria-busy="true"] {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.conversation__error {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8a1c1c;
+  background: #fdecec;
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+}
+
 .citation-card {
   display: flex;
   flex-direction: column;
@@ -367,6 +383,12 @@ button {
   outline: none;
   border-color: var(--brand-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-accent) 20%, transparent);
+}
+
+.ask__input:disabled {
+  background: #f4f4f6;
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 /* ---- Column B: Document Viewer ------------------------------------------- */

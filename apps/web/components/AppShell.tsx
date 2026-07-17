@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SPOKES, type SpokeKey } from "@/lib/spokes";
 import { mockAnswer, mockDocument } from "@/lib/mockData";
+import type { RetrievalAnswer } from "@/lib/types";
 import { LeftRail } from "./LeftRail";
 import { ConversationPane } from "./ConversationPane";
 import { DocumentViewer } from "./DocumentViewer";
@@ -21,7 +22,33 @@ interface AppShellProps {
 export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
   const [spokeKey, setSpokeKey] = useState<SpokeKey>(initialSpoke);
   const [collapsed, setCollapsed] = useState(false);
+  // Seed with the Oakwood sample so the workspace is populated on first paint;
+  // a live query replaces it. `pending` marks the seed vs. a real API result.
+  const [answer, setAnswer] = useState<RetrievalAnswer>(mockAnswer);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const spoke = SPOKES[spokeKey];
+
+  async function handleAsk(question: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/query", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Query failed (${res.status}).`);
+      }
+      setAnswer(data as RetrievalAnswer);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Query failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const shellStyle = {
     ["--brand-accent" as string]: spoke.accent,
@@ -47,7 +74,13 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
         </header>
 
         <div className="workspace">
-          <ConversationPane answer={mockAnswer} spoke={spoke} />
+          <ConversationPane
+            answer={answer}
+            spoke={spoke}
+            loading={loading}
+            error={error}
+            onAsk={handleAsk}
+          />
           <DocumentViewer doc={mockDocument} />
         </div>
       </div>
