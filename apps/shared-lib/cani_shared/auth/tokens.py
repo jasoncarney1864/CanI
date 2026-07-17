@@ -44,12 +44,16 @@ class AccessTokenClaims(BaseModel):
     auth_time: int
     exp: int
     jti: str
+    # iat=0 for tokens minted before the D2 revocation feature: fails closed — any
+    # revocation epoch on the user invalidates legacy tokens, since 0 <= any epoch.
+    iat: int = 0
 
 
 class SessionClaims(BaseModel):
     sub: str
     jti: str
     exp: int
+    iat: int = 0
 
 
 def create_access_token(
@@ -60,6 +64,7 @@ def create_access_token(
         "sub": user_id,
         "entitlements": entitlements,
         "auth_time": auth_time if auth_time is not None else now,
+        "iat": now,
         "exp": now + ACCESS_TOKEN_TTL_SECONDS,
         "jti": uuid.uuid4().hex,
     }
@@ -78,7 +83,12 @@ def verify_access_token(token: str, secret: str) -> AccessTokenClaims:
 
 def create_session_token(*, user_id: str, secret: str) -> str:
     now = int(time.time())
-    claims = {"sub": user_id, "jti": uuid.uuid4().hex, "exp": now + SESSION_TOKEN_TTL_SECONDS}
+    claims = {
+        "sub": user_id,
+        "jti": uuid.uuid4().hex,
+        "iat": now,
+        "exp": now + SESSION_TOKEN_TTL_SECONDS,
+    }
     return jwt.encode(claims, secret, algorithm=ALGORITHM)
 
 
