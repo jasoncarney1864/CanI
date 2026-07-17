@@ -31,6 +31,7 @@ from cani_shared.db.repositories import (
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import TraceIdMiddleware
 from cani_shared.models import Document, RetrievalAnswer
+from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
@@ -39,6 +40,7 @@ from docs_api_app.uploads import UploadValidationError, validate_upload
 configure_logging("docs-api")
 logger = get_logger(__name__)
 settings = get_settings()
+configure_telemetry("docs-api", settings)
 
 get_principal = make_principal_dependency(
     token_signing_secret=settings.cani_token_signing_secret,
@@ -58,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CanI Docs API", lifespan=lifespan)
 app.add_middleware(TraceIdMiddleware)
+instrument_fastapi(app)
 
 
 class UploadResponse(BaseModel):
