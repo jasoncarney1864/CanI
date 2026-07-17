@@ -41,6 +41,17 @@ def test_upload_ingest_retrieve_cite(docker_stack, hub_client, docs_client):
 
     assert body["citations"], "expected at least one citation for a question answerable from the uploaded doc"
     assert body["citations"][0]["document_id"] == document_id
+    assert body["citations"][0]["snippet"], "expected the cited chunk's source text to be surfaced for the viewer"
+    assert body["verdict"] is None, "open-ended (non yes/no) questions should not carry a verdict"
+
+    yes_no_response = docs_client.post(
+        "/query", json={"question": "Can I walk my dog off-leash at night?"}, headers=headers
+    )
+    assert yes_no_response.status_code == 200, yes_no_response.text
+    yes_no_body = yes_no_response.json()
+    assert yes_no_body["verdict"], "expected a structured verdict for a yes/no permissibility question"
+    assert yes_no_body["verdict"]["kind"] == "yes_with_conditions"
+    assert yes_no_body["verdict"]["label"] == "Yes, with conditions"
 
 
 def _poll_until_terminal(docs_client, document_id: str, headers: dict, timeout_seconds: int = 90) -> str:
