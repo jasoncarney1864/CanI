@@ -41,7 +41,9 @@ def test_upload_ingest_retrieve_cite(docker_stack, hub_client, docs_client):
 
     assert body["citations"], "expected at least one citation for a question answerable from the uploaded doc"
     assert body["citations"][0]["document_id"] == document_id
-    assert body["citations"][0]["snippet"], "expected the cited chunk's source text to be surfaced for the viewer"
+    assert body["citations"][0]["snippet"], (
+        "expected the cited chunk's source text to be surfaced for the viewer"
+    )
     assert body["verdict"] is None, "open-ended (non yes/no) questions should not carry a verdict"
 
     yes_no_response = docs_client.post(
