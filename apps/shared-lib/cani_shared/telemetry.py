@@ -50,6 +50,14 @@ def configure_telemetry(service_name: str, settings: Settings) -> bool:
             }
         ),
         sampling_ratio=settings.telemetry_sampling_ratio,
+        # Restrict stdlib-logging capture to the (unused) "cani" logger namespace. The
+        # default captures the root logger, which turns the exporter's own azure.core
+        # INFO lines into a self-feeding loop: every telemetry upload logs, that log is
+        # exported, which logs again — observed as 55k+ AppTraces rows/2h of pure
+        # "Transmission succeeded" noise and zero app events. App logs are structlog ->
+        # stdout (PrintLoggerFactory, bypasses stdlib logging entirely) and reach the
+        # workspace via Container Insights ContainerLogV2, not via this pipeline.
+        logger_name="cani",
     )
     # httpx carries the traceparent on docs-api -> retrieval-worker calls, which is what
     # stitches the two services into a single distributed trace.

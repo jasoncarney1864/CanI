@@ -11,11 +11,12 @@ import pulumi
 import pulumi_azure_native as azure_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.alerting import node_not_ready_alert
 from modules.compute_aks import CaniAksCluster
 from modules.data_services import WorkloadBlobStorage, WorkloadPostgres
 from modules.naming import NamingContext, base_tags
 from modules.networking import WorkloadNetwork
-from modules.observability import send_diagnostics_to_workspace
+from modules.observability import ContainerInsightsCollection, send_diagnostics_to_workspace
 
 config = pulumi.Config()
 environment = pulumi.get_stack()
@@ -40,6 +41,7 @@ platform_stack_ref = pulumi.StackReference(config.require("platformStackRef"))  
 hub_vnet_id = platform_stack_ref.get_output("hub_vnet_id")
 log_analytics_workspace_id = platform_stack_ref.get_output("log_analytics_workspace_id")
 acr_id = platform_stack_ref.get_output("acr_id")
+ops_action_group_id = platform_stack_ref.get_output("ops_action_group_id")
 
 naming = NamingContext(project="workload", layer="core", environment=environment)
 tags = base_tags(environment=environment, owner=owner, spoke="docs-platform", workload_type="api")
@@ -87,6 +89,33 @@ send_diagnostics_to_workspace(
     "aks",
     target_resource_id=aks.cluster.id,
     workspace_id=log_analytics_workspace_id,
+    # Cost control (§15, Sprint 2 A2): `allLogs` on AKS ingested 5.78 GB/day, 76% of it
+    # the read-inclusive kube-audit category. kube-audit-admin keeps every write/delete
+    # audit event; guard keeps AAD/authn events. Control-plane chatter (apiserver,
+    # scheduler, autoscaler, CCM) is droppable in dev — it's diagnosable on demand via
+    # `az aks kollect` when actually needed.
+    log_categories=["kube-audit-admin", "guard"],
+)
+
+# Container Insights data collection — the omsagent addon (compute_aks.py) only deploys
+# the agents; without this DCR + association they collect nothing (A2 recon finding).
+container_insights = ContainerInsightsCollection(
+    "cani-ci",
+    resource_group_name=resource_group.name,
+    location=resource_group.location,
+    cluster_id=aks.cluster.id,
+    workspace_id=log_analytics_workspace_id,
+    tags=tags,
+)
+
+# §13.8 P1 node not-ready — platform metric alert so it keeps working even when the
+# agent/log pipeline is what broke. Action group comes from the platform stack (§11.6).
+node_not_ready_alert(
+    "cani-p1-node-not-ready",
+    resource_group_name=resource_group.name,
+    cluster_id=aks.cluster.id,
+    action_group_id=ops_action_group_id,
+    tags=tags,
 )
 
 pulumi.export("aks_cluster_id", aks.cluster.id)
