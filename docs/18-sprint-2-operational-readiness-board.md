@@ -10,7 +10,7 @@ implementation-status.
 - Start date: 2026-07-17 (pulled forward — Sprint 1 closed 12 days early)
 - Target end date: 2026-08-12
 - Last updated: 2026-07-17
-- Overall status: In progress — started A1 (observability wiring)
+- Overall status: In progress — A1 done (observability wiring verified end to end); A2 next
 
 ## Status legend
 
@@ -23,7 +23,7 @@ implementation-status.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-29 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 0 | -55 | TBD | Fill at week close |
+| Week 1 | 2026-07-17 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 12 | -43 | None | In progress. A1 done 2026-07-17 (14 days early). Range start corrected from 07-29 to the real pulled-forward start date. |
 | Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -39,22 +39,57 @@ Formula: Actual complete (%) = round((number of checked boxes [x] in sprint chec
 
 - Owner: Jason
 - Due: 2026-07-31
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-17, 14 days early)
 - Dependencies: Sprint 1 closeout
 - Checklist:
-  - [ ] Wire Application Insights for application telemetry.
-  - [ ] Wire Container Insights for AKS cluster telemetry.
-  - [ ] Ensure logs and metrics correlate with trace identifiers.
-  - [ ] Verify telemetry ingestion from hub-api, docs-api, ingestion-worker, retrieval-worker.
+  - [x] Wire Application Insights for application telemetry. (`ApplicationInsights` module, workspace-based, PR #14.)
+  - [x] Wire Container Insights for AKS cluster telemetry. (`omsagent` addon with `useAADAuth`; 5 `ama-logs` pods Running.)
+  - [x] Ensure logs and metrics correlate with trace identifiers. (Azure Monitor OTel Distro propagates W3C `traceparent`; verified below.)
+  - [x] Verify telemetry ingestion from hub-api, docs-api, ingestion-worker, retrieval-worker. (All four emitting; verified below.)
 - Done criteria:
-  - [ ] End-to-end telemetry visible for app and cluster layers.
+  - [x] End-to-end telemetry visible for app and cluster layers.
+
+Verification evidence (2026-07-17, live dev, real traffic through the deployed stack):
+
+Telemetry landed in App Insights `cani-central-appied0b6605` from all four services:
+
+| `cloud_RoleName` | requests | dependencies |
+| --- | ---: | ---: |
+| cani.hub-api | 4 | 14 |
+| cani.docs-api | 2 | 14 |
+| cani.retrieval-worker | 1 | 6 |
+| cani.ingestion-worker | — (queue poller, no inbound server) | 4 |
+
+Cross-service correlation (the section 13.5 "distributed tracing across hub, docs
+services, and workers" requirement) — one `operation_Id`
+(`0dbe9ad199291d94d5618520eb36ee74`), 12 spans, two services:
+
+```text
+docs-api  POST /query                 207ms   server span
+  |- HTTP POST /retrieve               49ms   httpx carries traceparent across the boundary
+       retrieval-worker POST /retrieve 34ms   same trace, different service
+         |- HTTP POST /collections/... 13ms   Qdrant vector search, latency attributed
+```
+
+Known gap (accepted, not blocking): **Postgres calls emit no dependency spans.** We
+instrument FastAPI + httpx only; Qdrant appears because qdrant-client uses httpx
+underneath, but psycopg is not instrumented. DB latency is therefore *not* visible in
+App Insights dependency data — it is only inside the enclosing server span. Adding
+`opentelemetry-instrumentation-psycopg` would close this. Not required by A2's four
+alerts (5xx, retrieval latency, dead-letter growth, node not-ready), so deferred rather
+than done now; recorded so we do not later assume DB latency is observable when it is not.
+
+Cost note: health probes are excluded from tracing (`excluded_urls="healthz"`) — they
+fire every few seconds and are pure ingestion cost with no diagnostic signal.
+`TELEMETRY_SAMPLING_RATIO` defaults to 1.0 in dev (full visibility) and is the lever to
+trim ingestion cost as traffic grows (section 15).
 
 ### A2. P1 or P2 alert baseline from section 13.8 (P1)
 
 - Owner: Jason
 - Due: 2026-08-01
-- Status: [ ] Not started
-- Dependencies: A1
+- Status: [ ] Not started — unblocked (A1 done 2026-07-17)
+- Dependencies: A1 (met)
 - Checklist:
   - [ ] Create elevated 5xx rate alert.
   - [ ] Create retrieval latency SLO breach alert.
@@ -158,3 +193,9 @@ Formula: Actual complete (%) = round((number of checked boxes [x] in sprint chec
 Use one line per day.
 
 - 2026-07-14: Board created and pre-seeded from implementation-status Sprint 2 list.
+- 2026-07-17: A1 done. IaC (App Insights + Container Insights) applied via PR #14; app
+  instrumentation via PR #15 (shared `cani_shared.telemetry`, all four services, opt-in on
+  connection string). Verified against live dev with real traffic: telemetry from all four
+  services, and docs-api -> retrieval-worker -> Qdrant confirmed as a single 12-span
+  distributed trace. Logged the psycopg-spans gap rather than implying DB latency is
+  visible. A2 (alert baseline) now unblocked.
