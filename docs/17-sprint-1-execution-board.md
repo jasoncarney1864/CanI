@@ -24,7 +24,7 @@ explicit acceptance checks.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 82 | +22 | None - D2 (entitlement revocation) is the next item | A1, A2, B1, B2, C1, C2, C3, D1 complete (C3 and D1 both ahead of Week 2 plan); real Entra login verified in browser 2026-07-16; 46 of 56 boxes checked |
+| Week 1 | 2026-07-14 to 2026-07-20 | Access, OIDC, platform or workload apply, initial AKS apply | 60 | 89 | +29 | None - only the sprint closeout gate remains | A1, A2, B1, B2, C1, C2, C3, D1, D2 complete (C3/D1/D2 all pulled ahead of Week 2 plan); real Entra login browser-verified and D2 revocation integration-verified 2026-07-16; 50 of 56 boxes checked |
 | Week 2 | 2026-07-21 to 2026-07-28 | App CD activation, Entra swap, entitlement revocation, sprint closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -282,14 +282,36 @@ Execution notes (2026-07-16):
 
 - Owner: Jason
 - Due: 2026-07-25
-- Status: [ ] Not started
+- Status: [x] Done
 - Dependencies: D1
 - Checklist:
-  - [ ] Implement revocation path that invalidates active session and token usage.
-  - [ ] Add tests covering revoked user behavior on existing session.
-  - [ ] Update incident runbook guidance if behavior changes.
+  - [x] Implement revocation path that invalidates active session and token usage.
+  - [x] Add tests covering revoked user behavior on existing session.
+  - [x] Update incident runbook guidance if behavior changes.
 - Done criteria:
-  - [ ] Revoked entitlement cannot continue using previously issued credentials.
+  - [x] Revoked entitlement cannot continue using previously issued credentials.
+
+Execution notes (2026-07-16):
+- Mechanism: per-user revocation epoch `users.auth_revoked_at` (migration 0002). Access
+  and session tokens now carry `iat`; a token/session with `iat <= auth_revoked_at` is
+  rejected on its next use even though its signature and expiry are valid. Checked on
+  every authenticated request — in both spokes via the shared principal dependency
+  (`cani_shared.auth.entitlements`, now DB-aware) and at the hub for session cookies.
+- Legacy tokens minted before this change have `iat=0` and so fail closed the instant
+  any revocation exists on the user.
+- Revocation is an operator script (`scripts/revoke_user_access.py`), not an HTTP
+  endpoint — there is no admin RBAC yet (§7.4 support/platform-admin unbuilt), so an
+  unauthenticated admin API would be a regression. `--all-auth` (containment) or
+  `--entitlement <name> --revoke-sessions` (§7.7 critical removal); both audit-logged.
+- Tests: 11 unit (boundary truth table, iat presence, dependency allow/deny, no-dsn
+  skip) + 1 integration proving a live token AND session both die immediately after
+  revocation and a fresh login returns without the revoked entitlement.
+- Runbook `suspected-cross-tenant-access.md` containment step rewritten: targeted
+  revocation replaces the old platform-wide signing-secret-rotation workaround.
+- Bug found and fixed during integration verification: `get_auth_revoked_epoch` used
+  positional row access on a pooled connection that inherits `dict_row` from earlier
+  calls (KeyError: 0); pinned `tuple_row` on that cursor and on `get_document_title`
+  (same latent pattern).
 
 ## Sprint closeout gate
 
@@ -313,3 +335,4 @@ Use one line per day.
 - 2026-07-15: C1 completed by aligning app-cd and k8s manifests to live AKS/ACR/storage names and IDs from workload outputs.
 - 2026-07-15: C2 and C3 completed. PR #2 (secret handling, KEDA repair, private-cluster CD rework, public-endpoint drift fix) merged as d18a855; first app-cd-dev activation failed on missing `environment:dev` federated credentials, fixed and rerun green end to end — 4 SHA-tagged images deployed, all rollouts and in-cluster smoke checks passed, infra applies no-op. Week 1 actual now 75% vs 60% planned.
 - 2026-07-16: D1 completed. caniauth external tenant + cani-hub app registration created entirely via ARM/Graph (no portal); hub-api gained /auth/login + /auth/callback (authorization code + PKCE, full ID-token validation, 12 security unit tests); PR #5 merged as 7ae532c after all checks green. Verified with a real interactive browser sign-up — first customer identity created, callback returned session JSON. Week 1 actual now 82% vs 60% planned.
+- 2026-07-16: D2 completed. Per-user revocation epoch (migration 0002 auth_revoked_at) + iat on all tokens; enforced every request in both spokes and the hub. Operator script scripts/revoke_user_access.py (no admin API until admin RBAC exists). 11 unit + 1 integration test proving a live token and session both die immediately post-revocation; incident runbook containment rewritten off the old signing-secret-rotation workaround. A row-factory bug (KeyError on a pooled dict_row connection) was caught by integration verification and fixed. Only the sprint closeout gate remains; Week 1 actual now 89% vs 60% planned.

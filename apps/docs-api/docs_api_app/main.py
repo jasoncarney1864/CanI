@@ -40,7 +40,10 @@ configure_logging("docs-api")
 logger = get_logger(__name__)
 settings = get_settings()
 
-get_principal = make_principal_dependency(token_signing_secret=settings.cani_token_signing_secret)
+get_principal = make_principal_dependency(
+    token_signing_secret=settings.cani_token_signing_secret,
+    postgres_dsn=settings.postgres_dsn,  # enables the D2 per-request revocation check
+)
 require_docs_entitlement = require_entitlement(CAN_ACCESS_DOCS, get_principal)
 
 
