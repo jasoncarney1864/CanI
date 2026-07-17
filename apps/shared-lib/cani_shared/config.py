@@ -46,6 +46,18 @@ class Settings(BaseSettings):
 
     retrieval_worker_url: str = Field(default="http://retrieval-worker:8003", alias="RETRIEVAL_WORKER_URL")
 
+    # Application Insights (docs/13 §13.7). Optional everywhere: when unset,
+    # cani_shared.telemetry.configure_telemetry is a no-op, so local compose runs and
+    # tests emit nothing to Azure. Set in dev/prod via the cani-secrets Secret.
+    app_insights_connection_string: str = Field(default="", alias="APPLICATIONINSIGHTS_CONNECTION_STRING")
+    # 1.0 = sample every trace (dev default, full visibility). Lower it to trim ingestion
+    # cost as traffic grows (§13.7 sampling guidance, §15 cost control).
+    telemetry_sampling_ratio: float = Field(default=1.0, alias="TELEMETRY_SAMPLING_RATIO")
+
+    @property
+    def telemetry_enabled(self) -> bool:
+        return bool(self.app_insights_connection_string)
+
     # Entra External ID (hub-api only; docs/07 §7.2). Optional in dev — the dev-login
     # stub carries local auth — but hub-api refuses to start outside dev without these
     # (enforced in its lifespan, not here, since the other services never use them).

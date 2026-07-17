@@ -20,6 +20,10 @@ dependencies = [
     "pypdf>=4.2",
     "tiktoken>=0.7",
     "structlog>=24.1",
+    # Telemetry (docs/13). Inactive unless APPLICATIONINSIGHTS_CONNECTION_STRING is set.
+    "azure-monitor-opentelemetry>=1.6",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-httpx>=0.48b0",
 ]
 
 [tool.setuptools.packages.find]

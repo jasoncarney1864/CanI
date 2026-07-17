@@ -31,6 +31,7 @@ from cani_shared.db.repositories import (
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import TraceIdMiddleware
+from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -44,6 +45,7 @@ OIDC_FLOW_COOKIE_NAME = "cani_oidc_flow"
 configure_logging("hub-api")
 logger = get_logger(__name__)
 settings = get_settings()
+configure_telemetry("hub-api", settings)
 
 
 @asynccontextmanager
@@ -58,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CanI Hub API", lifespan=lifespan)
 app.add_middleware(TraceIdMiddleware)
+instrument_fastapi(app)
 
 
 def _cookie_kwargs() -> dict:

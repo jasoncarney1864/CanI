@@ -21,6 +21,7 @@ from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import TraceIdMiddleware
 from cani_shared.models import Citation, RetrievalAnswer
 from cani_shared.providers.factory import build_chat_grounder, build_embedder
+from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
@@ -31,6 +32,7 @@ CONTEXT_TOP_K = 4  # bounded context/token budget per §8.8
 configure_logging("retrieval-worker")
 logger = get_logger(__name__)
 settings = get_settings()
+configure_telemetry("retrieval-worker", settings)
 
 get_principal = make_principal_dependency(
     token_signing_secret=settings.cani_token_signing_secret,
@@ -53,6 +55,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CanI Retrieval Worker", lifespan=lifespan)
 app.add_middleware(TraceIdMiddleware)
+instrument_fastapi(app)
 
 
 class RetrieveRequest(BaseModel):
