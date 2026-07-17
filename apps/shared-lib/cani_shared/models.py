@@ -107,7 +107,7 @@ class Verdict(BaseModel):
     label: str
 
     @classmethod
-    def from_kind(cls, kind: VerdictKind | str) -> "Verdict":
+    def from_kind(cls, kind: VerdictKind | str) -> Verdict:
         resolved = VerdictKind(kind)
         return cls(kind=resolved, label=_VERDICT_LABELS[resolved])
 
