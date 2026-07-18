@@ -117,3 +117,25 @@ class RetrievalAnswer(BaseModel):
     citations: list[Citation]
     insufficient_evidence: bool = False
     verdict: Verdict | None = None
+
+
+class DocumentChunk(BaseModel):
+    """One indexed chunk of a document's source text, for the Document Viewer pane.
+    `chunk_id` matches Citation.chunk_id, so the UI can spotlight the cited chunk in
+    context (docs/13 §5)."""
+
+    chunk_id: str
+    text: str
+    page_start: int
+    page_end: int
+    section_label: str | None
+    chunk_index: int
+
+
+class DocumentText(BaseModel):
+    """A document's full source text as its ordered chunks (GET /documents/{id}/text).
+    Owner-scoped end to end — only the owner's own chunks are ever assembled here."""
+
+    document_id: str
+    title: str
+    chunks: list[DocumentChunk]

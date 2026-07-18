@@ -30,7 +30,7 @@ from cani_shared.db.repositories import (
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import RateLimitMiddleware, TraceIdMiddleware
-from cani_shared.models import Document, RetrievalAnswer
+from cani_shared.models import Document, DocumentText, RetrievalAnswer
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
@@ -193,6 +193,37 @@ async def query(
         logger.error("retrieval_upstream_error", status_code=response.status_code)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "retrieval service error")
     return RetrievalAnswer.model_validate(response.json())
+
+
+@app.get("/documents/{document_id}/text", response_model=DocumentText)
+async def get_document_text(
+    document_id: str,
+    principal: RequestPrincipal = Depends(get_principal),
+    _: RequestPrincipal = Depends(require_docs_entitlement),
+) -> DocumentText:
+    """The document's source text (ordered chunks) for the Document Viewer. Confirms the
+    caller owns the document here (404 otherwise, no cross-owner existence leak, §9.8),
+    then proxies to the retrieval-worker — the only tier with Qdrant network access — the
+    same way /query proxies to /retrieve."""
+    pool = get_pool(settings.postgres_dsn)
+    with pool.connection() as conn:
+        if get_document(conn, principal.user_id, document_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+
+    internal_token = create_access_token(
+        user_id=principal.user_id,
+        entitlements=principal.entitlements,
+        secret=settings.cani_token_signing_secret,
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            f"{settings.retrieval_worker_url}/documents/{document_id}/chunks",
+            headers={"Authorization": f"Bearer {internal_token}"},
+        )
+    if response.status_code != 200:
+        logger.error("document_text_upstream_error", status_code=response.status_code)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "retrieval service error")
+    return DocumentText.model_validate(response.json())
 
 
 @app.get("/healthz")

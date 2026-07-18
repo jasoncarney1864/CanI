@@ -19,7 +19,7 @@ from cani_shared.db.pool import get_pool
 from cani_shared.db.repositories import get_document_title, record_query_audit
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import TraceIdMiddleware
-from cani_shared.models import Citation, RetrievalAnswer, Verdict
+from cani_shared.models import Citation, DocumentChunk, DocumentText, RetrievalAnswer, Verdict
 from cani_shared.providers.factory import build_chat_grounder, build_embedder
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
@@ -134,6 +134,41 @@ def retrieve(
         insufficient_evidence=grounded.insufficient_evidence,
         verdict=verdict,
     )
+
+
+@app.get("/documents/{document_id}/chunks", response_model=DocumentText)
+def document_chunks(
+    document_id: str,
+    principal: RequestPrincipal = Depends(get_principal),
+    _: RequestPrincipal = Depends(require_docs_entitlement),
+) -> DocumentText:
+    """A document's source text as its ordered chunks, for the Document Viewer. Internal —
+    called by docs-api. Owner-scoped: the Qdrant read filters on the caller's own id and
+    re-verifies it, so it cannot assemble another owner's document even if asked."""
+    qdrant: OwnerScopedQdrant = app.state.qdrant
+    payloads = qdrant.chunks_for_document(owner_user_id=principal.user_id, document_id=document_id)
+
+    pool = get_pool(settings.postgres_dsn)
+    with pool.connection() as conn:
+        title = get_document_title(conn, principal.user_id, document_id) or "Untitled document"
+
+    chunks = [
+        DocumentChunk(
+            chunk_id=p["chunk_id"],
+            text=p.get("chunk_text", ""),
+            page_start=p["page_start"],
+            page_end=p["page_end"],
+            section_label=p.get("section_label"),
+            chunk_index=p.get("chunk_index", 0),
+        )
+        for p in payloads
+    ]
+    logger.info(
+        "document_chunks_served",
+        user_id_hash=hash_user_id(principal.user_id),
+        chunk_count=len(chunks),
+    )
+    return DocumentText(document_id=document_id, title=title, chunks=chunks)
 
 
 @app.get("/healthz")

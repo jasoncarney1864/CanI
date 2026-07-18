@@ -404,6 +404,16 @@ button {
   color: rgba(45, 49, 66, 0.45);
 }
 
+.viewer__empty {
+  max-width: 460px;
+  margin-top: 8px;
+  font-family: var(--font-content), Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .viewer__page {
   max-width: 720px;
   background: #fff;
