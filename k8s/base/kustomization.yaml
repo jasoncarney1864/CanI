@@ -14,3 +14,5 @@ resources:
   - qdrant/statefulset.yaml
   - qdrant/snapshot-cronjob.yaml
   - web/deployment.yaml
+  - web/ingress.yaml
+  - ingress/cluster-issuers.yaml
