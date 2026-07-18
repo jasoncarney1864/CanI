@@ -14,7 +14,7 @@ telemetry pipeline or its daily cap is having a bad day.
 from __future__ import annotations
 
 import pulumi_azure_native as azure_native
-from pulumi import ComponentResource, Input, ResourceOptions
+from pulumi import ComponentResource, Input, Output, ResourceOptions
 
 # §15.3 burn thresholds: early warning -> investigate -> mitigate -> freeze.
 _BURN_THRESHOLDS = (50, 75, 90, 100)
@@ -60,7 +60,9 @@ class SubscriptionBudget(ComponentResource):
         self.budget = azure_native.consumption.Budget(
             f"{name}-budget",
             budget_name=f"{name}-monthly",
-            scope=subscription_id.apply(lambda s: f"/subscriptions/{s}"),
+            # get_client_config().subscription_id is a plain str, but callers could also
+            # pass an Output; from_input normalizes both before building the scope.
+            scope=Output.from_input(subscription_id).apply(lambda s: f"/subscriptions/{s}"),
             category=azure_native.consumption.CategoryType.COST,
             amount=monthly_amount,
             time_grain=azure_native.consumption.TimeGrainType.MONTHLY,
