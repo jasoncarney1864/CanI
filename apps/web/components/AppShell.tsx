@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SPOKES, type SpokeKey } from "@/lib/spokes";
+import type { Principal } from "@/lib/backendAuth";
 import type { DocumentText, RetrievalAnswer } from "@/lib/types";
 import { LeftRail } from "./LeftRail";
 import { ConversationPane } from "./ConversationPane";
@@ -9,6 +10,7 @@ import { DocumentViewer } from "./DocumentViewer";
 
 interface AppShellProps {
   initialSpoke?: SpokeKey;
+  user: Principal;
 }
 
 /**
@@ -18,7 +20,7 @@ interface AppShellProps {
  * Spoke tokens are injected as CSS custom properties on the wrapper, so a spoke
  * switch re-themes the whole tree without any structural change (§6).
  */
-export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
+export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
   const [spokeKey, setSpokeKey] = useState<SpokeKey>(initialSpoke);
   const [collapsed, setCollapsed] = useState(false);
   const [answer, setAnswer] = useState<RetrievalAnswer | null>(null);
@@ -30,7 +32,8 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
   const [highlightChunkIds, setHighlightChunkIds] = useState<Set<string>>(new Set());
   const spoke = SPOKES[spokeKey];
 
-  async function handleAsk(question: string) {
+  // Returns the answer so the voice loop can speak it aloud (null on failure).
+  async function handleAsk(question: string): Promise<RetrievalAnswer | null> {
     setLoading(true);
     setError(null);
     try {
@@ -46,8 +49,10 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
       const result = data as RetrievalAnswer;
       setAnswer(result);
       void loadCitedDocument(result);
+      return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Query failed.");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -92,6 +97,7 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
         collapsed={collapsed}
         onToggle={() => setCollapsed((v) => !v)}
         onSpokeChange={setSpokeKey}
+        user={user}
       />
 
       <div className="main">
@@ -100,7 +106,12 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
             CanI <span className="topbar__divider" aria-hidden>|</span>{" "}
             <span className="topbar__spoke">{spoke.label}</span>
           </span>
-          <span className="topbar__auth">[ User Profile / Auth ]</span>
+          <span className="topbar__auth">
+            <span className="topbar__user">{user.user_id}</span>
+            <a className="topbar__signout" href="/auth/logout">
+              Sign out
+            </a>
+          </span>
         </header>
 
         <div className="workspace">

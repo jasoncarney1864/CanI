@@ -1,5 +1,9 @@
+"use client";
+
+import { useCallback, useRef } from "react";
 import type { RetrievalAnswer } from "@/lib/types";
 import type { Spoke } from "@/lib/spokes";
+import { useVoiceConversation, type VoiceState } from "@/lib/useVoiceConversation";
 import { VerdictBadge } from "./VerdictBadge";
 
 interface ConversationPaneProps {
@@ -7,22 +11,67 @@ interface ConversationPaneProps {
   spoke: Spoke;
   loading: boolean;
   error: string | null;
-  onAsk: (question: string) => void;
+  /** Ask a question; resolves with the answer so it can be spoken aloud. */
+  onAsk: (question: string) => Promise<RetrievalAnswer | null>;
 }
 
+const STATUS_COPY: Record<VoiceState, { title: string; hint: string }> = {
+  off: {
+    title: "Tap to start a conversation",
+    hint: "Speak naturally — pause when you're done and I'll answer.",
+  },
+  listening: { title: "Listening\u2026", hint: "Pause when you're done. Tap to end the conversation." },
+  thinking: { title: "Checking your documents\u2026", hint: "" },
+  speaking: { title: "Here's what I found", hint: "I'll listen again when I finish." },
+  unsupported: { title: "Voice isn't available in this browser", hint: "You can still type below." },
+};
+
 /**
- * Column A — Conversation (35%). The verdict badge and ask input use the UI
- * font (DM Sans); the AI verdict summary uses the content font (Source Serif),
- * per the dual-stack typography system (§4).
+ * Column A — Conversation (35%). Voice-first: a single presence orb runs a
+ * hands-free listen -> answer -> listen loop. The verdict and summary are the
+ * glanceable canvas while the answer is spoken aloud. Typing is the quiet
+ * fallback, not the primary act.
  */
 export function ConversationPane({ answer, spoke, loading, error, onAsk }: ConversationPaneProps) {
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  // Stable indirection so the voice hook's callback always sees fresh handlers.
+  const askRef = useRef(onAsk);
+  askRef.current = onAsk;
+  const speakRef = useRef<(text: string) => void>(() => {});
+
+  const handleUtterance = useCallback(async (text: string) => {
+    const result = await askRef.current(text);
+    if (result) {
+      const spoken = result.verdict ? `${result.verdict.label}. ${result.answer}` : result.answer;
+      speakRef.current(spoken);
+    } else {
+      speakRef.current("Sorry, I couldn't get an answer to that. Ask again whenever you're ready.");
+    }
+  }, []);
+
+  const voice = useVoiceConversation({ onUtterance: handleUtterance });
+  speakRef.current = voice.speak;
+
+  const voiceActive = voice.state !== "off" && voice.state !== "unsupported";
+  const status = STATUS_COPY[voice.state];
+
+  function handleOrbClick() {
+    if (voice.state === "unsupported") return;
+    if (voiceActive) voice.stop();
+    else voice.start();
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const input = event.currentTarget.elements.namedItem("question") as HTMLInputElement | null;
     const question = input?.value.trim();
     if (!question || loading) return;
-    onAsk(question);
     if (input) input.value = "";
+    voice.interject(); // pause listening while we answer a typed question
+    const result = await onAsk(question);
+    if (result && voiceActive) {
+      const spoken = result.verdict ? `${result.verdict.label}. ${result.answer}` : result.answer;
+      voice.speak(spoken);
+    }
   }
 
   return (
@@ -32,7 +81,6 @@ export function ConversationPane({ answer, spoke, loading, error, onAsk }: Conve
       {answer?.verdict && <VerdictBadge verdict={answer.verdict} />}
 
       <div className="conversation__body">
-        <h2 className="conversation__heading">AI Verdict Summary</h2>
         {error ? (
           <p className="conversation__error" role="alert">
             {error}
@@ -40,9 +88,9 @@ export function ConversationPane({ answer, spoke, loading, error, onAsk }: Conve
         ) : (
           <p className="conversation__summary" aria-busy={loading}>
             {loading
-              ? "Searching your documents\u2026"
+              ? "Checking your documents\u2026"
               : (answer?.answer ??
-                "Ask a question about your documents to get a grounded, cited answer.")}
+                "Start talking about your documents — I'll answer out loud, with the source spotlighted beside us.")}
           </p>
         )}
 
@@ -59,13 +107,49 @@ export function ConversationPane({ answer, spoke, loading, error, onAsk }: Conve
           ))}
       </div>
 
+      <div className="presence" data-state={voice.state}>
+        <button
+          type="button"
+          className="presence__orb"
+          onClick={handleOrbClick}
+          disabled={voice.state === "unsupported"}
+          aria-pressed={voiceActive}
+          aria-label={voiceActive ? "End conversation" : "Start conversation"}
+        >
+          <span className="presence__ring" aria-hidden />
+          <span className="presence__ring presence__ring--outer" aria-hidden />
+          <span className="presence__core" aria-hidden>
+            {voice.state === "speaking" ? (
+              <span className="presence__bars">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : (
+              "\u25CF"
+            )}
+          </span>
+        </button>
+        <p className="presence__status" role="status">
+          {voice.state === "listening" && voice.transcript ? (
+            <span className="presence__transcript">&ldquo;{voice.transcript}&rdquo;</span>
+          ) : (
+            status.title
+          )}
+        </p>
+        {status.hint && <p className="presence__hint">{status.hint}</p>}
+      </div>
+
       <form className="ask" onSubmit={handleSubmit}>
         <input
           className="ask__input"
           type="text"
           name="question"
-          placeholder={spoke.placeholder}
-          aria-label="Ask another question"
+          placeholder={
+            voice.state === "unsupported" ? spoke.placeholder : "Prefer to type? Ask here\u2026"
+          }
+          aria-label="Type a question instead"
           disabled={loading}
           autoComplete="off"
         />
