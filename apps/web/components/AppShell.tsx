@@ -58,8 +58,28 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
     }
   }
 
-  // Load the source text of the first cited document and spotlight every chunk cited
-  // within it (§5). One answer can cite several documents; the viewer shows the first.
+  // Load the source text of one cited document and spotlight every chunk the answer
+  // cites within it (§5). Used for the initial answer (first cited doc) and when the
+  // user clicks a citation card for a different document.
+  async function showCitedDocument(documentId: string, result: RetrievalAnswer) {
+    setHighlightChunkIds(
+      new Set(
+        result.citations
+          .filter((c) => c.document_id === documentId)
+          .map((c) => c.chunk_id),
+      ),
+    );
+    setDocLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}/text`);
+      setDoc(res.ok ? ((await res.json()) as DocumentText) : null);
+    } catch {
+      setDoc(null);
+    } finally {
+      setDocLoading(false);
+    }
+  }
+
   async function loadCitedDocument(result: RetrievalAnswer) {
     const first = result.citations[0];
     if (!first) {
@@ -67,22 +87,7 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
       setHighlightChunkIds(new Set());
       return;
     }
-    setHighlightChunkIds(
-      new Set(
-        result.citations
-          .filter((c) => c.document_id === first.document_id)
-          .map((c) => c.chunk_id),
-      ),
-    );
-    setDocLoading(true);
-    try {
-      const res = await fetch(`/api/documents/${encodeURIComponent(first.document_id)}/text`);
-      setDoc(res.ok ? ((await res.json()) as DocumentText) : null);
-    } catch {
-      setDoc(null);
-    } finally {
-      setDocLoading(false);
-    }
+    await showCitedDocument(first.document_id, result);
   }
 
   const shellStyle = {
@@ -121,6 +126,10 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
             loading={loading}
             error={error}
             onAsk={handleAsk}
+            activeDocumentId={doc?.document_id ?? null}
+            onSelectCitation={(documentId) => {
+              if (answer) void showCitedDocument(documentId, answer);
+            }}
           />
           <DocumentViewer doc={doc} highlightChunkIds={highlightChunkIds} loading={docLoading} />
         </div>
