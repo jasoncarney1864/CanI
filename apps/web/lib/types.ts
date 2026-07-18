@@ -54,22 +54,23 @@ export interface DocumentMeta {
   updated_at: string;
 }
 
-// --- Prototype-only shapes (NOT yet in the backend API) ----------------------
-// Inline source-text highlight spans are the one design element the current API
-// does not provide. They are modelled here so the UI can render the full
-// "Spotlight" experience against mock data; wiring them to real data is deferred
-// backend work.
+// --- Document Viewer source text (GET /documents/{id}/text) -------------------
+// Real backend shapes now (Sprint 3 A1/B). The viewer renders the document's
+// ordered chunks and spotlights the ones whose chunk_id matches a citation.
 
-export interface SourceParagraph {
-  /** Corresponds to a Citation.chunk_id for highlight matching. */
-  id: string;
+/** Mirrors cani_shared DocumentChunk. */
+export interface DocumentChunk {
+  chunk_id: string;
   text: string;
+  page_start: number;
+  page_end: number;
+  section_label: string | null;
+  chunk_index: number;
 }
 
-export interface SourceDocument {
+/** Mirrors cani_shared DocumentText. */
+export interface DocumentText {
+  document_id: string;
   title: string;
-  section_label: string;
-  paragraphs: SourceParagraph[];
-  /** The chunk_id to spotlight in the Document Viewer. */
-  highlightChunkId: string;
+  chunks: DocumentChunk[];
 }

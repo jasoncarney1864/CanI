@@ -43,3 +43,11 @@ def test_cross_user_isolation(docker_stack, hub_client, docs_client):
     assert not body["citations"], "user B must receive zero citations into user A's document"
     assert not any(c["document_id"] == document_id for c in body["citations"])
     assert body["insufficient_evidence"] is True
+
+    # User B must not be able to read user A's document text either — same 404 as a
+    # non-existent doc, never a cross-owner existence leak (§9.8).
+    text_response = docs_client.get(
+        f"/documents/{document_id}/text",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert text_response.status_code == 404, "user B must not read user A's document text"
