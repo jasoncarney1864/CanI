@@ -655,6 +655,22 @@ button {
   color: var(--muted);
 }
 
+.signin__signup {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.signin__signup-link {
+  color: var(--brand-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.signin__signup-link:hover {
+  text-decoration: underline;
+}
+
 /* ---- Column B: Document Viewer ------------------------------------------- */
 
 .viewer {
