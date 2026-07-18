@@ -68,9 +68,7 @@ def extract_archive(raw: bytes) -> tuple[list[ArchiveEntry], list[SkippedEntry]]
     if not infos:
         raise ArchiveValidationError("archive contains no files")
     if len(infos) > MAX_ARCHIVE_ENTRIES:
-        raise ArchiveValidationError(
-            f"archive has {len(infos)} files (max {MAX_ARCHIVE_ENTRIES})"
-        )
+        raise ArchiveValidationError(f"archive has {len(infos)} files (max {MAX_ARCHIVE_ENTRIES})")
 
     entries: list[ArchiveEntry] = []
     skipped: list[SkippedEntry] = []
@@ -99,23 +97,17 @@ def extract_archive(raw: bytes) -> tuple[list[ArchiveEntry], list[SkippedEntry]]
 
         total_bytes += len(data)
         if total_bytes > MAX_TOTAL_UNPACKED_BYTES:
-            raise ArchiveValidationError(
-                f"archive exceeds {MAX_TOTAL_UNPACKED_BYTES} bytes uncompressed"
-            )
+            raise ArchiveValidationError(f"archive exceeds {MAX_TOTAL_UNPACKED_BYTES} bytes uncompressed")
 
         if data.startswith(b"PK\x03\x04"):
             skipped.append(SkippedEntry(filename=name, reason="nested archives are not unpacked"))
             continue
-        sniffed = next(
-            ((ct, ext) for magic, ct, ext in _MAGIC_TO_TYPE if data.startswith(magic)), None
-        )
+        sniffed = next(((ct, ext) for magic, ct, ext in _MAGIC_TO_TYPE if data.startswith(magic)), None)
         if sniffed is None:
             skipped.append(SkippedEntry(filename=name, reason="unsupported file type"))
             continue
 
         content_type, extension = sniffed
-        entries.append(
-            ArchiveEntry(filename=name, content_type=content_type, extension=extension, data=data)
-        )
+        entries.append(ArchiveEntry(filename=name, content_type=content_type, extension=extension, data=data))
 
     return entries, skipped
