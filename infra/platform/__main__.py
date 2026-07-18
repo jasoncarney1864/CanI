@@ -19,7 +19,7 @@ from modules.data_services import SharedContainerRegistry
 from modules.naming import NamingContext, base_tags
 from modules.networking import HubNetwork
 from modules.observability import ApplicationInsights, CentralLogAnalytics
-from modules.security import DenyPublicNetworkPolicies, PlatformKeyVault
+from modules.security import BaselineGovernancePolicies, DenyPublicNetworkPolicies, PlatformKeyVault
 
 config = pulumi.Config()
 environment = pulumi.get_stack()  # "dev" | "prod"
@@ -98,6 +98,16 @@ app_insights = ApplicationInsights(
     resource_group_name=resource_group.name,
     workspace_id=log_analytics.workspace.id,
     tags=tags,
+)
+
+# §6.3 baseline governance policy set (Sprint 2 D1): allowed locations, required tags,
+# TLS, and deploy-if-not-exists Key Vault diagnostics — assigned at platform MG scope.
+baseline_policies = BaselineGovernancePolicies(
+    "cani-baseline",
+    management_group_id=platform_mg.id,
+    workspace_id=log_analytics.workspace.id,
+    location=config.get("location") or "eastus2",
+    allowed_locations=["eastus2"],
 )
 
 ops_alert_email = config.require("opsAlertEmail")
