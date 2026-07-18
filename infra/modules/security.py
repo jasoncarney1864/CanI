@@ -112,7 +112,8 @@ class BaselineGovernancePolicies(ComponentResource):
         self,
         name: str,
         *,
-        management_group_id: Input[str],
+        management_group_id: Input[str],  # full ARM id — assignment / role-assignment scope
+        management_group_name: Input[str],  # the group id string — policy-definition scope
         workspace_id: Input[str],
         location: str,
         allowed_locations: list[str],
@@ -132,10 +133,12 @@ class BaselineGovernancePolicies(ComponentResource):
         )
 
         # One reusable custom definition (audit a missing tag), assigned once per tag.
-        tag_def = azure_native.authorization.PolicyDefinition(
+        # NB: PolicyDefinitionAtManagementGroup.management_group_id is the group *name*
+        # string (e.g. "cani-platform"), not the full ARM id that assignment scopes use.
+        tag_def = azure_native.authorization.PolicyDefinitionAtManagementGroup(
             f"{name}-require-tag-def",
             policy_definition_name="cani-audit-required-tag",
-            management_group_id=management_group_id,
+            management_group_id=management_group_name,
             policy_type="Custom",
             mode="Indexed",  # tag/location-scoped resources only
             display_name="CanI - audit missing required tag",
