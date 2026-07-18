@@ -13,7 +13,7 @@ from cani_shared.config import get_settings
 from cani_shared.db.pool import get_pool
 from cani_shared.db.repositories import claim_next_ingestion_job
 from cani_shared.logging import configure_logging, get_logger
-from cani_shared.providers.factory import build_embedder, build_extractor
+from cani_shared.providers.factory import build_embedder, build_extractor, build_malware_scanner
 from cani_shared.telemetry import configure_telemetry
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 
@@ -33,6 +33,7 @@ def run_forever() -> None:
     pool = get_pool(settings.postgres_dsn)
     blob_store = BlobStore(settings.azure_storage_connection_string)
     blob_store.ensure_containers()
+    scanner = build_malware_scanner(settings)
     extractor = build_extractor(settings)
     embedder = build_embedder(settings)
     qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
@@ -47,7 +48,13 @@ def run_forever() -> None:
                 continue
             try:
                 process_job(
-                    conn, job, blob_store=blob_store, extractor=extractor, embedder=embedder, qdrant=qdrant
+                    conn,
+                    job,
+                    blob_store=blob_store,
+                    scanner=scanner,
+                    extractor=extractor,
+                    embedder=embedder,
+                    qdrant=qdrant,
                 )
             except Exception as exc:  # noqa: BLE001 - top-level job loop must never crash the worker
                 handle_job_failure(conn, job, exc)

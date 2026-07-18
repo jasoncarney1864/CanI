@@ -24,6 +24,7 @@ from cani_shared.logging import get_logger, hash_user_id
 from cani_shared.models import ChunkManifest, IngestionJob, IngestionStage
 from cani_shared.providers.embedder import Embedder
 from cani_shared.providers.extractor import OcrUnavailableError, TextExtractor
+from cani_shared.providers.scanner import MalwareScanner
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 from psycopg import Connection
 
@@ -39,6 +40,7 @@ def process_job(
     job: IngestionJob,
     *,
     blob_store: BlobStore,
+    scanner: MalwareScanner,
     extractor: TextExtractor,
     embedder: Embedder,
     qdrant: OwnerScopedQdrant,
@@ -63,6 +65,16 @@ def process_job(
         conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.EXTRACTING, status="processing"
     )
     raw_bytes = blob_store.download(document_version.blob_uri)
+
+    # §8.11: scan for malware BEFORE extraction. A positive result is a permanent
+    # failure — the document never reaches the extractor, and we log the signature (never
+    # the file bytes) with the owner hash + document id for traceability.
+    scan = scanner.scan(raw_bytes)
+    if not scan.is_clean:
+        log.warning("malware_detected", signature=scan.signature, stage="scanning")
+        raise PermanentJobFailure(f"malware scan blocked document (signature={scan.signature})")
+    log.info("stage_completed", stage="scanning", result="clean")
+
     try:
         extraction = extractor.extract(raw_bytes, document.source_type)
     except OcrUnavailableError as exc:
