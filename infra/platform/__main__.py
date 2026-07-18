@@ -100,14 +100,14 @@ app_insights = ApplicationInsights(
     tags=tags,
 )
 
-# §6.3 baseline governance policy set (Sprint 2 D1): allowed locations, required tags,
-# TLS, and deploy-if-not-exists Key Vault diagnostics — assigned at platform MG scope.
+# §6.3 baseline governance policy set (Sprint 2 D1): allowed locations, required tags, and
+# TLS — assigned at platform MG scope by CI. The DINE Key Vault diagnostics policy needs
+# elevated (Owner/UAA) rights the CI identity lacks, so it is applied once out-of-band per
+# runbooks/policy-baseline-dine.md.
 baseline_policies = BaselineGovernancePolicies(
     "cani-baseline",
-    management_group_id=platform_mg.id,  # full ARM id for assignment / role scopes
+    management_group_id=platform_mg.id,  # full ARM id for assignment scope
     management_group_name=platform_mg.name,  # group id string for the policy definition
-    workspace_id=log_analytics.workspace.id,
-    location=config.get("location") or "eastus2",
     allowed_locations=["eastus2"],
 )
 
