@@ -46,6 +46,20 @@ def test_upload_ingest_retrieve_cite(docker_stack, hub_client, docs_client):
     )
     assert body["verdict"] is None, "open-ended (non yes/no) questions should not carry a verdict"
 
+    # Document Viewer source text (Sprint 3 A1/B): the cited chunk must appear in the
+    # document's full text so the UI can spotlight it in context.
+    cited_chunk_id = body["citations"][0]["chunk_id"]
+    text_response = docs_client.get(f"/documents/{document_id}/text", headers=headers)
+    assert text_response.status_code == 200, text_response.text
+    doc_text = text_response.json()
+    assert doc_text["document_id"] == document_id
+    assert doc_text["chunks"], "expected the document's chunks for the viewer"
+    chunk_ids = {c["chunk_id"] for c in doc_text["chunks"]}
+    assert cited_chunk_id in chunk_ids, (
+        "the cited chunk must be present in the document text for spotlighting"
+    )
+    assert all(c["text"] for c in doc_text["chunks"]), "every chunk should carry its source text"
+
     yes_no_response = docs_client.post(
         "/query", json={"question": "Can I walk my dog off-leash at night?"}, headers=headers
     )
