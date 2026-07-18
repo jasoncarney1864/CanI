@@ -10,8 +10,8 @@ implementation-status.
 - Start date: 2026-07-17 (pulled forward — Sprint 1 closed 12 days early)
 - Target end date: 2026-08-12
 - Last updated: 2026-07-17
-- Overall status: In progress — A1 + A2 done (observability wired and alert baseline
-  fired/resolved in test); workstream A complete, B1 (budget alerts) next
+- Overall status: In progress — workstream A complete (A1 + A2) and B1 (budget alerts)
+  done. Next: C1 (backup/restore drill), C2 (malware scan), C3 (rate limiting), D1 (policy)
 
 ## Status legend
 
@@ -24,7 +24,7 @@ implementation-status.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-17 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 27 | -28 | None | On track. A1 + A2 both done 2026-07-17 (workstream A complete, ~2 weeks early); B1 budget alerts next. |
+| Week 1 | 2026-07-17 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 37 | -18 | None | Ahead of plan. A1 + A2 + B1 all done 2026-07-17 (all of week-1's planned focus complete, ~2 weeks early). Also: dev OCR bug fixed, workspace cap raised 3->5 GB. |
 | Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
@@ -183,14 +183,33 @@ Findings from A2 recon/validation (2026-07-17):
 
 - Owner: Jason
 - Due: 2026-08-02
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-17, ~2 weeks early)
 - Dependencies: Sprint 1 closeout
 - Checklist:
-  - [ ] Configure budget thresholds at 50 percent, 75 percent, 90 percent, and 100 percent.
-  - [ ] Confirm recipients and notification channels.
-  - [ ] Validate test notifications.
+  - [x] Configure budget thresholds at 50 / 75 / 90 / 100 percent. (Subscription-scoped
+    monthly Cost budget `cani-dev-monthly`, $200 USD, as IaC in `infra/modules/cost.py`;
+    Actual-cost notifications at all four burn levels + a Forecasted 100% alert that
+    warns when spend is *trending* over the cap before it actually crosses.)
+  - [x] Confirm recipients and notification channels. (All five notifications enabled,
+    delivering to the ops email via the Consumption notification channel — deliberately
+    independent of the Monitor action group and the Log Analytics daily cap, so a budget
+    alert fires even when the telemetry pipeline is degraded.)
+  - [x] Validate test notifications. (Budget alerts cannot be force-fired like metric
+    alerts — Azure evaluates them against accrued spend on its own cadence. Verified the
+    live config against the subscription instead; and since MTD spend ($103.63) is
+    already past 50% of $200, the actual-50% alert will fire on Azure's next evaluation
+    as a natural end-to-end test.)
 - Done criteria:
-  - [ ] Budget alert policy is active and notifications are confirmed.
+  - [x] Budget alert policy is active and notifications are confirmed. Verified live on
+    the subscription 2026-07-17: `cani-dev-monthly`, $200 USD monthly, five enabled
+    notifications (actual 50/75/90/100 + forecasted 100), all routing to the ops email.
+    Amount is config-driven (`monthlyBudgetUsd`) so the cap moves without a code change.
+
+Scope note: the whole subscription is dev today, so the subscription budget *is* the dev
+environment budget. A separate prod environment budget (§15.3 environment-level, lower
+dev threshold) is deferred until a prod subscription exists. The $200 cap was chosen
+against live run-rate (MTD $103.63 on day 17 → ~$150-190/mo projected, trending lower now
+that the A2 kube-audit log leak is fixed).
 
 ## Workstream C - Resilience and data protection
 
@@ -295,3 +314,13 @@ Use one line per day.
   Workstream A complete (~2 weeks early). Confirmed the web prototype (apps/web) is
   localhost-only — no Deployment/Service/Ingress in the cluster, nothing publicly
   exposed. Next: B1 budget alerts.
+- 2026-07-17 (late, cont.): Cleared the A2 follow-ups and B1. Workspace cap raised
+  3 -> 5 GB (PR #22, applied + verified live) so a burst can't blind the alerts again.
+  Dev OCR bug fixed (PR #21): unconfigured DI now fails cleanly as a permanent error
+  instead of a cryptic 5x-retry; then DI credentials delivered to cani-secrets and OCR
+  verified end-to-end (a scanned image-only PDF read back correct text via
+  Document Intelligence). B1 DONE (PR #23, applied): $200/mo subscription budget with
+  50/75/90/100% actual + forecasted-100% alerts to the ops email, verified live on the
+  subscription; MTD already >50%, so the first real alert fires on Azure's next
+  evaluation. All of week-1's planned focus (A1/A2/B1) now complete. Next: C1 backup/
+  restore drill.
