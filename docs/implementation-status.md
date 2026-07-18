@@ -77,9 +77,10 @@ what is Live vs Scaffolded since this doc was written:
   die post-revocation. `suspected-cross-tenant-access.md` containment updated to use it.
 
 ### §8 RAG pipeline — Live
-- Full pipeline running end to end: upload → extract (native PDF; OCR-ready via Document
-  Intelligence when keys are configured) → chunk (hybrid structural+token, §8.6 targets)
-  → embed → index → owner-filtered retrieve → rerank → grounded answer → citations
+- Full pipeline running end to end: upload → scan (malware, §8.11) → extract (native PDF;
+  OCR-ready via Document Intelligence when keys are configured) → chunk (hybrid
+  structural+token, §8.6 targets) → embed → index → owner-filtered retrieve → rerank →
+  grounded answer → citations
 - Postgres-table-backed queue (`ingestion_jobs`, `SELECT ... FOR UPDATE SKIP LOCKED`)
   instead of a separate broker — §8.10's retry/idempotency requirements, with exponential
   backoff between job-level retry attempts and per-download retry with backoff
@@ -88,8 +89,13 @@ what is Live vs Scaffolded since this doc was written:
   system prompt (`cani_shared/providers/grounder.py`) — §8.9, §14.8
 - Verified live via `tests/integration/test_e2e_flow.py` against a real docker-compose
   stack (not mocked)
-- **Gap:** malware/AV scanning on upload (§8.11) is not implemented — file type/size/magic-byte
-  validation only
+- **Malware scanning (§8.11) — live (Sprint 2 C2).** Every file is scanned before
+  extraction (`cani_shared.providers.scanner.MalwareScanner`, gated in the ingestion
+  pipeline); a hit is a permanent failure that blocks + dead-letters with the signature
+  logged (never the bytes). ClamAV (INSTREAM) is the production backend; dev/CI use the
+  EICAR-only scanner (real AV needs a clamd deployment via `CLAMAV_HOST`). Live-validated:
+  an EICAR upload dead-lettered at the scanning stage with nothing extracted. Upload-time
+  type/size/magic-byte validation remains the first gate.
 
 ### §9 Data model & storage — Live (schema + isolation), Scaffolded (backup/restore, tiering)
 - Postgres schema matches §9.4 exactly, plus `users`/`entitlements`/`audit_events` for hub
