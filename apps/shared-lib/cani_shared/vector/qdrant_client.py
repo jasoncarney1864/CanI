@@ -105,3 +105,40 @@ class OwnerScopedQdrant:
         # on every returned point before it leaves this wrapper.
         verified = [r for r in results if r.payload and r.payload.get("owner_user_id") == owner_user_id]
         return [ScoredChunk(point_id=str(r.id), score=r.score, payload=r.payload or {}) for r in verified]
+
+    def chunks_for_document(self, *, owner_user_id: str, document_id: str) -> list[dict]:
+        """All of one document's chunk payloads, owner-scoped, for the Document Viewer.
+        Uses scroll (not vector search) — this is a metadata read, not a similarity query —
+        but keeps the same mandatory-owner-filter + re-verify discipline as search()."""
+        if not owner_user_id:
+            raise MissingOwnerFilterError("refusing to read chunks without owner_user_id")
+        if not document_id:
+            raise MissingOwnerFilterError("refusing to read chunks without a document_id")
+
+        scroll_filter = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(key="owner_user_id", match=qmodels.MatchValue(value=owner_user_id)),
+                qmodels.FieldCondition(key="document_id", match=qmodels.MatchValue(value=document_id)),
+            ]
+        )
+        payloads: list[dict] = []
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=scroll_filter,
+                with_payload=True,
+                with_vectors=False,
+                limit=256,
+                offset=offset,
+            )
+            # Re-verify owner on every point before it leaves the wrapper (as in search()).
+            payloads.extend(
+                p.payload for p in points if p.payload and p.payload.get("owner_user_id") == owner_user_id
+            )
+            if offset is None:
+                break
+        # chunk_index gives document order; fall back to page_start for chunks indexed
+        # before chunk_index was added to the payload.
+        payloads.sort(key=lambda p: p.get("chunk_index", p.get("page_start", 0)))
+        return payloads

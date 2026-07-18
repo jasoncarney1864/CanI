@@ -3,7 +3,7 @@ import type { Spoke } from "@/lib/spokes";
 import { VerdictBadge } from "./VerdictBadge";
 
 interface ConversationPaneProps {
-  answer: RetrievalAnswer;
+  answer: RetrievalAnswer | null;
   spoke: Spoke;
   loading: boolean;
   error: string | null;
@@ -29,7 +29,7 @@ export function ConversationPane({ answer, spoke, loading, error, onAsk }: Conve
     <section className="conversation" aria-label="Conversation">
       <p className="col-label">Conversation</p>
 
-      {answer.verdict && <VerdictBadge verdict={answer.verdict} />}
+      {answer?.verdict && <VerdictBadge verdict={answer.verdict} />}
 
       <div className="conversation__body">
         <h2 className="conversation__heading">AI Verdict Summary</h2>
@@ -39,13 +39,16 @@ export function ConversationPane({ answer, spoke, loading, error, onAsk }: Conve
           </p>
         ) : (
           <p className="conversation__summary" aria-busy={loading}>
-            {loading ? "Searching your documents\u2026" : answer.answer}
+            {loading
+              ? "Searching your documents\u2026"
+              : (answer?.answer ??
+                "Ask a question about your documents to get a grounded, cited answer.")}
           </p>
         )}
 
         {!loading &&
           !error &&
-          answer.citations.map((c) => (
+          answer?.citations.map((c) => (
             <div className="citation-card" key={c.chunk_id}>
               <span className="citation-card__title">{c.document_title}</span>
               <span className="citation-card__loc">

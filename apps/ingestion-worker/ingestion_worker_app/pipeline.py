@@ -122,6 +122,7 @@ def process_job(
                 "page_start": chunk.page_start,
                 "page_end": chunk.page_end,
                 "section_label": chunk.section_label,
+                "chunk_index": chunk.chunk_index,  # document order, for the Document Viewer
                 "chunk_text": chunk.text,
                 "taxonomy_tags": [],
                 "embedding_version": embedder.embedding_version,
