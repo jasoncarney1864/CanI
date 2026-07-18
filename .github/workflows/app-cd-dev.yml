@@ -40,6 +40,7 @@ jobs:
           - { service: docs-api, dockerfile: apps/docs-api/Dockerfile }
           - { service: ingestion-worker, dockerfile: apps/ingestion-worker/Dockerfile }
           - { service: retrieval-worker, dockerfile: apps/retrieval-worker/Dockerfile }
+          - { service: web, dockerfile: apps/web/Dockerfile }
           - { service: migrate, dockerfile: db/Dockerfile }
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +136,8 @@ jobs:
             ${{ env.ACR_LOGIN_SERVER }}/hub-api=${{ env.ACR_LOGIN_SERVER }}/hub-api:${{ github.sha }} \
             ${{ env.ACR_LOGIN_SERVER }}/docs-api=${{ env.ACR_LOGIN_SERVER }}/docs-api:${{ github.sha }} \
             ${{ env.ACR_LOGIN_SERVER }}/retrieval-worker=${{ env.ACR_LOGIN_SERVER }}/retrieval-worker:${{ github.sha }} \
-            ${{ env.ACR_LOGIN_SERVER }}/ingestion-worker=${{ env.ACR_LOGIN_SERVER }}/ingestion-worker:${{ github.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/ingestion-worker=${{ env.ACR_LOGIN_SERVER }}/ingestion-worker:${{ github.sha }} \
+            ${{ env.ACR_LOGIN_SERVER }}/web=${{ env.ACR_LOGIN_SERVER }}/web:${{ github.sha }}
           kustomize build . -o rendered-dev.yaml
           echo "Rendered $(grep -c '^kind:' rendered-dev.yaml) objects"
 
@@ -149,6 +151,7 @@ jobs:
           kubectl -n docs-platform rollout status deployment/docs-api --timeout=180s
           kubectl -n docs-platform rollout status deployment/retrieval-worker --timeout=180s
           kubectl -n docs-platform rollout status deployment/ingestion-worker --timeout=180s
+          kubectl -n docs-platform rollout status deployment/web --timeout=180s
           EOF
           )
           az aks command invoke -g "$AKS_RESOURCE_GROUP" -n "$AKS_CLUSTER_NAME" \
@@ -166,6 +169,7 @@ jobs:
           kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8001/healthz', timeout=5).status == 200; print('hub-api healthz ok')"
           kubectl -n docs-platform exec deploy/docs-api -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8002/healthz', timeout=5).status == 200; print('docs-api healthz ok')"
           kubectl -n docs-platform exec deploy/retrieval-worker -- python -c "import urllib.request as u; assert u.urlopen('http://localhost:8003/healthz', timeout=5).status == 200; print('retrieval-worker healthz ok')"
+          kubectl -n docs-platform exec deploy/web -- node -e "require('http').get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),5000)" && echo "web healthz ok"
           kubectl -n hub-system exec deploy/hub-api -- python -c "import urllib.request as u, json, http.cookiejar; cj=http.cookiejar.CookieJar(); op=u.build_opener(u.HTTPCookieProcessor(cj)); r=op.open(u.Request('http://localhost:8001/auth/dev-login', data=json.dumps({'idp_subject':'cd-smoke-check'}).encode(), headers={'Content-Type':'application/json'}), timeout=10); assert r.status==200; w=op.open('http://localhost:8001/auth/whoami', timeout=10); assert w.status==200, w.status; print('dev-login + whoami smoke ok')"
           EOF
           )
