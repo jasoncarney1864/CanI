@@ -63,6 +63,16 @@ class CaniAksCluster(ComponentResource):
             identity=azure_native.containerservice.ManagedClusterIdentityArgs(
                 type=azure_native.containerservice.ResourceIdentityType.SYSTEM_ASSIGNED
             ),
+            # Managed NGINX ingress (Sprint 3 C1): the AKS app-routing addon runs an
+            # Azure-managed ingress controller + public load balancer, so the web app gets a
+            # public endpoint without us maintaining an ingress stack. No dns_zone_resource_ids
+            # (the public URL is <lb-ip>.sslip.io in dev) and no Key Vault cert — TLS is issued
+            # by cert-manager + Let's Encrypt against that hostname.
+            ingress_profile=azure_native.containerservice.ManagedClusterIngressProfileArgs(
+                web_app_routing=azure_native.containerservice.ManagedClusterIngressProfileWebAppRoutingArgs(
+                    enabled=True
+                ),
+            ),
             addon_profiles={
                 # Key Vault Secrets Provider (CSI) — target delivery path for runtime
                 # secrets (docs/10 §10.6); enabled live, declared so pulumi up won't strip it.
