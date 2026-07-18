@@ -1,0 +1,27 @@
+# Public HTTPS ingress for the web app (Sprint 3 C1). Only the web app is exposed; the
+# backend APIs stay private and are reached solely via the web app's server-side proxy.
+#
+# The host is <managed-nginx-lb-ip>.sslip.io — sslip.io resolves the embedded IP, so no
+# custom domain is needed in dev. If the ingress LoadBalancer IP ever changes (LB
+# recreated), update the host here and let cert-manager re-issue. cert-manager fills the
+# web-tls secret with a Let's Encrypt cert for this host (HTTP-01 via the nginx class).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: docs-platform
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  tls:
+    - hosts: ["172.175.33.251.sslip.io"]
+      secretName: web-tls
+  rules:
+    - host: "172.175.33.251.sslip.io"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { number: 3000 } }

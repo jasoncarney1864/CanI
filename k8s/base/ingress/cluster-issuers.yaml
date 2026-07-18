@@ -1,0 +1,30 @@
+# Let's Encrypt ClusterIssuers (Sprint 3 C1). cert-manager itself is a one-time cluster
+# install (not part of this kustomize) — see runbooks/ingress-tls-setup.md. These issue
+# certs via HTTP-01, solved through the AKS managed-NGINX ingress class.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: jasoncarney1864@gmail.com
+    privateKeySecretRef: { name: letsencrypt-staging-key }
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: webapprouting.kubernetes.azure.com
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: jasoncarney1864@gmail.com
+    privateKeySecretRef: { name: letsencrypt-prod-key }
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: webapprouting.kubernetes.azure.com
