@@ -10,8 +10,8 @@ implementation-status.
 - Start date: 2026-07-17 (pulled forward — Sprint 1 closed 12 days early)
 - Target end date: 2026-08-12
 - Last updated: 2026-07-17
-- Overall status: In progress — A1, A2, B1, C1 and C2 done. Next: C3 (rate limiting),
-  D1 (policy baseline). Well ahead of plan.
+- Overall status: In progress — A1, A2, B1, C1, C2 and C3 done. Only D1 (policy baseline)
+  remains before the closeout gate. Well ahead of plan.
 
 ## Status legend
 
@@ -25,7 +25,7 @@ implementation-status.
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
 | Week 1 | 2026-07-17 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 37 | -18 | None | Ahead of plan. A1 + A2 + B1 all done 2026-07-17 (all of week-1's planned focus complete, ~2 weeks early). Also: dev OCR bug fixed, workspace cap raised 3->5 GB. |
-| Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 50 | -50 | None | Started early. C1 (backup/restore) and C2 (malware scan) done 2026-07-17, both week-2 items pulled forward. C3/D1 remain. |
+| Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 75 | -25 | None | Started early. C1 (backup/restore), C2 (malware scan) and C3 (rate limiting) all done 2026-07-17, week-2 items pulled forward. Only D1 remains. |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
 
@@ -282,14 +282,31 @@ regardless of backend. EICAR test bytes are stored base64-encoded in source so a
 
 - Owner: Jason
 - Due: 2026-08-08
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-17, ~3 weeks early)
 - Dependencies: Sprint 1 closeout
 - Checklist:
-  - [ ] Define rate-limit policy for exposed endpoints.
-  - [ ] Implement rate limiting at gateway or service layer.
-  - [ ] Add tests for limit exceeded and normal traffic behavior.
+  - [x] Define rate-limit policy for exposed endpoints. (Per-client token bucket, default
+    60 requests / 60s, config-driven via `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS`
+    / `RATE_LIMIT_ENABLED`. Client keyed by leftmost `X-Forwarded-For` else socket peer;
+    `/healthz` exempt.)
+  - [x] Implement rate limiting at gateway or service layer. (Service layer — public
+    ingress is still deferred. `RateLimitMiddleware` in `cani_shared.middleware`, added as
+    the outermost middleware on hub-api and docs-api so abusive traffic is rejected before
+    downstream work or telemetry spend. Over-limit → 429 + `Retry-After`, logs a
+    `rate_limited` event with a hashed client key.)
+  - [x] Add tests for limit exceeded and normal traffic behavior. (4 unit tests:
+    allow-to-capacity-then-429, probe exemption, refill-after-window, per-client
+    isolation. Full suite 78 passing.)
 - Done criteria:
-  - [ ] Rate limiting enforces expected thresholds without breaking normal traffic.
+  - [x] Rate limiting enforces expected thresholds without breaking normal traffic.
+    Live-validated 2026-07-17: a 70-request burst from one client returned exactly 60
+    allowed (reached the route) + 10 × 429; `/healthz` stayed 200 for 15 requests from the
+    same throttled client (probe exemption); a different client was unaffected (isolation).
+
+Honesty note: service-layer, not gateway, because public ingress is deferred — the
+middleware already reads `X-Forwarded-For` for when an ingress lands. Buckets are per-pod,
+so the effective ceiling is ~N x capacity with N replicas (exact in dev's single replica);
+a strict global limit needs a shared store (Redis) and is deferred + documented.
 
 ## Workstream D - Policy baseline completion
 
@@ -378,3 +395,9 @@ Use one line per day.
   `malware_detected` at the scanning stage and dead-lettered it on attempt 1; Qdrant +
   chunk_manifests unchanged (nothing extracted). EICAR bytes stored base64 in source to
   avoid host-AV quarantine. Board 59% (24/41). Next: C3 rate limiting.
+- 2026-07-17 (late, cont. 4): C3 DONE (last of the pulled-forward week-2 items).
+  Per-client token-bucket rate limiting on hub-api + docs-api (PR #29), service-layer
+  (public ingress deferred), default 60/60s, `/healthz` exempt, 429 + Retry-After,
+  4 tests. Live-validated: a 70-request burst from one client -> exactly 60 allowed +
+  10x 429; `/healthz` stayed 200 under the throttle; a different client unaffected.
+  Board 68% (28/41). Only D1 (policy baseline) left before the closeout gate.
