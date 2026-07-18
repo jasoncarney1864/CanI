@@ -10,8 +10,8 @@ implementation-status.
 - Start date: 2026-07-17 (pulled forward — Sprint 1 closed 12 days early)
 - Target end date: 2026-08-12
 - Last updated: 2026-07-17
-- Overall status: In progress — workstream A complete (A1 + A2), B1 (budget alerts) and
-  C1 (backup/restore drill) done. Next: C2 (malware scan), C3 (rate limiting), D1 (policy)
+- Overall status: In progress — A1, A2, B1, C1 and C2 done. Next: C3 (rate limiting),
+  D1 (policy baseline). Well ahead of plan.
 
 ## Status legend
 
@@ -25,7 +25,7 @@ implementation-status.
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
 | Week 1 | 2026-07-17 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 37 | -18 | None | Ahead of plan. A1 + A2 + B1 all done 2026-07-17 (all of week-1's planned focus complete, ~2 weeks early). Also: dev OCR bug fixed, workspace cap raised 3->5 GB. |
-| Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 25 | -75 | None | Started early. C1 backup/restore drill done 2026-07-17 (week-2 item pulled forward). C2/C3/D1 remain. |
+| Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 50 | -50 | None | Started early. C1 (backup/restore) and C2 (malware scan) done 2026-07-17, both week-2 items pulled forward. C3/D1 remain. |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
 
@@ -249,14 +249,34 @@ was anything to exercise.
 
 - Owner: Jason
 - Due: 2026-08-07
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-17, ~3 weeks early)
 - Dependencies: Sprint 1 closeout
 - Checklist:
-  - [ ] Add malware scanning step in upload or ingestion path before extraction.
-  - [ ] Ensure failed scans block downstream processing.
-  - [ ] Add tests for clean and malicious file paths.
+  - [x] Add malware scanning step in upload or ingestion path before extraction. (PR #27:
+    `MalwareScanner` interface scanned in the ingestion pipeline right after blob download
+    and before `extractor.extract()`. Two backends, same real-vs-fake tiering as the Azure
+    providers — `ClamAVScanner` (clamd INSTREAM) for prod, `EicarSignatureScanner` for
+    dev/CI; factory selects on `CLAMAV_HOST`. A document is never left unscanned.)
+  - [x] Ensure failed scans block downstream processing. (A positive result raises
+    `PermanentJobFailure` → dead-lettered on attempt 1, no wasted retries; the document
+    never reaches extraction.)
+  - [x] Add tests for clean and malicious file paths. (5 unit tests: EICAR flagged, clean
+    passes, ClamAV INSTREAM clean+FOUND parsing against a loopback fake clamd, factory
+    selection. Full suite 74 passing.)
 - Done criteria:
-  - [ ] Untrusted file is blocked before extraction and logged with traceability.
+  - [x] Untrusted file is blocked before extraction and logged with traceability.
+    Live-validated 2026-07-17: uploaded a file with `%PDF` magic bytes + the EICAR payload
+    (passes the type/size gate), and the worker logged `malware_detected` at `stage:
+    scanning` (signature `Eicar-Test-Signature`, with document_id + owner hash, never the
+    bytes) then dead-lettered on attempt 1. Qdrant point count and `chunk_manifests` were
+    unchanged afterward — nothing was extracted or indexed.
+
+Honesty note: dev uses the EICAR-only backend (proves the gate, needs no clamd), the same
+tiering as FakeEmbedder / dev-OCR. Full AV in production requires a clamd deployment
+(`CLAMAV_HOST`); a clamav pod is not stood up in dev because the cluster is at its 10-core
+vCPU ceiling. The scan *gate* (runs before extraction, positive result blocks) is identical
+regardless of backend. EICAR test bytes are stored base64-encoded in source so a host AV
+(e.g. Windows Defender) doesn't quarantine the repo file.
 
 ### C3. Public endpoint rate limiting (P2)
 
@@ -351,3 +371,10 @@ Use one line per day.
   reconcile point count == chunk_manifests (match). Postgres PITR readiness-validated
   (restore-to-temp-server deferred to avoid the small cost). Procedures + RTO/RPO in
   `runbooks/backup-restore-drill.md`. Board 49% (20/41). Next: C2 malware scan.
+- 2026-07-17 (late, cont. 3): C2 DONE (another week-2 item pulled forward). Malware scan
+  gate in the ingestion pipeline before extraction (PR #27): `MalwareScanner` interface,
+  ClamAV (INSTREAM) for prod + EICAR scanner for dev/CI, factory on `CLAMAV_HOST`, 5
+  tests. Live-validated by uploading an EICAR-laden `%PDF` file: worker logged
+  `malware_detected` at the scanning stage and dead-lettered it on attempt 1; Qdrant +
+  chunk_manifests unchanged (nothing extracted). EICAR bytes stored base64 in source to
+  avoid host-AV quarantine. Board 59% (24/41). Next: C3 rate limiting.
