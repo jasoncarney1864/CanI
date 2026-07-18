@@ -10,6 +10,14 @@
 !apps/retrieval-worker/**
 !apps/ingestion-worker/
 !apps/ingestion-worker/**
+# The web app (apps/web/Dockerfile) also builds from the repo root. Re-include its source
+# but NOT node_modules / .next — the image does a fresh `npm ci` + build, and copying the
+# host's node_modules would clobber it (and bloats the context). Later patterns win, so
+# these two exclusions strip those dirs back out of the re-included tree.
+!apps/web/
+!apps/web/**
+apps/web/node_modules/
+apps/web/.next/
 # db/Dockerfile (the compose migrate service) builds from the repo root and copies
 # db/migrate.py + db/migrations — without these re-includes its COPY steps fail.
 !db/

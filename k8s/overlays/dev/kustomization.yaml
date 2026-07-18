@@ -32,3 +32,5 @@ images:
     newTag: dev
   - name: canishareded20367db8.azurecr.io/ingestion-worker
     newTag: dev
+  - name: canishareded20367db8.azurecr.io/web
+    newTag: dev

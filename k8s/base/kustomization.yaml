@@ -13,3 +13,4 @@ resources:
   - ingestion-worker/scaling.yaml
   - qdrant/statefulset.yaml
   - qdrant/snapshot-cronjob.yaml
+  - web/deployment.yaml
