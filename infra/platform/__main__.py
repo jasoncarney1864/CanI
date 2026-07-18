@@ -81,9 +81,13 @@ log_analytics = CentralLogAnalytics(
     "cani-central",
     resource_group_name=resource_group.name,
     tags=tags,
-    # ~2x headroom over expected volume (~1.2 GB/day after the AKS diagnostic-category
-    # trim in infra/workload) — a runaway-source circuit breaker, not a throttle.
-    daily_quota_gb=3,
+    # Runaway-source circuit breaker, not a throttle. Raised 3 -> 5 GB after the initial
+    # 3 GB tripped on the pre-trim kube-audit backlog and, while OverQuota, silently
+    # dropped the very telemetry the alerts fire on (Sprint 2 A2). Steady state after the
+    # AKS diagnostic-category trim is ~1.5-2 GB/day, so 5 GB leaves headroom for a traffic
+    # burst (when visibility matters most) while still catching a genuine runaway like the
+    # 5.78 GB/day leak that trim fixed. Cost is bounded further by B1 budget alerts.
+    daily_quota_gb=5,
 )
 
 app_insights = ApplicationInsights(
