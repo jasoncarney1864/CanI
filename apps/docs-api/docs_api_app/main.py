@@ -29,7 +29,7 @@ from cani_shared.db.repositories import (
     list_documents,
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
-from cani_shared.middleware import TraceIdMiddleware
+from cani_shared.middleware import RateLimitMiddleware, TraceIdMiddleware
 from cani_shared.models import Document, RetrievalAnswer
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
@@ -61,6 +61,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CanI Docs API", lifespan=lifespan)
 app.add_middleware(TraceIdMiddleware)
 instrument_fastapi(app)
+# Added last -> outermost -> runs first, so a flood of upload/query requests is throttled
+# before any downstream work or telemetry spend (§14.8).
+if settings.rate_limit_enabled:
+    app.add_middleware(
+        RateLimitMiddleware,
+        capacity=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
 
 
 class UploadResponse(BaseModel):
