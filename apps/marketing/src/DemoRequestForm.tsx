@@ -112,7 +112,7 @@ export function DemoRequestForm() {
       </div>
 
       <div className="demo-form-field">
-        <label htmlFor="demo-message">What would you like to research? (optional)</label>
+        <label htmlFor="demo-message">What paperwork would you like answers from? (optional)</label>
         <textarea
           id="demo-message"
           name="message"

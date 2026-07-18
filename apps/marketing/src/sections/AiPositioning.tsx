@@ -5,22 +5,20 @@ export function AiPositioning() {
         <div>
           <h2>Grounded AI, not a guess</h2>
           <p>
-            Sondra Keys is built on Retrieval-Augmented Generation over
-            Azure OpenAI and Azure AI Search — every answer is retrieved
-            from actual Nevada statutes and case law first, then summarized,
-            rather than generated from a model's memory alone. That's what
-            makes citations traceable back to a real source instead of a
-            plausible-sounding invention.
+            CanI is built on Retrieval-Augmented Generation over your own uploaded
+            documents — every answer is retrieved from what your paperwork actually
+            says first, then summarized, rather than generated from a model's memory
+            alone. That's why every answer arrives with the source passage spotlighted,
+            traceable to a real page instead of a plausible-sounding invention.
           </p>
         </div>
         <div>
-          <h2>A research tool, not a replacement for judgment</h2>
+          <h2>A clarity tool, not a replacement for judgment</h2>
           <p>
-            Sondra Keys is built to speed up legal research, not to replace
-            the attorney doing it. It surfaces the relevant statutes, cases,
-            and citations quickly and transparently — your team still
-            reviews and applies them. Sondra Keys does not provide legal
-            advice.
+            CanI is built to make your documents understandable, not to make your
+            decisions for you. It surfaces what the text says quickly and
+            transparently — you still decide what to do about it. CanI does not
+            provide legal, medical, or financial advice.
           </p>
         </div>
       </div>

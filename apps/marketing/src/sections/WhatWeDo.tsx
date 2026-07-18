@@ -1,18 +1,21 @@
 const CAPABILITIES = [
   {
-    title: "Statute & case law research",
+    key: "legal",
+    title: "Legal",
     description:
-      "Search across Nevada statutes and case law at once, and get back the passages that actually answer your question — not just a list of documents to open.",
+      "Leases, contracts, HOA covenants, and filings. Ask \u201cCan I sublet?\u201d and get a plain-English answer with the exact clause spotlighted \u2014 not thirty pages of legalese.",
   },
   {
-    title: "Citation extraction",
+    key: "health",
+    title: "Health",
     description:
-      "Every answer comes with the specific statute sections and case citations it's drawn from, ready to verify or drop straight into a memo.",
+      "Health records and benefits documents. Understand what your plan actually covers and what your records actually say, with the source passage alongside every answer.",
   },
   {
-    title: "Legal document analysis",
+    key: "finance",
+    title: "Finance",
     description:
-      "Upload a brief, contract, or filing and get a structured read on the relevant authority and language it references.",
+      "Tax notices, loan agreements, and statements. Get a clear read on the terms you agreed to and the deadlines that matter, cited line by line.",
   },
 ] as const;
 
@@ -20,15 +23,18 @@ export function WhatWeDo() {
   return (
     <section id="what-we-do" className="section">
       <div className="section-inner">
-        <h2>What Sondra Keys does</h2>
+        <h2>One hub. A spoke for each part of your life.</h2>
         <p className="section-lede">
-          One platform for the research work that eats the most billable
-          hours: finding the right authority, extracting the citation, and
-          understanding what a document actually says.
+          CanI is a hub-and-spoke platform: one place to sign in and upload, with
+          dedicated workspaces for the paperwork that runs your life. Three spokes today
+          &mdash; more to come.
         </p>
         <div className="capability-grid">
           {CAPABILITIES.map((capability) => (
-            <div className="capability-card" key={capability.title}>
+            <div
+              className={`capability-card capability-card--${capability.key}`}
+              key={capability.key}
+            >
               <h3>{capability.title}</h3>
               <p>{capability.description}</p>
             </div>

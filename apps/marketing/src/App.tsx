@@ -26,7 +26,7 @@ export function App() {
       <header className="site-header">
         <div className="section-inner site-header-inner">
           <a className="site-logo" href="/">
-            Sondra Keys
+            CanI<span className="site-logo-dot">.</span>
           </a>
           {!isCreateAccountPage && (
             <a className="button button--primary button--small" href="#demo-request">
@@ -40,7 +40,10 @@ export function App() {
 
       <footer className="site-footer">
         <div className="section-inner">
-          <p>&copy; {new Date().getFullYear()} Sondra Keys. Nevada legal research, not legal advice.</p>
+          <p>
+            &copy; {new Date().getFullYear()} CanI. Answers grounded in your documents — not
+            legal, medical, or financial advice.
+          </p>
         </div>
       </footer>
     </>
