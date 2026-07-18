@@ -19,7 +19,7 @@ from modules.data_services import SharedContainerRegistry
 from modules.naming import NamingContext, base_tags
 from modules.networking import HubNetwork
 from modules.observability import ApplicationInsights, CentralLogAnalytics
-from modules.security import DenyPublicNetworkPolicies, PlatformKeyVault
+from modules.security import BaselineGovernancePolicies, DenyPublicNetworkPolicies, PlatformKeyVault
 
 config = pulumi.Config()
 environment = pulumi.get_stack()  # "dev" | "prod"
@@ -98,6 +98,17 @@ app_insights = ApplicationInsights(
     resource_group_name=resource_group.name,
     workspace_id=log_analytics.workspace.id,
     tags=tags,
+)
+
+# §6.3 baseline governance policy set (Sprint 2 D1): allowed locations, required tags, and
+# TLS — assigned at platform MG scope by CI. The DINE Key Vault diagnostics policy needs
+# elevated (Owner/UAA) rights the CI identity lacks, so it is applied once out-of-band per
+# runbooks/policy-baseline-dine.md.
+baseline_policies = BaselineGovernancePolicies(
+    "cani-baseline",
+    management_group_id=platform_mg.id,  # full ARM id for assignment scope
+    management_group_name=platform_mg.name,  # group id string for the policy definition
+    allowed_locations=["eastus2"],
 )
 
 ops_alert_email = config.require("opsAlertEmail")
