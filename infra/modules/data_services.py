@@ -130,7 +130,26 @@ class WorkloadBlobStorage(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        for container in ("raw-documents", "extracted-text", "ingestion-artifacts"):
+        # §9.10 accidental-deletion recovery: blob versioning keeps prior versions on
+        # overwrite, and soft delete makes deleted blobs/containers recoverable for a
+        # window instead of being gone immediately. 7-day window matches Postgres PITR
+        # retention so all stores have the same recovery horizon.
+        self.blob_service = azure_native.storage.BlobServiceProperties(
+            f"{name}-blobsvc",
+            account_name=self.account.name,
+            resource_group_name=resource_group_name,
+            blob_services_name="default",  # the only valid value for this resource
+            is_versioning_enabled=True,
+            delete_retention_policy=azure_native.storage.DeleteRetentionPolicyArgs(enabled=True, days=7),
+            container_delete_retention_policy=azure_native.storage.DeleteRetentionPolicyArgs(
+                enabled=True, days=7
+            ),
+            opts=ResourceOptions(parent=self),
+        )
+
+        # qdrant-snapshots holds the Qdrant snapshot exports (§9.10, C1). Separate from the
+        # document containers so backup artifacts have their own lifecycle/access surface.
+        for container in ("raw-documents", "extracted-text", "ingestion-artifacts", "qdrant-snapshots"):
             azure_native.storage.BlobContainer(
                 f"{name}-container-{container}",
                 account_name=self.account.name,
