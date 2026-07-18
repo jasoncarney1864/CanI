@@ -36,11 +36,12 @@ def build_chat_grounder(settings: Settings) -> ChatGrounder:
 
 
 def build_extractor(settings: Settings) -> TextExtractor:
-    if settings.azure_documentintelligence_endpoint and settings.azure_documentintelligence_api_key:
-        return NativeThenOcrExtractor(
-            di_endpoint=settings.azure_documentintelligence_endpoint,
-            di_api_key=settings.azure_documentintelligence_api_key,
-        )
-    # No Document Intelligence configured: native PDF extraction still works standalone;
-    # OCR fallback would raise, so this path is only safe for digitally-generated PDFs.
-    return NativeThenOcrExtractor(di_endpoint="", di_api_key="")
+    # DI creds may be empty. That is fine: native PDF extraction works without them, and
+    # NativeThenOcrExtractor raises a clear OcrUnavailableError (which the pipeline treats
+    # as a permanent failure) if a scanned doc needs OCR while DI is unconfigured — so an
+    # unconfigured dev cluster degrades to "digital PDFs only" with an honest error, not a
+    # cryptic empty-endpoint network failure retried five times.
+    return NativeThenOcrExtractor(
+        di_endpoint=settings.azure_documentintelligence_endpoint,
+        di_api_key=settings.azure_documentintelligence_api_key,
+    )
