@@ -1,10 +1,12 @@
+import { useEffect, useRef } from "react";
 import type { DocumentText } from "@/lib/types";
 
 /**
  * Column B — Document Viewer (65%). Renders the real source document (its ordered
  * chunks from GET /documents/{id}/text) in the content font (Source Serif) on the
  * Viewer Gray canvas, with every cited chunk wrapped in a Spotlight-Yellow <mark>
- * (§2, §5). Highlights are driven by the live citations' chunk_ids.
+ * (§2, §5). Highlights are driven by the live citations' chunk_ids; the first
+ * spotlighted passage is scrolled into view so the evidence is never off-screen.
  */
 export function DocumentViewer({
   doc,
@@ -15,6 +17,16 @@ export function DocumentViewer({
   highlightChunkIds: Set<string>;
   loading: boolean;
 }) {
+  const pageRef = useRef<HTMLElement | null>(null);
+
+  // When a document (or a new set of citations) lands, bring the first
+  // spotlighted passage into view — centered, so surrounding context is visible.
+  useEffect(() => {
+    if (!doc || loading) return;
+    const mark = pageRef.current?.querySelector("mark.spotlight");
+    mark?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [doc, highlightChunkIds, loading]);
+
   return (
     <section className="viewer" aria-label="Document viewer">
       <p className="col-label col-label--muted">Document Viewer</p>
@@ -29,7 +41,7 @@ export function DocumentViewer({
           passage spotlighted.
         </p>
       ) : (
-        <article className="viewer__page">
+        <article className="viewer__page" ref={pageRef}>
           <h3 className="viewer__section">{doc.title}</h3>
           {doc.chunks.map((chunk) => (
             <p className="viewer__para" key={chunk.chunk_id}>

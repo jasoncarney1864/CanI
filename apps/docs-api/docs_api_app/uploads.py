@@ -15,7 +15,14 @@ _ALLOWED = {
     "application/pdf": b"%PDF",
     "image/jpeg": b"\xff\xd8\xff",
     "image/png": b"\x89PNG",
+    # A zip of multiple supported documents; unpacked (with strict limits) by the
+    # ingestion worker, which registers each entry as its own document (§8.3).
+    "application/zip": b"PK\x03\x04",
 }
+
+# Browsers on Windows commonly declare zips as x-zip-compressed; normalize to the
+# canonical type so everything downstream (source_type checks) sees one value.
+_CONTENT_TYPE_ALIASES = {"application/x-zip-compressed": "application/zip"}
 
 
 class UploadValidationError(Exception):
@@ -28,10 +35,16 @@ class ValidatedUpload:
     extension: str
 
 
-_EXTENSION_BY_TYPE = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}
+_EXTENSION_BY_TYPE = {
+    "application/pdf": "pdf",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "application/zip": "zip",
+}
 
 
 def validate_upload(*, content_type: str, size_bytes: int, head_bytes: bytes) -> ValidatedUpload:
+    content_type = _CONTENT_TYPE_ALIASES.get(content_type, content_type)
     if content_type not in _ALLOWED:
         raise UploadValidationError(f"unsupported content type: {content_type}")
     if size_bytes > MAX_UPLOAD_BYTES:

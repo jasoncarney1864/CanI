@@ -10,7 +10,28 @@ def test_valid_pdf_accepted():
 
 def test_unsupported_content_type_rejected():
     with pytest.raises(UploadValidationError):
-        validate_upload(content_type="application/zip", size_bytes=1024, head_bytes=b"PK\x03\x04")
+        validate_upload(content_type="text/plain", size_bytes=1024, head_bytes=b"hello")
+
+
+def test_zip_accepted():
+    result = validate_upload(
+        content_type="application/zip", size_bytes=1024, head_bytes=b"PK\x03\x04\x14\x00"
+    )
+    assert result.content_type == "application/zip"
+    assert result.extension == "zip"
+
+
+def test_windows_zip_alias_normalized():
+    result = validate_upload(
+        content_type="application/x-zip-compressed", size_bytes=1024, head_bytes=b"PK\x03\x04\x14\x00"
+    )
+    assert result.content_type == "application/zip"
+    assert result.extension == "zip"
+
+
+def test_zip_with_wrong_magic_rejected():
+    with pytest.raises(UploadValidationError):
+        validate_upload(content_type="application/zip", size_bytes=1024, head_bytes=b"%PDF-1.4")
 
 
 def test_oversized_file_rejected():
