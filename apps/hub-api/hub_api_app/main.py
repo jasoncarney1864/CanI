@@ -30,7 +30,7 @@ from cani_shared.db.repositories import (
     record_audit_event,
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
-from cani_shared.middleware import TraceIdMiddleware
+from cani_shared.middleware import RateLimitMiddleware, TraceIdMiddleware
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -61,6 +61,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CanI Hub API", lifespan=lifespan)
 app.add_middleware(TraceIdMiddleware)
 instrument_fastapi(app)
+# Added last -> outermost -> runs first, so abusive traffic (e.g. auth brute-forcing) is
+# rejected before any downstream work or telemetry spend (§14.8).
+if settings.rate_limit_enabled:
+    app.add_middleware(
+        RateLimitMiddleware,
+        capacity=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
 
 
 def _cookie_kwargs() -> dict:

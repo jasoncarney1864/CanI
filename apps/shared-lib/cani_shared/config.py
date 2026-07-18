@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     def clamav_configured(self) -> bool:
         return bool(self.clamav_host)
 
+    # Rate limiting for externally reachable APIs (docs/14 §14.8). Token bucket per client:
+    # capacity `rate_limit_requests`, refilled over `rate_limit_window_seconds`.
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+    rate_limit_requests: int = Field(default=60, alias="RATE_LIMIT_REQUESTS")
+    rate_limit_window_seconds: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
+
     # Application Insights (docs/13 §13.7). Optional everywhere: when unset,
     # cani_shared.telemetry.configure_telemetry is a no-op, so local compose runs and
     # tests emit nothing to Azure. Set in dev/prod via the cani-secrets Secret.
