@@ -244,11 +244,18 @@ what is Live vs Scaffolded since this doc was written:
   `/healthz` exempt, 429 + Retry-After; live-validated (60 allowed + 429s on a burst).
   Service-layer (public ingress deferred); per-pod buckets, strict global limit (Redis)
   deferred.
-- **Not implemented:** customer-managed keys, most of the documented policy set (only 2 of
-  the "deny public network access" built-in policies are wired in
-  `infra/modules/security.py` — explicitly noted as a representative-not-complete example
-  in that file's docstring; completing it is Sprint 2 D1). (Real Entra External ID landed
-  in D1 of Sprint 1; session/token revocation on entitlement change in D2.)
+- **Governance policy baseline (§6.3) — complete (Sprint 2 D1):** deny public network
+  access (Storage + Key Vault), allowed locations (Deny, eastus2), required tags (Audit,
+  environment/owner/spoke via a custom def), storage TLS (Audit), and Key Vault
+  diagnostics (DeployIfNotExists). All assigned and verified live
+  (`infra/modules/security.py::BaselineGovernancePolicies`; DINE via
+  `runbooks/policy-baseline-dine.md`). The CI deploy identity was granted **Resource
+  Policy Contributor** at the platform management-group scope (policy-write only, no
+  role-assignment power) so MG-scope policy is CI-managed IaC; DINE's identity + role
+  grants remain a one-time elevated (Owner/UAA) step.
+- **Not implemented:** customer-managed keys; App Insights dashboards (§13.9). (Real Entra
+  External ID landed in D1 of Sprint 1; session/token revocation on entitlement change in
+  D2.)
 
 ### §15 Cost management — Not implemented (needs live subscription)
 - Budgets, alerts, cost dashboards, tag compliance checks all require a real Azure
