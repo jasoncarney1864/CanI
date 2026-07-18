@@ -373,7 +373,7 @@ def update_ingestion_job_stage(
             """
             UPDATE ingestion_jobs
             SET stage = %s, status = %s, error_code = %s, error_detail = %s,
-                finished_at = CASE WHEN %s IN ('indexed', 'failed') THEN now() ELSE finished_at END
+                finished_at = CASE WHEN %s IN ('indexed', 'unpacked', 'failed') THEN now() ELSE finished_at END
             WHERE owner_user_id = %s AND ingestion_job_id = %s
             """,
             (stage, status, error_code, error_detail, status, owner_user_id, ingestion_job_id),
