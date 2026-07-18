@@ -19,8 +19,9 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Target end date: 2026-08-22
 - Last updated: 2026-07-18
 - Overall status: [-] In progress (44%, 16/36) — A1, B1+B2, and C1 done. **CanI is live on
-  the public internet at https://172.175.33.251.sslip.io** with a valid Let's Encrypt cert.
-  Next: A2 + C2 (real Entra OIDC — now unblocked by the public callback URL).
+  the public internet at https://app.canido.co** (custom domain -> managed-NGINX ingress)
+  with a valid Let's Encrypt cert. Next: A2 + C2 (real Entra OIDC — now unblocked by the
+  public callback URL).
 
 ## Status legend
 
@@ -172,7 +173,7 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 
 - Owner: Jason
 - Status: [ ] Not started — unblocked (C1 done; public callback URL exists at
-  `https://172.175.33.251.sslip.io`)
+  `https://app.canido.co`)
 - Dependencies: C1 (met)
 - Checklist:
   - [ ] Add the public callback URL to the `cani-hub` Entra app registration redirect URIs.
@@ -281,3 +282,8 @@ Use one line per day.
   NGINX -> web -> hub-api -> docs-api -> retrieval, HTTP->HTTPS 308. Codified to IaC
   (PR #40) + `runbooks/ingress-tls-setup.md`. Next: A2 + C2 (real Entra OIDC — the public
   callback URL that unblocks it now exists).
+- 2026-07-18 (cont.): **Custom domain live — https://app.canido.co.** The interim
+  `<ip>.sslip.io` was swapped for the real domain: added a GoDaddy A record
+  `app -> 172.175.33.251` (the ingress static LB IP), switched the web Ingress host to
+  app.canido.co, and cert-manager re-issued a Let's Encrypt cert for it. Verified valid
+  (ssl_verify=0) + query works. This is the hostname A2/C2's OIDC redirect will register.
