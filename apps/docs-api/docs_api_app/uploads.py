@@ -1,8 +1,8 @@
 """Upload validation per docs/08-rag-pipeline-design.md §8.3 and
 docs/14-security-and-compliance.md §14.8: strict file-type/size checks before any
-processing. Malware scanning (§8.11) is explicitly deferred for this MVP pass — see the
-docs/implementation-status.md — so this is a defense against malformed/mislabeled input,
-not a substitute for AV scanning before production launch.
+processing. This is the first gate (malformed/mislabeled input); malware scanning
+(§8.11) is a separate, later gate in the ingestion pipeline — the file is scanned
+before extraction (see cani_shared.providers.scanner and ingestion_worker_app.pipeline).
 """
 
 from __future__ import annotations

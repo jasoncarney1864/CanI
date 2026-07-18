@@ -46,6 +46,17 @@ class Settings(BaseSettings):
 
     retrieval_worker_url: str = Field(default="http://retrieval-worker:8003", alias="RETRIEVAL_WORKER_URL")
 
+    # Malware scanning (docs/08 §8.11). When clamav_host is set, ingestion scans each file
+    # against that clamd daemon before extraction; unset, dev/CI fall back to the
+    # EICAR-only scanner (see cani_shared.providers.scanner). Never leaves a document
+    # unscanned — the fallback still runs, it just detects less.
+    clamav_host: str = Field(default="", alias="CLAMAV_HOST")
+    clamav_port: int = Field(default=3310, alias="CLAMAV_PORT")
+
+    @property
+    def clamav_configured(self) -> bool:
+        return bool(self.clamav_host)
+
     # Application Insights (docs/13 §13.7). Optional everywhere: when unset,
     # cani_shared.telemetry.configure_telemetry is a no-op, so local compose runs and
     # tests emit nothing to Azure. Set in dev/prod via the cani-secrets Secret.

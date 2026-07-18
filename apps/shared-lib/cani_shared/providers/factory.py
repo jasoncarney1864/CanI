@@ -11,6 +11,7 @@ from cani_shared.config import Settings
 from cani_shared.providers.embedder import AzureOpenAIEmbedder, Embedder, FakeEmbedder
 from cani_shared.providers.extractor import NativeThenOcrExtractor, TextExtractor
 from cani_shared.providers.grounder import AzureOpenAIChatGrounder, ChatGrounder, FakeGrounder
+from cani_shared.providers.scanner import ClamAVScanner, EicarSignatureScanner, MalwareScanner
 
 
 def build_embedder(settings: Settings) -> Embedder:
@@ -45,3 +46,11 @@ def build_extractor(settings: Settings) -> TextExtractor:
         di_endpoint=settings.azure_documentintelligence_endpoint,
         di_api_key=settings.azure_documentintelligence_api_key,
     )
+
+
+def build_malware_scanner(settings: Settings) -> MalwareScanner:
+    # Real ClamAV when a daemon is configured; otherwise the EICAR-only dev/CI scanner.
+    # The pipeline always scans — this only selects how thorough the backend is.
+    if settings.clamav_configured:
+        return ClamAVScanner(host=settings.clamav_host, port=settings.clamav_port)
+    return EicarSignatureScanner()
