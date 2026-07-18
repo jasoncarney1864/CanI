@@ -14,6 +14,7 @@ import pulumi_azure_native as azure_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from modules.alerting import OpsAlerting
+from modules.cost import SubscriptionBudget
 from modules.data_services import SharedContainerRegistry
 from modules.naming import NamingContext, base_tags
 from modules.networking import HubNetwork
@@ -28,6 +29,8 @@ owner = config.get("owner") or "solo-operator"
 # over ACR's public endpoint until private networking for CI lands, so dev sets
 # publicDataEndpoints=true. Stacks that leave it unset get the secure default (Disabled).
 public_data_endpoints = "Enabled" if config.get_bool("publicDataEndpoints") else "Disabled"
+# §15.3 monthly cost budget (USD). Config-driven so the cap moves without a code change.
+monthly_budget_usd = config.get_float("monthlyBudgetUsd") or 200.0
 
 naming = NamingContext(project="platform", layer="core", environment=environment)
 tags = base_tags(environment=environment, owner=owner, spoke="platform")
@@ -97,13 +100,26 @@ app_insights = ApplicationInsights(
     tags=tags,
 )
 
+ops_alert_email = config.require("opsAlertEmail")
+
 ops_alerting = OpsAlerting(
     "cani-ops",
     resource_group_name=resource_group.name,
     location=resource_group.location,
     workspace_id=log_analytics.workspace.id,
-    alert_email=config.require("opsAlertEmail"),
+    alert_email=ops_alert_email,
     tags=tags,
+)
+
+# §15.3 subscription monthly budget with 50/75/90/100% burn alerts (+ forecasted 100%).
+# Subscription-scoped, so it does not depend on the resource group and is unaffected by the
+# Log Analytics daily cap that can pause telemetry.
+subscription_budget = SubscriptionBudget(
+    "cani-dev",
+    subscription_id=azure_native.authorization.get_client_config().subscription_id,
+    monthly_amount=monthly_budget_usd,
+    alert_email=ops_alert_email,
+    start_date="2026-07-01T00:00:00Z",
 )
 
 acr = SharedContainerRegistry(
@@ -132,3 +148,4 @@ pulumi.export("acr_id", acr.registry.id)
 pulumi.export("platform_key_vault_id", platform_vault.vault.id)
 pulumi.export("workload_management_group_id", workload_mg.id)
 pulumi.export("ops_action_group_id", ops_alerting.action_group.id)
+pulumi.export("monthly_budget_id", subscription_budget.budget.id)
