@@ -9,8 +9,6 @@ required tags, TLS enforcement, and deploy-if-not-exists diagnostics.
 
 from __future__ import annotations
 
-import uuid
-
 import pulumi_azure_native as azure_native
 from pulumi import ComponentResource, Input, ResourceOptions
 
@@ -94,7 +92,11 @@ class DenyPublicNetworkPolicies(ComponentResource):
 
 
 class BaselineGovernancePolicies(ComponentResource):
-    """Completes the §6.3 baseline policy set at management-group scope (Sprint 2 D1):
+    """Completes the §6.3 baseline policy set at management-group scope (Sprint 2 D1).
+
+    Scope split by privilege (deliberate, mirrors §6.6): these three assignments need only
+    policy-write, which the least-privilege CI identity has, so they live in IaC and apply
+    on every `pulumi up`:
 
     - Allowed locations (Deny): resources must be in `allowed_locations`. Global resources
       are excluded by the built-in, so this is safe to enforce.
@@ -103,19 +105,21 @@ class BaselineGovernancePolicies(ComponentResource):
       break deployments; audit gives compliance visibility without that risk.
     - TLS (Audit): storage accounts must require secure transfer (HTTPS/TLS). Our storage
       already complies, so this reports compliant.
-    - Deploy-if-not-exists diagnostics: auto-configures Key Vault diagnostic settings to
-      the central workspace for resources that lack them. Needs a managed identity + role
-      assignments (Monitoring + Log Analytics Contributor) for the remediation task.
+
+    The fourth, deploy-if-not-exists Key Vault diagnostics, needs a managed identity plus
+    role assignments (Monitoring + Log Analytics Contributor). Azure only lets an
+    Owner / User Access Administrator create a policy assignment WITH an identity, and the
+    CI service principal is intentionally Contributor-only — so DINE is applied once by an
+    elevated operator via `runbooks/policy-baseline-dine.md`, not by CI. The built-in id
+    and role ids for that step live in this module's constants.
     """
 
     def __init__(
         self,
         name: str,
         *,
-        management_group_id: Input[str],  # full ARM id — assignment / role-assignment scope
+        management_group_id: Input[str],  # full ARM id — assignment scope
         management_group_name: Input[str],  # the group id string — policy-definition scope
-        workspace_id: Input[str],
-        location: str,
         allowed_locations: list[str],
         opts: ResourceOptions | None = None,
     ):
@@ -172,41 +176,5 @@ class BaselineGovernancePolicies(ComponentResource):
             parameters={"effect": {"value": "Audit"}},
             opts=child,
         )
-
-        # Deploy-if-not-exists needs a system-assigned identity (hence a location) whose
-        # principal is then granted the roles the remediation task uses.
-        dine = azure_native.authorization.PolicyAssignment(
-            f"{name}-dine-kv-diagnostics",
-            policy_assignment_name="cani-dine-kv-diag",
-            policy_definition_id=POLICY_DINE_KEYVAULT_DIAGNOSTICS,
-            scope=management_group_id,
-            display_name="CanI - deploy Key Vault diagnostics",
-            location=location,
-            identity=azure_native.authorization.IdentityArgs(
-                type=azure_native.authorization.ResourceIdentityType.SYSTEM_ASSIGNED
-            ),
-            parameters={
-                "logAnalytics": {"value": workspace_id},
-                "diagnosticsSettingNameToUse": {"value": "cani-kv-diagnostics"},
-                "effect": {"value": "DeployIfNotExists"},
-            },
-            opts=child,
-        )
-
-        principal_id = dine.identity.apply(lambda i: i.principal_id if i else "")
-        for role_name, role_id in (
-            ("monitoring", ROLE_MONITORING_CONTRIBUTOR),
-            ("log-analytics", ROLE_LOG_ANALYTICS_CONTRIBUTOR),
-        ):
-            azure_native.authorization.RoleAssignment(
-                f"{name}-dine-role-{role_name}",
-                # Deterministic GUID so re-applies target the same assignment.
-                role_assignment_name=str(uuid.uuid5(uuid.NAMESPACE_URL, f"cani-dine-{role_name}")),
-                scope=management_group_id,
-                role_definition_id=role_id,
-                principal_id=principal_id,
-                principal_type=azure_native.authorization.PrincipalType.SERVICE_PRINCIPAL,
-                opts=ResourceOptions(parent=self, depends_on=[dine]),
-            )
 
         self.register_outputs({})
