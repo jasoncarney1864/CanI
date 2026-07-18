@@ -261,16 +261,19 @@ are **closed** by the B1/B2/C1 applies. Still blocking anything beyond dev:
    of four alerts live as IaC with routing validated (see §13 above). Container
    Insights required a same-day fix (missing DCR — the A1 claim of "flowing" was wrong
    until PR #17). Residual gap: dashboards (§13.9).
-4. **Cost budgets/alerts** — partially mitigated: workspace ingestion is now bounded
-   (category trim + 3 GB/day hard cap after A2 recon found a 5.78 GB/day kube-audit
-   leak), but subscription-level budget thresholds (§15.3) are still not configured —
-   that is Sprint 2 B1.
-5. **Dev OCR fallback is broken (found 2026-07-17 during A2 validation)** —
-   `AZURE_DOCUMENTINTELLIGENCE_ENDPOINT` is empty in the cluster, so the extraction OCR
-   fallback builds a relative URL ("No connection adapters were found") and any
-   scanned/no-text-layer document dead-letters after retries. Fix: deliver the DI
-   endpoint + key to cani-secrets (docs-platform namespace) via
-   `scripts/apply_dev_secrets.sh`, or make an explicit skip-OCR-in-dev decision.
+4. ~~Cost budgets/alerts~~ — closed 2026-07-17 (Sprint 2 B1): subscription monthly Cost
+   budget `cani-dev-monthly` ($200 USD) live as IaC (`infra/modules/cost.py`) with
+   actual-cost alerts at 50/75/90/100% + a forecasted-100% alert, all to the ops email;
+   verified on the subscription. Amount is config-driven (`monthlyBudgetUsd`). Workspace
+   ingestion is also bounded (category trim + 5 GB/day cap, raised from 3 GB after the
+   3 GB cap tripped and briefly blinded telemetry). Residual: prod environment budget
+   deferred until a prod subscription exists.
+5. ~~Dev OCR fallback is broken~~ — closed 2026-07-17: fixed in two parts. Code
+   (PR #21): an unconfigured Document Intelligence now raises a clear `OcrUnavailableError`
+   mapped to a permanent job failure, instead of a cryptic relative-URL error retried 5x;
+   digital PDFs still extract natively. Ops: DI endpoint + key delivered to cani-secrets
+   (both namespaces) and OCR verified end-to-end — a scanned image-only PDF read back the
+   correct text via Document Intelligence.
 6. ~~CD not activated~~ — closed: `app-cd-dev.yml` activated 2026-07-16 and now gates on
    a migration Job before rollout (see §12 above).
 
