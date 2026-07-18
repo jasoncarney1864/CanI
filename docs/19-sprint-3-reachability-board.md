@@ -17,9 +17,10 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Owner: Jason
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
-- Last updated: 2026-07-17
-- Overall status: [ ] Not started — drafted from the design language (Gemini) + the
-  design-complete `apps/web` prototype (PR #19).
+- Last updated: 2026-07-18
+- Overall status: [-] In progress (33%, 12/36) — A1 (live Document Viewer) and B1+B2
+  (web app deployed via CD) done; the UI runs in-cluster wired to the live backend. Next:
+  C1 (ingress + TLS + public endpoint).
 
 ## Status legend
 
@@ -32,7 +33,7 @@ has. Only the web app is publicly exposed; the backend services stay private.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-18 to 2026-08-01 | Wire the web app to the live backend (A); containerize it (B1) | 45 | 0 | -45 | vCPU ceiling (see risks) | Fill at week close |
+| Week 1 | 2026-07-18 to 2026-08-01 | Wire the web app to the live backend (A); containerize it (B1) | 45 | 33 | -12 | None | Ahead. Day 1: A1 (live Document Viewer + new backend doc-text endpoint) and B1+B2 (web deployed via CD) done; vCPU headroom freed (systempool 2->1). |
 | Week 2 | 2026-08-02 to 2026-08-15 | Web in CD (B2); ingress controller + TLS + public endpoint (C1) | 80 | 0 | -80 | vCPU ceiling | Fill at week close |
 | Week 3 | 2026-08-16 to 2026-08-22 | Public OIDC (C2); edge rate limit + headers (C3); Key Vault CSI (D1); closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
@@ -47,10 +48,11 @@ Formula: Actual complete (%) = round((number of checked boxes [x] in sprint chec
   layout, verdict badge, citation spotlight — PR #19.)
 - [x] Backend core loop live and owner-scoped. (auth -> upload -> ingest -> retrieve ->
   cite, verified end to end.)
-- [!] vCPU headroom for an ingress controller + web pod. The dev cluster sits at the
-  10-core regional quota ceiling; adding an ingress controller and the web Deployment
-  needs CPU headroom. **A regional vCPU quota increase is a prerequisite for C1** (or a
-  temporary system/user-pool rebalance) — tracked in risks below.
+- [x] vCPU headroom for an ingress controller + web pod. Freed by dropping systempool
+  2 -> 1 node (single-user dev needs no system-component HA): 10 -> 8 of the 10-core quota,
+  ~2 cores free — enough for the web pod (deployed, B1) + an ingress controller (C1). Note:
+  a full appspool scale-to-3 still needs a quota increase (systempool 1 + datapool 1 +
+  appspool 3 = 12 > 10), tracked in risks.
 
 ## Workstream A - Frontend wired to the live backend
 
@@ -60,19 +62,22 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### A1. Live query -> verdict + citations + document viewer (P1)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-18, PR #36)
 - Dependencies: entry criteria
 - Checklist:
-  - [ ] Asking a question in the web UI calls the live docs-api `/query` (already proxied
-    in `app/api/query/route.ts`) and renders the real verdict in the badge + summary.
-  - [ ] Citations from the response render as citation-cards (title / location / snippet).
-  - [ ] The cited source text appears in the Document Viewer pane with the `.spotlight`
-    highlight on the cited span (the §5 blueprint behaviour), driven by real citation
-    offsets — not `mockData`.
-  - [ ] Empty/again states and query errors degrade gracefully (no raw error leakage).
+  - [x] Asking a question in the web UI calls the live docs-api `/query` (proxied in
+    `app/api/query/route.ts`) and renders the real verdict in the badge + summary.
+  - [x] Citations from the response render as citation-cards (title / location / snippet).
+  - [x] The cited source text appears in the Document Viewer pane with the `.spotlight`
+    highlight on the cited chunk (the §5 blueprint behaviour), driven by the real document
+    text — not `mockData`. Required new backend (folded in as "B"): owner-scoped
+    `GET /documents/{id}/text` (retrieval-worker chunk scroll, docs-api proxy) since
+    `chunk_manifests` doesn't store chunk text and only retrieval-worker can reach Qdrant.
+  - [x] Empty/again states and query errors degrade gracefully (no raw error leakage).
 - Done criteria:
-  - [ ] The query path shows real docs-api data end to end; `mockData` is out of the query
-    flow.
+  - [x] The query path shows real docs-api data end to end; `mockData` removed. Verified in
+    CI compose-smoke (cited chunk present in the document text; cross-owner 404) and live
+    against the cluster.
 
 ### A2. Real authentication in the web app (P1)
 
@@ -106,38 +111,44 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### B1. Containerize and deploy apps/web (P1)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-18, PR #37 — folds in B2)
 - Dependencies: A1 (something worth deploying)
 - Checklist:
-  - [ ] Dockerfile for `apps/web` (Next.js standalone build), non-root, minimal image.
-  - [ ] `k8s/base` Deployment + Service for the web app: runs as non-root with a read-only
-    root FS where feasible, resource requests/limits, a health/readiness probe, and a
-    NetworkPolicy (egress to hub-api + docs-api only).
-  - [ ] Server-side proxy config points at the in-cluster hub-api/docs-api (ClusterIP), so
-    the browser never talks to the APIs directly.
+  - [x] Dockerfile for `apps/web` (Next.js standalone build), non-root, minimal
+    `node:20-alpine` runtime. Root `.dockerignore` re-includes `apps/web` minus
+    node_modules/.next (root-context build, clean `npm ci`).
+  - [x] `k8s/base` Deployment + Service (docs-platform): non-root, read-only rootfs with
+    tmp + .next/cache emptyDirs, `/api/health` probes, resource limits, and a NetworkPolicy
+    (egress to docs-api + hub-api + DNS only).
+  - [x] Server-side proxy env points at the in-cluster `hub-api.hub-system:8001` +
+    `docs-api:8002`; the browser only reaches the web pod. docs-api/hub-api ingress admit
+    the web pod (hub-api cross-namespace via namespaceSelector).
 - Done criteria:
-  - [ ] The web app runs in the cluster and serves the Spotlight UI wired to live data
-    (reachable in-cluster via port-forward / command invoke pending C1).
+  - [x] The web app runs in the cluster and serves the Spotlight UI wired to live data.
+    Verified in-cluster: `/api/health` 200, `/` serves the UI, and `/api/query` returns a
+    valid answer through the full proxy chain (web -> hub-api auth -> docs-api ->
+    retrieval-worker).
 
 ### B2. Web app in CD (P2)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-18, folded into B1/PR #37)
 - Dependencies: B1
 - Checklist:
-  - [ ] `app-cd-dev` builds + pushes the web image and rolls it out alongside the services
-    (kustomize image entry).
-  - [ ] Post-deploy smoke check hits the web app's health/render endpoint.
+  - [x] `app-cd-dev` builds + pushes the web image (added to the matrix) and rolls it out
+    alongside the services (kustomize image entry + rollout wait).
+  - [x] Post-deploy smoke check hits the web app's `/api/health`.
 - Done criteria:
-  - [ ] A push to main builds, deploys, and smoke-checks the web app automatically.
+  - [x] A push to main builds, deploys, and smoke-checks the web app automatically
+    (proven by this PR's own `app-cd-dev` run).
 
 ## Workstream C - Public reachability and edge security
 
 ### C1. Ingress controller + TLS + public endpoint (P1)
 
 - Owner: Jason
-- Status: [ ] Not started
-- Dependencies: B1; vCPU headroom (entry criteria)
+- Status: [ ] Not started — unblocked (B1 done; vCPU headroom freed)
+- Dependencies: B1 (met); vCPU headroom (met — systempool 2->1)
 - Checklist:
   - [ ] Choose the ingress path (see open questions: NGINX ingress vs Application Gateway
     /AGIC vs Front Door) and stand it up as IaC.
@@ -243,3 +254,12 @@ Use one line per day.
   settled and already built to the hex; Sprint 3 is "make it real and reachable" — wire the
   UI to live data, deploy it, and put a public TLS endpoint + real OIDC in front. Key risk
   flagged up front: the 10-core vCPU ceiling gates the ingress work.
+- 2026-07-18: A1 + B1 + B2 done (33%). A1 (PR #36): the Document Viewer now shows the real
+  cited document with the §5 in-context spotlight — required a new owner-scoped
+  `GET /documents/{id}/text` (retrieval-worker scroll + docs-api proxy, since only
+  retrieval-worker can reach Qdrant and chunk_manifests lacks the text). vCPU headroom
+  freed by systempool 2->1 (10->8 cores). B1+B2 (PR #37): web app containerized (Next.js
+  standalone) + deployed to docs-platform via CD; verified in-cluster — health 200, UI
+  serves, and `/api/query` works through the full web->hub-api->docs-api->retrieval-worker
+  proxy chain with only the web pod exposed. Next: C1 (ingress + TLS + public endpoint) —
+  now unblocked (headroom freed).
