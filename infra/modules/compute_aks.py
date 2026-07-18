@@ -83,7 +83,10 @@ class CaniAksCluster(ComponentResource):
                 azure_native.containerservice.ManagedClusterAgentPoolProfileArgs(
                     name="systempool",
                     mode=azure_native.containerservice.AgentPoolMode.SYSTEM,
-                    count=2,
+                    # 1 node, not 2: this is single-user dev, so system-component HA is not
+                    # worth the 2 vCPU. Dropping systempool 2->1 frees headroom (10->8 of
+                    # the 10-core regional quota) for the Sprint 3 ingress + web pod.
+                    count=1,
                     vm_size="Standard_D2s_v4",
                     vnet_subnet_id=subnet_id,
                 ),
@@ -95,8 +98,11 @@ class CaniAksCluster(ComponentResource):
                 azure_native.containerservice.ManagedClusterAgentPoolProfileArgs(
                     name="appspool",
                     mode=azure_native.containerservice.AgentPoolMode.USER,
+                    # Single user: baseline 1 node, autoscale up to 3. NB the 10-core quota
+                    # only fits ~2 appspool nodes alongside systempool(1)+datapool(1); a
+                    # scale to 3 needs a quota increase, tracked in the Sprint 3 board.
                     min_count=1,
-                    max_count=4,
+                    max_count=3,
                     enable_auto_scaling=True,
                     vm_size="Standard_D2s_v4",
                     vnet_subnet_id=subnet_id,
