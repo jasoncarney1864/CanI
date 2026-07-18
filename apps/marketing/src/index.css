@@ -1,34 +1,25 @@
 :root {
-  --color-bg: #ffffff;
-  --color-bg-alt: #f4f6f9;
-  --color-text: #16202b;
-  --color-text-muted: #4b5a6a;
-  --color-border: #dde3ea;
-  --color-primary: #14304d;
-  --color-primary-hover: #0d223a;
-  --color-accent: #b8863b;
+  /* CanI "Illuminated Clarity" tokens — aligned with apps/web/app/globals.css */
+  --color-bg: #fdfbf7; /* Parchment */
+  --color-bg-alt: #f3f4f6; /* Viewer Gray */
+  --color-text: #2d3142; /* Charcoal */
+  --color-text-muted: rgba(45, 49, 66, 0.65);
+  --color-border: rgba(45, 49, 66, 0.12);
+  --color-primary: #1e3a5f; /* Hub Slate Blue */
+  --color-primary-hover: #16304e;
+  --color-accent: #b8863b; /* Spotlight gold */
   --color-card-bg: #ffffff;
   --color-danger: #a4283a;
   --color-success: #1f6f4a;
-  --shadow-card: 0 1px 3px rgba(20, 48, 77, 0.08), 0 1px 2px rgba(20, 48, 77, 0.06);
+  --shadow-card: 0 1px 3px rgba(45, 49, 66, 0.08), 0 1px 2px rgba(45, 49, 66, 0.06);
+  /* Spoke accents (§3) */
+  --spoke-legal: #4a7c59;
+  --spoke-health: #d96c5c;
+  --spoke-finance: #205a5b;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0d1420;
-    --color-bg-alt: #121b29;
-    --color-text: #e6ebf2;
-    --color-text-muted: #9fadbd;
-    --color-border: #23303f;
-    --color-primary: #6f9bc9;
-    --color-primary-hover: #8fb2d8;
-    --color-accent: #d8a862;
-    --color-card-bg: #16202f;
-    --color-danger: #e08a97;
-    --color-success: #6fcf9e;
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
-}
+/* Light-only by design: the CanI "Illuminated Clarity" language is built around
+   the Parchment canvas and Spotlight highlight — matching the product app. */
 
 * {
   box-sizing: border-box;
@@ -110,6 +101,22 @@ a {
 }
 
 /* ---- Header ----------------------------------------------------------- */
+
+.site-logo-dot {
+  color: var(--color-accent);
+}
+
+.capability-card--legal {
+  border-top: 3px solid var(--spoke-legal);
+}
+
+.capability-card--health {
+  border-top: 3px solid var(--spoke-health);
+}
+
+.capability-card--finance {
+  border-top: 3px solid var(--spoke-finance);
+}
 
 .site-header {
   position: sticky;
