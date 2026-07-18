@@ -102,9 +102,14 @@ what is Live vs Scaffolded since this doc was written:
   it leaves the wrapper — §9.6, §9.8 defense in depth
 - Verified live via `tests/integration/test_isolation.py` — user B gets zero citations
   into user A's document even asking about identical content
-- **Not implemented:** backup/restore automation (§9.10), archive-tier lifecycle policies
-  (§9.12), deletion orchestrator (§9.9) — all require either real Azure Storage/Postgres
-  Flexible Server or are out of MVP-fast scope
+- **Backup/restore (§9.10) — live and drilled (Sprint 2 C1, 2026-07-17).** Postgres PITR
+  (7-day retention), blob versioning + soft-delete (7-day), and Qdrant snapshot-to-blob
+  (daily `qdrant-snapshot` CronJob running `cani_shared.backup`). Restore drill executed
+  end to end for Qdrant (snapshot → blob → restore into scratch → reconcile point count ==
+  `chunk_manifests`); Postgres PITR readiness-validated. Procedures + RTO/RPO in
+  `runbooks/backup-restore-drill.md`.
+- **Not implemented:** archive-tier lifecycle policies (§9.12), deletion orchestrator
+  (§9.9) — out of MVP-fast scope
 
 ### §10 AKS cluster design — Live cluster (dev), workload rollout in progress
 - Dev AKS cluster provisioned via `infra/workload` (B2 apply, 2026-07-15)
