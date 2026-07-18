@@ -237,11 +237,18 @@ what is Live vs Scaffolded since this doc was written:
   the secret keys present-but-empty (exactly what a naive `cp .env.example .env` produces)
   previously passed validation and ran with a forgeable JWT signing key
 - Secret scanning now runs in CI (`gitleaks-action`, `.gitleaks.toml`)
-- **Not implemented:** malware scanning (§8.11/§14.9), rate limiting (§14.8),
-  customer-managed keys, most of the documented policy set (only 2 of the "deny public
-  network access" built-in policies are wired in `infra/modules/security.py` — explicitly
-  noted as a representative-not-complete example in that file's docstring). (Real Entra
-  External ID landed in D1; session/token revocation on entitlement change in D2.)
+- **Malware scanning (§8.11) — live (Sprint 2 C2):** scan-before-extraction gate, ClamAV
+  for prod + EICAR scanner for dev/CI (see §8 above)
+- **Rate limiting (§14.8) — live (Sprint 2 C3):** per-client token bucket
+  (`cani_shared.middleware.RateLimitMiddleware`) on hub-api + docs-api, default 60/60s,
+  `/healthz` exempt, 429 + Retry-After; live-validated (60 allowed + 429s on a burst).
+  Service-layer (public ingress deferred); per-pod buckets, strict global limit (Redis)
+  deferred.
+- **Not implemented:** customer-managed keys, most of the documented policy set (only 2 of
+  the "deny public network access" built-in policies are wired in
+  `infra/modules/security.py` — explicitly noted as a representative-not-complete example
+  in that file's docstring; completing it is Sprint 2 D1). (Real Entra External ID landed
+  in D1 of Sprint 1; session/token revocation on entitlement change in D2.)
 
 ### §15 Cost management — Not implemented (needs live subscription)
 - Budgets, alerts, cost dashboards, tag compliance checks all require a real Azure
