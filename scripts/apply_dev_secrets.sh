@@ -71,11 +71,21 @@ stringData:
   QDRANT_COLLECTION: "${QDRANT_COLLECTION}"
   AZURE_STORAGE_CONNECTION_STRING: "${AZURE_STORAGE_CONNECTION_STRING}"
   APPLICATIONINSIGHTS_CONNECTION_STRING: "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}"
+  AZURE_DOCUMENTINTELLIGENCE_ENDPOINT: "${AZURE_DOCUMENTINTELLIGENCE_ENDPOINT:-}"
+  AZURE_DOCUMENTINTELLIGENCE_API_KEY: "${AZURE_DOCUMENTINTELLIGENCE_API_KEY:-}"
 EOF
 }
 
 apply_secret docs-platform
 apply_secret hub-system
+
+# Document Intelligence powers the OCR fallback for scanned/image documents. Optional:
+# without it, digitally-generated PDFs still ingest fine, but a doc that needs OCR now
+# fails permanently with a clear "OCR not configured" error (not a cryptic retry loop).
+if [[ -z "${AZURE_DOCUMENTINTELLIGENCE_ENDPOINT:-}" ]]; then
+  echo "note: AZURE_DOCUMENTINTELLIGENCE_ENDPOINT not set - OCR fallback disabled;" >&2
+  echo "      scanned/image documents will dead-letter with 'OCR not configured'." >&2
+fi
 
 # Entra External ID OIDC (hub-api only, D1). Optional: dev-login still covers local
 # auth, but hub-api in a non-dev ENV refuses to start without these. Applied as a

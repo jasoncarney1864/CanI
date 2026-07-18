@@ -25,23 +25,45 @@ class ExtractionResult:
     method: str  # "native" | "ocr"
 
 
+class OcrUnavailableError(RuntimeError):
+    """A document needs OCR (scanned PDF or image) but Azure Document Intelligence is not
+    configured. This is a permanent condition for the document — no amount of retrying
+    makes an unconfigured credential appear — so the ingestion pipeline maps it to a
+    permanent job failure rather than burning retries on it (docs/08 §8.10)."""
+
+
 class TextExtractor(ABC):
     @abstractmethod
     def extract(self, file_bytes: bytes, content_type: str) -> ExtractionResult: ...
 
 
 class NativeThenOcrExtractor(TextExtractor):
-    """Real implementation: pypdf native extraction, Azure Document Intelligence OCR fallback."""
+    """Real implementation: pypdf native extraction, Azure Document Intelligence OCR fallback.
+
+    OCR requires `di_endpoint` + `di_api_key`. When they are absent (e.g. a dev cluster
+    that never had the Document Intelligence secret delivered), native PDF extraction still
+    works, but a document that actually needs OCR raises OcrUnavailableError with a clear
+    message — instead of the previous behaviour, where an empty endpoint produced a cryptic
+    "No connection adapters were found" and got retried as if it were transient.
+    """
 
     def __init__(self, *, di_endpoint: str, di_api_key: str):
         self._di_endpoint = di_endpoint
         self._di_api_key = di_api_key
+        self._ocr_available = bool(di_endpoint and di_api_key)
 
     def extract(self, file_bytes: bytes, content_type: str) -> ExtractionResult:
         if content_type == "application/pdf":
             native = self._try_native_pdf(file_bytes)
             if native is not None:
                 return ExtractionResult(pages=native, method="native")
+        # Reaching here means OCR is required: a scanned/no-text PDF, or a non-PDF (image).
+        if not self._ocr_available:
+            raise OcrUnavailableError(
+                f"document requires OCR (content_type={content_type}) but Azure Document "
+                "Intelligence is not configured "
+                "(AZURE_DOCUMENTINTELLIGENCE_ENDPOINT / AZURE_DOCUMENTINTELLIGENCE_API_KEY)"
+            )
         return ExtractionResult(pages=self._ocr(file_bytes, content_type), method="ocr")
 
     def _try_native_pdf(self, file_bytes: bytes) -> list[PageText] | None:

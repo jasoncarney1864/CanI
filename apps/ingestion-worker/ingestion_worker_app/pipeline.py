@@ -23,7 +23,7 @@ from cani_shared.db.repositories import (
 from cani_shared.logging import get_logger, hash_user_id
 from cani_shared.models import ChunkManifest, IngestionJob, IngestionStage
 from cani_shared.providers.embedder import Embedder
-from cani_shared.providers.extractor import TextExtractor
+from cani_shared.providers.extractor import OcrUnavailableError, TextExtractor
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 from psycopg import Connection
 
@@ -63,7 +63,12 @@ def process_job(
         conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.EXTRACTING, status="processing"
     )
     raw_bytes = blob_store.download(document_version.blob_uri)
-    extraction = extractor.extract(raw_bytes, document.source_type)
+    try:
+        extraction = extractor.extract(raw_bytes, document.source_type)
+    except OcrUnavailableError as exc:
+        # OCR credentials aren't configured — retrying can't fix that. Fail permanently
+        # with the clear message rather than dead-lettering after five wasted attempts.
+        raise PermanentJobFailure(str(exc)) from exc
     update_document_version_extraction(
         conn,
         owner_user_id,
