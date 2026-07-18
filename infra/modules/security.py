@@ -169,7 +169,7 @@ class BaselineGovernancePolicies(ComponentResource):
 
         azure_native.authorization.PolicyAssignment(
             f"{name}-storage-tls",
-            policy_assignment_name="cani-storage-secure-transfer",
+            policy_assignment_name="cani-storage-tls",  # <=24 chars (Azure limit)
             policy_definition_id=POLICY_STORAGE_SECURE_TRANSFER,
             scope=management_group_id,
             display_name="CanI - storage secure transfer (TLS)",
