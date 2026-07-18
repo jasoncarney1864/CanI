@@ -14,10 +14,12 @@ from pydantic import BaseModel
 
 class IngestionStage(StrEnum):
     QUEUED = "queued"
+    UNPACKING = "unpacking"  # zip archive fan-out: entries become their own documents
     EXTRACTING = "extracting"
     CHUNKING = "chunking"
     EMBEDDING = "embedding"
     INDEXED = "indexed"
+    UNPACKED = "unpacked"  # terminal state for an archive whose entries were fanned out
     FAILED = "failed"
 
 

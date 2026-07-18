@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SPOKES, type SpokeKey } from "@/lib/spokes";
+import type { Principal } from "@/lib/backendAuth";
 import type { DocumentText, RetrievalAnswer } from "@/lib/types";
 import { LeftRail } from "./LeftRail";
 import { ConversationPane } from "./ConversationPane";
@@ -9,6 +10,7 @@ import { DocumentViewer } from "./DocumentViewer";
 
 interface AppShellProps {
   initialSpoke?: SpokeKey;
+  user: Principal;
 }
 
 /**
@@ -18,7 +20,7 @@ interface AppShellProps {
  * Spoke tokens are injected as CSS custom properties on the wrapper, so a spoke
  * switch re-themes the whole tree without any structural change (§6).
  */
-export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
+export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
   const [spokeKey, setSpokeKey] = useState<SpokeKey>(initialSpoke);
   const [collapsed, setCollapsed] = useState(false);
   const [answer, setAnswer] = useState<RetrievalAnswer | null>(null);
@@ -30,7 +32,8 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
   const [highlightChunkIds, setHighlightChunkIds] = useState<Set<string>>(new Set());
   const spoke = SPOKES[spokeKey];
 
-  async function handleAsk(question: string) {
+  // Returns the answer so the voice loop can speak it aloud (null on failure).
+  async function handleAsk(question: string): Promise<RetrievalAnswer | null> {
     setLoading(true);
     setError(null);
     try {
@@ -46,15 +49,37 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
       const result = data as RetrievalAnswer;
       setAnswer(result);
       void loadCitedDocument(result);
+      return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Query failed.");
+      return null;
     } finally {
       setLoading(false);
     }
   }
 
-  // Load the source text of the first cited document and spotlight every chunk cited
-  // within it (§5). One answer can cite several documents; the viewer shows the first.
+  // Load the source text of one cited document and spotlight every chunk the answer
+  // cites within it (§5). Used for the initial answer (first cited doc) and when the
+  // user clicks a citation card for a different document.
+  async function showCitedDocument(documentId: string, result: RetrievalAnswer) {
+    setHighlightChunkIds(
+      new Set(
+        result.citations
+          .filter((c) => c.document_id === documentId)
+          .map((c) => c.chunk_id),
+      ),
+    );
+    setDocLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}/text`);
+      setDoc(res.ok ? ((await res.json()) as DocumentText) : null);
+    } catch {
+      setDoc(null);
+    } finally {
+      setDocLoading(false);
+    }
+  }
+
   async function loadCitedDocument(result: RetrievalAnswer) {
     const first = result.citations[0];
     if (!first) {
@@ -62,22 +87,7 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
       setHighlightChunkIds(new Set());
       return;
     }
-    setHighlightChunkIds(
-      new Set(
-        result.citations
-          .filter((c) => c.document_id === first.document_id)
-          .map((c) => c.chunk_id),
-      ),
-    );
-    setDocLoading(true);
-    try {
-      const res = await fetch(`/api/documents/${encodeURIComponent(first.document_id)}/text`);
-      setDoc(res.ok ? ((await res.json()) as DocumentText) : null);
-    } catch {
-      setDoc(null);
-    } finally {
-      setDocLoading(false);
-    }
+    await showCitedDocument(first.document_id, result);
   }
 
   const shellStyle = {
@@ -92,6 +102,7 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
         collapsed={collapsed}
         onToggle={() => setCollapsed((v) => !v)}
         onSpokeChange={setSpokeKey}
+        user={user}
       />
 
       <div className="main">
@@ -100,7 +111,12 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
             CanI <span className="topbar__divider" aria-hidden>|</span>{" "}
             <span className="topbar__spoke">{spoke.label}</span>
           </span>
-          <span className="topbar__auth">[ User Profile / Auth ]</span>
+          <span className="topbar__auth">
+            <span className="topbar__user">{user.user_id}</span>
+            <a className="topbar__signout" href="/auth/logout">
+              Sign out
+            </a>
+          </span>
         </header>
 
         <div className="workspace">
@@ -110,6 +126,10 @@ export function AppShell({ initialSpoke = "legal" }: AppShellProps) {
             loading={loading}
             error={error}
             onAsk={handleAsk}
+            activeDocumentId={doc?.document_id ?? null}
+            onSelectCitation={(documentId) => {
+              if (answer) void showCitedDocument(documentId, answer);
+            }}
           />
           <DocumentViewer doc={doc} highlightChunkIds={highlightChunkIds} loading={docLoading} />
         </div>

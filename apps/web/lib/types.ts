@@ -36,10 +36,12 @@ export interface RetrievalAnswer {
 /** Mirrors cani_shared Document.current_status. */
 export type DocumentStatus =
   | "queued"
+  | "unpacking"
   | "extracting"
   | "chunking"
   | "embedding"
   | "indexed"
+  | "unpacked"
   | "failed";
 
 /** Mirrors cani_shared Document. */

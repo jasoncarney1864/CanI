@@ -1,21 +1,15 @@
-// Shared server-side auth for the docs-api proxy routes.
+// Server-side backend access for the web app's API + auth proxy routes.
 //
-// The browser never talks to the backend directly: these helpers run on the Next
-// server, so the access token and session/CSRF cookies stay off the client. This
-// reproduces the dev auth flow the integration tests use
-// (tests/integration/conftest.py::login):
-//   1. POST hub-api /auth/dev-login  -> sets cani_session + cani_csrf cookies
-//   2. POST hub-api /auth/token      -> mints a bearer access token (CSRF-guarded)
-// The caller then hits docs-api with that token.
-//
-// This is a dev convenience: /auth/dev-login only exists when the backend runs with
-// ENV=dev. Sprint 3 A2 replaces this with the real Entra OIDC login. Point
-// HUB_API_URL / DOCS_API_URL at the compose stack (or, once deployed, the in-cluster
-// services).
+// The browser holds a real hub-api session (cani_session + cani_csrf cookies), established
+// by the Entra OIDC flow (see app/auth/*). These helpers run on the Next server and use
+// that session to mint short-lived docs-api access tokens and to check identity — the
+// access token and the CSRF value never reach client JS. hub-api/docs-api stay private;
+// only this app is public.
+
+import { NextResponse } from "next/server";
 
 export const HUB_API_URL = process.env.HUB_API_URL ?? "http://localhost:8001";
 export const DOCS_API_URL = process.env.DOCS_API_URL ?? "http://localhost:8002";
-const DEV_IDP_SUBJECT = process.env.CANI_DEV_IDP_SUBJECT ?? "web-prototype-user";
 
 /** A named upstream failure, carrying the HTTP status the proxy route should return. */
 export class BackendError extends Error {
@@ -27,49 +21,83 @@ export class BackendError extends Error {
   }
 }
 
-/** Parse Set-Cookie headers from an upstream response into a name->value jar. */
-function parseSetCookies(headers: Headers): Map<string, string> {
-  const jar = new Map<string, string>();
-  // Node 18+/undici exposes getSetCookie(); fall back to the single-header form.
-  const raw =
-    (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ??
-    (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
-  for (const entry of raw) {
-    const [pair] = entry.split(";");
-    const eq = pair.indexOf("=");
-    if (eq > -1) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+/** Read one cookie value out of a raw Cookie header. */
+export function readCookie(cookieHeader: string, name: string): string | undefined {
+  for (const part of cookieHeader.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === name) return rest.join("=");
   }
-  return jar;
+  return undefined;
 }
 
-/** dev-login -> token. Returns a bearer access token for docs-api, or throws BackendError. */
-export async function mintAccessToken(): Promise<string> {
-  const loginRes = await fetch(`${HUB_API_URL}/auth/dev-login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ idp_subject: DEV_IDP_SUBJECT }),
-    cache: "no-store",
-  });
-  if (!loginRes.ok) throw new BackendError(`Upstream login failed (${loginRes.status}).`, 502);
+/** Mint a docs-api bearer token from the caller's hub-api session (cani_session +
+ * cani_csrf, double-submit CSRF). Throws BackendError(401) if not signed in. */
+export async function mintAccessToken(cookieHeader: string): Promise<string> {
+  if (!readCookie(cookieHeader, "cani_session")) {
+    throw new BackendError("Not signed in.", 401);
+  }
+  const csrf = readCookie(cookieHeader, "cani_csrf");
+  if (!csrf) throw new BackendError("Missing CSRF token — sign in again.", 401);
 
-  const jar = parseSetCookies(loginRes.headers);
-  const csrf = jar.get("cani_csrf");
-  if (!csrf) throw new BackendError("Upstream login did not return a CSRF token.", 502);
-  const cookieHeader = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
-
-  const tokenRes = await fetch(`${HUB_API_URL}/auth/token`, {
+  const res = await fetch(`${HUB_API_URL}/auth/token`, {
     method: "POST",
     headers: { "x-cani-csrf-token": csrf, cookie: cookieHeader },
     cache: "no-store",
   });
-  if (!tokenRes.ok) throw new BackendError(`Upstream token mint failed (${tokenRes.status}).`, 502);
-  const { access_token: accessToken } = (await tokenRes.json()) as { access_token: string };
+  if (res.status === 401) throw new BackendError("Session expired — sign in again.", 401);
+  if (!res.ok) throw new BackendError(`Token mint failed (${res.status}).`, 502);
+  const { access_token: accessToken } = (await res.json()) as { access_token: string };
   return accessToken;
 }
 
-/** Shared error body for when the backend stack is unreachable (compose not up, etc.). */
+export interface Principal {
+  user_id: string;
+  entitlements: string[];
+}
+
+/** The signed-in user, or null if there's no valid session. */
+export async function whoami(cookieHeader: string): Promise<Principal | null> {
+  if (!readCookie(cookieHeader, "cani_session")) return null;
+  try {
+    const res = await fetch(`${HUB_API_URL}/auth/whoami`, {
+      headers: { cookie: cookieHeader },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as Principal;
+  } catch {
+    return null;
+  }
+}
+
+/** Re-set an upstream Set-Cookie on our own response for the app's own domain. hub-api sets
+ * these without a domain (so they bind to the request host) and, in dev, without Secure;
+ * we always mark them Secure (the app is HTTPS) and keep hub-api's httponly intent
+ * (cani_csrf must stay readable by client JS; the rest are httponly). */
+export function forwardSetCookie(response: NextResponse, upstream: string): void {
+  const [pair, ...attrs] = upstream.split(";");
+  const eq = pair.indexOf("=");
+  if (eq < 0) return;
+  const name = pair.slice(0, eq).trim();
+  const value = pair.slice(eq + 1).trim();
+
+  let maxAge: number | undefined;
+  for (const attr of attrs) {
+    const [k, v] = attr.trim().split("=");
+    if (k.toLowerCase() === "max-age") maxAge = Number(v);
+  }
+  response.cookies.set({
+    name,
+    value,
+    httpOnly: name !== "cani_csrf",
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    ...(maxAge !== undefined ? { maxAge } : {}),
+  });
+}
+
+/** Shared error body for when the backend stack is unreachable. */
 export const UNREACHABLE_BODY = {
-  error:
-    "Could not reach the CanI backend. Start the dev stack (docker compose up) " +
-    "or set HUB_API_URL / DOCS_API_URL.",
+  error: "Could not reach the CanI backend. Please try again.",
 };
