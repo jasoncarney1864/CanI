@@ -287,6 +287,12 @@ button {
   grid-template-columns: 35% 65%;
 }
 
+/* Grid items default to min-width:auto, letting long citation snippets push the
+   conversation column underneath the viewer. Clamp both columns. */
+.workspace > * {
+  min-width: 0;
+}
+
 .col-label {
   margin: 0 0 4px;
   font-size: 11px;
@@ -368,6 +374,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 100%;
+  min-width: 0;
   padding: 8px 12px;
   border: none;
   border-left: 3px solid var(--brand-accent);
