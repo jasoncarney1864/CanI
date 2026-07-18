@@ -104,7 +104,8 @@ app_insights = ApplicationInsights(
 # TLS, and deploy-if-not-exists Key Vault diagnostics — assigned at platform MG scope.
 baseline_policies = BaselineGovernancePolicies(
     "cani-baseline",
-    management_group_id=platform_mg.id,
+    management_group_id=platform_mg.id,  # full ARM id for assignment / role scopes
+    management_group_name=platform_mg.name,  # group id string for the policy definition
     workspace_id=log_analytics.workspace.id,
     location=config.get("location") or "eastus2",
     allowed_locations=["eastus2"],
