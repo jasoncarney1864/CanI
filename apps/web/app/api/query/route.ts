@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import type { RetrievalAnswer } from "@/lib/types";
 import { BackendError, DOCS_API_URL, UNREACHABLE_BODY, mintAccessToken } from "@/lib/backendAuth";
 
-// Server-side proxy for the live docs-api /query endpoint (dev auth flow in
-// lib/backendAuth). The browser never sees the access token.
-
+// Server-side proxy for docs-api /query. Mints a bearer token from the caller's session
+// (set by the Entra OIDC flow), so the answer is owner-scoped to the signed-in user.
 export async function POST(request: Request) {
   let question: unknown;
   try {
@@ -17,7 +16,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const accessToken = await mintAccessToken();
+    const accessToken = await mintAccessToken(request.headers.get("cookie") ?? "");
     const queryRes = await fetch(`${DOCS_API_URL}/query`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
@@ -27,13 +26,9 @@ export async function POST(request: Request) {
     if (!queryRes.ok) {
       return NextResponse.json({ error: `Upstream query failed (${queryRes.status}).` }, { status: 502 });
     }
-    const answer = (await queryRes.json()) as RetrievalAnswer;
-    return NextResponse.json(answer);
+    return NextResponse.json((await queryRes.json()) as RetrievalAnswer);
   } catch (e) {
-    if (e instanceof BackendError) {
-      return NextResponse.json({ error: e.message }, { status: e.status });
-    }
-    // Network-level failure (backend stack not running, DNS, etc.).
+    if (e instanceof BackendError) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json(UNREACHABLE_BODY, { status: 503 });
   }
 }

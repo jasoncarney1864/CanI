@@ -1,6 +1,7 @@
 "use client";
 
 import type { Spoke, SpokeKey } from "@/lib/spokes";
+import type { Principal } from "@/lib/backendAuth";
 import { SpokeSwitcher } from "./SpokeSwitcher";
 
 interface LeftRailProps {
@@ -8,6 +9,7 @@ interface LeftRailProps {
   collapsed: boolean;
   onToggle: () => void;
   onSpokeChange: (key: SpokeKey) => void;
+  user: Principal;
 }
 
 const NAV_ITEMS = [
@@ -21,7 +23,9 @@ const NAV_ITEMS = [
  * icon-only rail. Hosts the domain icon, primary nav, spoke switcher, and the
  * user profile stub.
  */
-export function LeftRail({ spoke, collapsed, onToggle, onSpokeChange }: LeftRailProps) {
+export function LeftRail({ spoke, collapsed, onToggle, onSpokeChange, user }: LeftRailProps) {
+  // Short label for the signed-in principal: the local part of an email, else the raw id.
+  const shortName = user.user_id.includes("@") ? user.user_id.split("@")[0] : user.user_id;
   return (
     <nav className={`rail${collapsed ? " rail--collapsed" : ""}`} aria-label="Primary">
       <button
@@ -53,11 +57,18 @@ export function LeftRail({ spoke, collapsed, onToggle, onSpokeChange }: LeftRail
 
       <div className="rail__footer">
         {!collapsed && <SpokeSwitcher current={spoke.key} onChange={onSpokeChange} />}
-        <div className="rail__profile">
+        <div className="rail__profile" title={user.user_id}>
           <span className="rail__avatar" aria-hidden>
-            &#9678;
+            {shortName.charAt(0).toUpperCase() || "◎"}
           </span>
-          {!collapsed && <span className="rail__itemlabel">User Profile</span>}
+          {!collapsed && (
+            <span className="rail__profileinfo">
+              <span className="rail__itemlabel">{shortName}</span>
+              <a className="rail__signout" href="/auth/logout">
+                Sign out
+              </a>
+            </span>
+          )}
         </div>
       </div>
     </nav>
