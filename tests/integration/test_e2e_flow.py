@@ -70,6 +70,57 @@ def test_upload_ingest_retrieve_cite(docker_stack, hub_client, docs_client):
     assert yes_no_body["verdict"]["label"] == "Yes, with conditions"
 
 
+def test_zip_upload_unpacks_and_indexes_all_entries(docker_stack, hub_client, docs_client):
+    """A zip of multiple documents fans out: the archive reaches 'unpacked' and every
+    entry becomes its own document that flows through the ordinary pipeline to 'indexed'
+    and is retrievable with citations (docs/08 §8.3 archive ingestion)."""
+    import io
+    import zipfile
+
+    token = login(hub_client, "integration-user-zip")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    lease_pdf = make_sample_pdf(
+        ["APARTMENT LEASE", "Subletting requires the landlord's prior written consent."]
+    )
+    hoa_pdf = make_sample_pdf(["HOA RULES", "Grills are prohibited on balconies at all times."])
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("lease.pdf", lease_pdf)
+        zf.writestr("hoa-rules.pdf", hoa_pdf)
+        zf.writestr("notes.txt", "not a supported document type")
+
+    upload_response = docs_client.post(
+        "/documents",
+        files={"file": ("paperwork.zip", buffer.getvalue(), "application/zip")},
+        headers=headers,
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    archive_id = upload_response.json()["document_id"]
+
+    archive_status = _poll_until_terminal(docs_client, archive_id, headers)
+    assert archive_status == "unpacked", f"expected archive to reach 'unpacked', got '{archive_status}'"
+
+    documents = docs_client.get("/documents", headers=headers).json()
+    by_title = {d["title"]: d for d in documents}
+    assert "lease.pdf" in by_title and "hoa-rules.pdf" in by_title, (
+        f"expected fanned-out entry documents, got titles: {sorted(by_title)}"
+    )
+    assert "notes.txt" not in by_title, "unsupported entries must be skipped, not registered"
+
+    for title in ("lease.pdf", "hoa-rules.pdf"):
+        status = _poll_until_terminal(docs_client, by_title[title]["document_id"], headers)
+        assert status == "indexed", f"expected '{title}' to reach 'indexed', got '{status}'"
+
+    query_response = docs_client.post(
+        "/query", json={"question": "Are grills allowed on balconies?"}, headers=headers
+    )
+    assert query_response.status_code == 200, query_response.text
+    citations = query_response.json()["citations"]
+    assert citations, "expected citations from a document that arrived inside the zip"
+    assert citations[0]["document_id"] == by_title["hoa-rules.pdf"]["document_id"]
+
+
 def _poll_until_terminal(docs_client, document_id: str, headers: dict, timeout_seconds: int = 90) -> str:
     deadline = time.time() + timeout_seconds
     status = "queued"
@@ -77,7 +128,7 @@ def _poll_until_terminal(docs_client, document_id: str, headers: dict, timeout_s
         response = docs_client.get(f"/documents/{document_id}", headers=headers)
         response.raise_for_status()
         status = response.json()["current_status"]
-        if status in ("indexed", "failed"):
+        if status in ("indexed", "unpacked", "failed"):
             return status
         time.sleep(2)
     pytest.fail(

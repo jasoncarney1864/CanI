@@ -3,17 +3,30 @@ extract (native PDF text, OCR fallback) -> chunk -> embed -> index, with durable
 per stage and idempotent re-runs (re-processing a completed job with identical inputs
 must be a no-op — enforced here by deleting-then-reinserting this version's chunk rows
 rather than appending duplicates on retry).
+
+Zip archives take a different path: scan -> unpack -> fan out. Each supported entry is
+registered as its own document (blob + version + ingestion job), and those child jobs
+then flow through the ordinary pipeline above — including their own malware scan. The
+archive document itself ends in the terminal `unpacked` state; it is never chunked or
+indexed. Fan-out is idempotent: on retry, entries that already exist (per-owner
+checksum dedupe) are skipped instead of duplicated.
 """
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 
-from cani_shared.blob import BlobStore
+from cani_shared.archive import ZIP_CONTENT_TYPE, ArchiveValidationError, extract_archive
+from cani_shared.blob import RAW_DOCUMENTS_CONTAINER, BlobStore
 from cani_shared.chunking import PageText, chunk_document
 from cani_shared.db.repositories import (
     MAX_INGESTION_ATTEMPTS,
+    create_document,
+    create_document_version,
+    create_ingestion_job,
     get_document,
+    get_document_by_checksum,
     get_document_version,
     insert_chunk_manifests,
     mark_document_status,
@@ -74,6 +87,14 @@ def process_job(
         log.warning("malware_detected", signature=scan.signature, stage="scanning")
         raise PermanentJobFailure(f"malware scan blocked document (signature={scan.signature})")
     log.info("stage_completed", stage="scanning", result="clean")
+
+    # Zip archives fan out into per-entry documents instead of being extracted/indexed
+    # themselves. Child jobs re-enter this function as ordinary single-document jobs.
+    if document.source_type == ZIP_CONTENT_TYPE:
+        _unpack_archive_job(
+            conn, job, raw_bytes, document_id=document.document_id, blob_store=blob_store, log=log
+        )
+        return
 
     try:
         extraction = extractor.extract(raw_bytes, document.source_type)
@@ -151,6 +172,73 @@ def process_job(
     )
     mark_document_status(conn, owner_user_id, document.document_id, IngestionStage.INDEXED)
     log.info("stage_completed", stage="indexed", chunk_count=len(manifests))
+
+
+def _unpack_archive_job(
+    conn: Connection,
+    job: IngestionJob,
+    raw_bytes: bytes,
+    *,
+    document_id: str,
+    blob_store: BlobStore,
+    log,
+) -> None:
+    """Unpack a scanned zip archive and register each supported entry as its own
+    document + version + ingestion job. Per-owner checksum dedupe makes retries
+    idempotent — already-registered entries are counted, not duplicated."""
+    owner_user_id = job.owner_user_id
+    update_ingestion_job_stage(
+        conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.UNPACKING, status="processing"
+    )
+    mark_document_status(conn, owner_user_id, document_id, IngestionStage.UNPACKING)
+
+    try:
+        entries, skipped = extract_archive(raw_bytes)
+    except ArchiveValidationError as exc:
+        raise PermanentJobFailure(str(exc)) from exc
+
+    created = 0
+    deduplicated = 0
+    for entry in entries:
+        checksum = hashlib.sha256(entry.data).hexdigest()
+        if get_document_by_checksum(conn, owner_user_id, checksum) is not None:
+            deduplicated += 1
+            continue
+
+        child = create_document(
+            conn,
+            owner_user_id,
+            title=entry.filename,
+            source_type=entry.content_type,
+            checksum=checksum,
+        )
+        child_version_id = str(uuid.uuid4())
+        blob_path = BlobStore.artifact_path(
+            owner_user_id, child.document_id, child_version_id, f"original.{entry.extension}"
+        )
+        blob_uri = blob_store.upload(container=RAW_DOCUMENTS_CONTAINER, path=blob_path, data=entry.data)
+        child_version = create_document_version(
+            conn, owner_user_id, child.document_id, blob_uri=blob_uri, document_version_id=child_version_id
+        )
+        create_ingestion_job(conn, owner_user_id, child_version.document_version_id)
+        created += 1
+
+    if created == 0 and deduplicated == 0:
+        reasons = "; ".join(f"{s.filename}: {s.reason}" for s in skipped[:10])
+        raise PermanentJobFailure(f"archive contains no supported documents ({reasons})")
+
+    update_ingestion_job_stage(
+        conn, owner_user_id, job.ingestion_job_id, stage=IngestionStage.UNPACKED, status="unpacked"
+    )
+    mark_document_status(conn, owner_user_id, document_id, IngestionStage.UNPACKED)
+    log.info(
+        "stage_completed",
+        stage="unpacked",
+        entries_created=created,
+        entries_deduplicated=deduplicated,
+        entries_skipped=len(skipped),
+        skip_reasons=[f"{s.filename}: {s.reason}" for s in skipped],
+    )
 
 
 def handle_job_failure(conn: Connection, job: IngestionJob, error: Exception) -> None:

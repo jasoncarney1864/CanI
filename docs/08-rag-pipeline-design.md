@@ -30,6 +30,10 @@ The pipeline is asynchronous after upload.
 
 Inputs:
 - PDF, JPEG, PNG initially.
+- ZIP archives containing any mix of the supported types: the ingestion worker unpacks
+  the archive (strict entry-count/size caps, magic-byte sniffing, no nested archives)
+  and registers each supported entry as its own document; the archive record itself
+  ends in the terminal `unpacked` state.
 - Optional metadata from user: title, document type hint, effective date.
 
 Registration behavior:
