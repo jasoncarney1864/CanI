@@ -1,0 +1,245 @@
+# 19. Sprint 3 reachability board
+
+Execution board for Sprint 3. Sprint 2 established the operational-readiness baseline;
+Sprint 3 makes CanI **reachable** — the design-complete `apps/web` prototype becomes a
+real, deployed, publicly accessible product wired to the live backend.
+
+## Sprint goal
+
+A real user can open CanI at a public HTTPS URL, sign in with Entra External ID, upload a
+document, ask a question, and get a grounded, cited answer rendered in the "Spotlight" UI —
+under the same owner-scoping, security, observability, and cost guarantees the API already
+has. Only the web app is publicly exposed; the backend services stay private.
+
+## Board metadata
+
+- Sprint: Sprint 3 - Reachability & real-user access
+- Owner: Jason
+- Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
+- Target end date: 2026-08-22
+- Last updated: 2026-07-17
+- Overall status: [ ] Not started — drafted from the design language (Gemini) + the
+  design-complete `apps/web` prototype (PR #19).
+
+## Status legend
+
+- [ ] Not started
+- [-] In progress
+- [x] Done
+- [!] Blocked
+
+## Weekly status rollup
+
+| Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
+| --- | --- | --- | ---: | ---: | ---: | --- | --- |
+| Week 1 | 2026-07-18 to 2026-08-01 | Wire the web app to the live backend (A); containerize it (B1) | 45 | 0 | -45 | vCPU ceiling (see risks) | Fill at week close |
+| Week 2 | 2026-08-02 to 2026-08-15 | Web in CD (B2); ingress controller + TLS + public endpoint (C1) | 80 | 0 | -80 | vCPU ceiling | Fill at week close |
+| Week 3 | 2026-08-16 to 2026-08-22 | Public OIDC (C2); edge rate limit + headers (C3); Key Vault CSI (D1); closeout | 100 | 0 | -100 | TBD | Fill at week close |
+
+Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
+
+## Entry criteria
+
+- [x] Sprint 2 closeout gate complete. (Observability, alerts, budget, backup/restore,
+  malware scan, rate limiting, policy baseline all live — closed 2026-07-17.)
+- [x] Web prototype is design-complete. (`apps/web` implements the design language to the
+  hex: global tokens, spoke token-mapping, DM Sans + Source Serif Pro, the 35/65 Spotlight
+  layout, verdict badge, citation spotlight — PR #19.)
+- [x] Backend core loop live and owner-scoped. (auth -> upload -> ingest -> retrieve ->
+  cite, verified end to end.)
+- [!] vCPU headroom for an ingress controller + web pod. The dev cluster sits at the
+  10-core regional quota ceiling; adding an ingress controller and the web Deployment
+  needs CPU headroom. **A regional vCPU quota increase is a prerequisite for C1** (or a
+  temporary system/user-pool rebalance) — tracked in risks below.
+
+## Workstream A - Frontend wired to the live backend
+
+Replace the prototype's mock data (`apps/web/lib/mockData.ts`) with the real docs-api /
+hub-api flow. The Spotlight UI stays exactly as designed — only the data source changes.
+
+### A1. Live query -> verdict + citations + document viewer (P1)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: entry criteria
+- Checklist:
+  - [ ] Asking a question in the web UI calls the live docs-api `/query` (already proxied
+    in `app/api/query/route.ts`) and renders the real verdict in the badge + summary.
+  - [ ] Citations from the response render as citation-cards (title / location / snippet).
+  - [ ] The cited source text appears in the Document Viewer pane with the `.spotlight`
+    highlight on the cited span (the §5 blueprint behaviour), driven by real citation
+    offsets — not `mockData`.
+  - [ ] Empty/again states and query errors degrade gracefully (no raw error leakage).
+- Done criteria:
+  - [ ] The query path shows real docs-api data end to end; `mockData` is out of the query
+    flow.
+
+### A2. Real authentication in the web app (P1)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: A1
+- Checklist:
+  - [ ] Web app has a real sign-in via hub-api's Entra OIDC flow (not the mock profile);
+    signed-in user shown in the rail footer.
+  - [ ] The session is carried to docs-api calls so responses are owner-scoped to the
+    logged-in user.
+  - [ ] Unauthenticated users cannot reach the workspace (redirect to login); logout works.
+- Done criteria:
+  - [ ] Two different users see only their own documents/answers through the web app.
+
+### A3. Upload + ingestion status in the web app (P2)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: A1, A2
+- Checklist:
+  - [ ] A user can upload a PDF from the UI (type/size validated client- and server-side).
+  - [ ] The UI shows ingestion progress (uploaded -> scanning -> extracting -> indexed) and
+    surfaces a clear failure for a blocked (malware) or OCR-unsupported document.
+  - [ ] After indexing, the document is queryable from the UI.
+- Done criteria:
+  - [ ] Upload-to-queryable works from the browser, with honest status and failure states.
+
+## Workstream B - Deploy the frontend
+
+### B1. Containerize and deploy apps/web (P1)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: A1 (something worth deploying)
+- Checklist:
+  - [ ] Dockerfile for `apps/web` (Next.js standalone build), non-root, minimal image.
+  - [ ] `k8s/base` Deployment + Service for the web app: runs as non-root with a read-only
+    root FS where feasible, resource requests/limits, a health/readiness probe, and a
+    NetworkPolicy (egress to hub-api + docs-api only).
+  - [ ] Server-side proxy config points at the in-cluster hub-api/docs-api (ClusterIP), so
+    the browser never talks to the APIs directly.
+- Done criteria:
+  - [ ] The web app runs in the cluster and serves the Spotlight UI wired to live data
+    (reachable in-cluster via port-forward / command invoke pending C1).
+
+### B2. Web app in CD (P2)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: B1
+- Checklist:
+  - [ ] `app-cd-dev` builds + pushes the web image and rolls it out alongside the services
+    (kustomize image entry).
+  - [ ] Post-deploy smoke check hits the web app's health/render endpoint.
+- Done criteria:
+  - [ ] A push to main builds, deploys, and smoke-checks the web app automatically.
+
+## Workstream C - Public reachability and edge security
+
+### C1. Ingress controller + TLS + public endpoint (P1)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: B1; vCPU headroom (entry criteria)
+- Checklist:
+  - [ ] Choose the ingress path (see open questions: NGINX ingress vs Application Gateway
+    /AGIC vs Front Door) and stand it up as IaC.
+  - [ ] TLS with a real certificate (cert-manager + Let's Encrypt, Azure-managed cert, or
+    a Key Vault cert — see open questions); HTTP -> HTTPS redirect.
+  - [ ] Only the web app is published; hub-api/docs-api stay private (reachable only via the
+    web app's server-side proxy) except the OIDC callback path required by C2.
+- Done criteria:
+  - [ ] The Spotlight UI is reachable at a public HTTPS URL with a valid certificate; the
+    backend APIs are not directly reachable from the internet.
+
+### C2. Non-localhost OIDC redirect (P1)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: C1
+- Checklist:
+  - [ ] Add the public callback URL to the `cani-hub` Entra app registration redirect URIs.
+  - [ ] hub-api `ENTRA_OIDC_REDIRECT_URI` set to the public callback; the callback path is
+    reachable through the ingress.
+  - [ ] The full authorization-code + PKCE flow completes over the public endpoint; the
+    localhost-only redirect is retired for non-dev.
+- Done criteria:
+  - [ ] A real browser sign-in through the public URL creates a session and reaches the
+    workspace. (Closes the long-standing "public redirect URI" production blocker.)
+
+### C3. Edge rate limiting + security headers (P2)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: C1
+- Checklist:
+  - [ ] Rate limiting enforced at the ingress edge (a real global limit, complementing /
+    superseding the Sprint 2 C3 per-pod service-layer limit).
+  - [ ] Standard security headers present (HSTS, X-Content-Type-Options, Referrer-Policy,
+    a CSP appropriate to the Next.js app), verified.
+  - [ ] Decide WAF posture (managed ruleset vs none for dev) and record it.
+- Done criteria:
+  - [ ] A burst against the public URL is throttled at the edge; security headers verified
+    on responses.
+
+## Workstream D - Hardening elevated by public exposure
+
+### D1. Key Vault CSI secret cutover (P2)
+
+- Owner: Jason
+- Status: [ ] Not started
+- Dependencies: none (independent; higher priority now the surface is public)
+- Checklist:
+  - [ ] Workloads read secrets from Key Vault via the CSI driver + workload identity
+    (`k8s/base/secret-provider-class.yaml` is already scaffolded).
+  - [ ] Retire the manual `scripts/apply_dev_secrets.sh` + storage-account-key path.
+  - [ ] Rotate the exposed pre-migration secret values per
+    `runbooks/rotate-dev-secrets.md`.
+- Done criteria:
+  - [ ] Services boot with secrets sourced from Key Vault; the manual stopgap is removed
+    and pre-migration values rotated.
+
+## Sprint closeout gate
+
+- Owner: Jason
+- Status: [ ] Not started
+- Checklist:
+  - [ ] End-to-end from the public URL: Entra login -> upload -> query -> cited answer in
+    the Spotlight UI, owner-scoped.
+  - [ ] Only the web app is publicly exposed; backend APIs are private.
+  - [ ] Edge TLS + rate limiting + security headers active.
+  - [ ] Secrets sourced from Key Vault CSI (or an explicit, documented deferral).
+  - [ ] Observability/alerts cover the public web tier (5xx + latency include the web app);
+    the budget still holds (public ingress cost checked against B1's $200 cap).
+  - [ ] `implementation-status.md` and docs updated with Sprint 3 outcomes.
+- Done criteria:
+  - [ ] Sprint 3 marked complete: CanI is a reachable, real-user product.
+
+## Open questions and key decisions
+
+1. **Ingress technology.** NGINX ingress controller (cheap, in-cluster, needs cert-manager)
+   vs Application Gateway + AGIC (managed WAF, higher cost/complexity) vs Azure Front Door
+   (global, WAF, but another hop). Trade-off: cost + vCPU footprint vs built-in WAF.
+2. **TLS certificates.** cert-manager + Let's Encrypt (free, automated, needs public DNS +
+   HTTP-01/DNS-01) vs an Azure-managed certificate vs a Key Vault cert. Needs a DNS name.
+3. **Public DNS name.** What hostname does CanI live at? (A custom domain, or an
+   Azure-provided one for dev.)
+4. **Backend exposure.** Confirm the pattern: browser -> web app (public) -> server-side
+   proxy -> hub-api/docs-api (private). The OIDC callback is the one backend path that must
+   be publicly reachable — decide whether it is proxied through the web app or exposed as a
+   dedicated ingress path.
+5. **vCPU ceiling (blocker for C1).** The cluster is at the 10-core regional quota; an
+   ingress controller + web pod need headroom. Request a quota increase, or rebalance
+   pools. This gates the public-endpoint work.
+6. **Cost.** A public ingress (and any WAF/Front Door) adds recurring spend; verify it
+   against the $200/mo budget (Sprint 2 B1) and its 50% alert.
+7. **Full AV vs EICAR dev backend (C2 of Sprint 2).** Public exposure raises the value of a
+   real clamd deployment over the EICAR-only dev scanner — but that also needs vCPU
+   headroom. Decide alongside the quota outcome.
+
+## Daily standup log
+
+Use one line per day.
+
+- 2026-07-17: Board drafted from the design language (Gemini's "Illuminated Clarity" /
+  Spotlight system) and the design-complete `apps/web` prototype. Framing: the design is
+  settled and already built to the hex; Sprint 3 is "make it real and reachable" — wire the
+  UI to live data, deploy it, and put a public TLS endpoint + real OIDC in front. Key risk
+  flagged up front: the 10-core vCPU ceiling gates the ingress work.
