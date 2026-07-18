@@ -10,8 +10,8 @@ implementation-status.
 - Start date: 2026-07-17 (pulled forward — Sprint 1 closed 12 days early)
 - Target end date: 2026-08-12
 - Last updated: 2026-07-17
-- Overall status: In progress — workstream A complete (A1 + A2) and B1 (budget alerts)
-  done. Next: C1 (backup/restore drill), C2 (malware scan), C3 (rate limiting), D1 (policy)
+- Overall status: In progress — workstream A complete (A1 + A2), B1 (budget alerts) and
+  C1 (backup/restore drill) done. Next: C2 (malware scan), C3 (rate limiting), D1 (policy)
 
 ## Status legend
 
@@ -25,7 +25,7 @@ implementation-status.
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
 | Week 1 | 2026-07-17 to 2026-08-04 | Observability wiring, alert baseline, budget thresholds | 55 | 37 | -18 | None | Ahead of plan. A1 + A2 + B1 all done 2026-07-17 (all of week-1's planned focus complete, ~2 weeks early). Also: dev OCR bug fixed, workspace cap raised 3->5 GB. |
-| Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 0 | -100 | TBD | Fill at week close |
+| Week 2 | 2026-08-05 to 2026-08-12 | Backup or restore drill, malware scanning, rate limiting, policy baseline closeout | 100 | 25 | -75 | None | Started early. C1 backup/restore drill done 2026-07-17 (week-2 item pulled forward). C2/C3/D1 remain. |
 
 Formula: Actual complete (%) = round((number of checked boxes [x] in sprint checklist items / total sprint checklist boxes) x 100).
 
@@ -217,15 +217,33 @@ that the A2 kube-audit log leak is fixed).
 
 - Owner: Jason
 - Due: 2026-08-05
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-17, ~3 weeks early)
 - Dependencies: Sprint 1 closeout
 - Checklist:
-  - [ ] Validate Postgres point-in-time recovery procedure.
-  - [ ] Validate Qdrant snapshot to blob storage process.
-  - [ ] Run one full restore drill in a controlled environment.
-  - [ ] Record RTO and RPO outcomes.
+  - [x] Validate Postgres point-in-time recovery procedure. (Readiness-validated: PITR
+    enabled on `cani-pgfd564d67`, 7-day retention, earliest restore 2026-07-15; restore
+    command + validation queries documented in `runbooks/backup-restore-drill.md`. Actual
+    restore-to-temp-server deferred to avoid the small cost — chosen decision.)
+  - [x] Validate Qdrant snapshot to blob storage process. (Two §9.10 gaps built first:
+    the snapshot mechanism did not exist and blob versioning/soft-delete were off — PR
+    #25. Then executed a full snapshot: the `qdrant-snapshot` CronJob ran on demand in
+    13s and landed a ~64 MB snapshot in the `qdrant-snapshots` container.)
+  - [x] Run one full restore drill in a controlled environment. (Seeded one real
+    document, snapshotted, then restored the snapshot from Blob into a scratch collection
+    in 0.9s and reconciled point count (1) == `chunk_manifests` (1) — the §9.10
+    reconciliation. Scratch collection deleted; live data untouched.)
+  - [x] Record RTO and RPO outcomes. (Recorded per store in the runbook's objectives
+    table: Qdrant restore ~1s / RPO 24h scheduled (0 on-demand); Postgres RTO ~new-server
+    provisioning / RPO ~5 min within 7-day window; Blob immediate / RPO ~0 for overwrites.)
 - Done criteria:
-  - [ ] One documented restore drill completed with acceptable recovery outcomes.
+  - [x] One documented restore drill completed with acceptable recovery outcomes. Qdrant
+    snapshot->blob->restore->reconcile executed end to end and matched; procedures for all
+    three stores documented in `runbooks/backup-restore-drill.md`.
+
+Note: C1 turned out to be build-then-drill, not just drill — Postgres PITR was ready, but
+the Qdrant snapshot-to-blob mechanism (`cani_shared.backup` + CronJob) and blob
+versioning/soft-delete were missing and had to be implemented first (PR #25) before there
+was anything to exercise.
 
 ### C2. Malware scanning before extraction (P2)
 
@@ -324,3 +342,12 @@ Use one line per day.
   subscription; MTD already >50%, so the first real alert fires on Azure's next
   evaluation. All of week-1's planned focus (A1/A2/B1) now complete. Next: C1 backup/
   restore drill.
+- 2026-07-17 (late, cont. 2): C1 DONE (a week-2 item, pulled forward). Turned out to be
+  build-then-drill: Postgres PITR was ready, but the Qdrant snapshot-to-blob mechanism
+  and blob versioning/soft-delete didn't exist. Built both (PR #25: `cani_shared.backup`
+  plus a daily CronJob, NetworkPolicy, and blob recovery IaC, 2 tests), applied, then
+  drilled:
+  snapshot (13s) -> blob (~64 MB) -> restore into a scratch collection (0.9s) ->
+  reconcile point count == chunk_manifests (match). Postgres PITR readiness-validated
+  (restore-to-temp-server deferred to avoid the small cost). Procedures + RTO/RPO in
+  `runbooks/backup-restore-drill.md`. Board 49% (20/41). Next: C2 malware scan.
