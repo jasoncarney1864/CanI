@@ -18,9 +18,9 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
 - Last updated: 2026-07-18
-- Overall status: [-] In progress (33%, 12/36) — A1 (live Document Viewer) and B1+B2
-  (web app deployed via CD) done; the UI runs in-cluster wired to the live backend. Next:
-  C1 (ingress + TLS + public endpoint).
+- Overall status: [-] In progress (44%, 16/36) — A1, B1+B2, and C1 done. **CanI is live on
+  the public internet at https://172.175.33.251.sslip.io** with a valid Let's Encrypt cert.
+  Next: A2 + C2 (real Entra OIDC — now unblocked by the public callback URL).
 
 ## Status legend
 
@@ -33,7 +33,7 @@ has. Only the web app is publicly exposed; the backend services stay private.
 
 | Week | Date range | Planned focus | Planned complete (%) | Actual complete (%) | Delta (pp) | Key blocker | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| Week 1 | 2026-07-18 to 2026-08-01 | Wire the web app to the live backend (A); containerize it (B1) | 45 | 33 | -12 | None | Ahead. Day 1: A1 (live Document Viewer + new backend doc-text endpoint) and B1+B2 (web deployed via CD) done; vCPU headroom freed (systempool 2->1). |
+| Week 1 | 2026-07-18 to 2026-08-01 | Wire the web app to the live backend (A); containerize it (B1) | 45 | 44 | -1 | None | On plan (day 1). A1 (live Document Viewer), B1+B2 (web deployed), and C1 (public HTTPS ingress) all done — CanI is publicly reachable. A week-2 item (C1) pulled forward. |
 | Week 2 | 2026-08-02 to 2026-08-15 | Web in CD (B2); ingress controller + TLS + public endpoint (C1) | 80 | 0 | -80 | vCPU ceiling | Fill at week close |
 | Week 3 | 2026-08-16 to 2026-08-22 | Public OIDC (C2); edge rate limit + headers (C3); Key Vault CSI (D1); closeout | 100 | 0 | -100 | TBD | Fill at week close |
 
@@ -147,24 +147,33 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### C1. Ingress controller + TLS + public endpoint (P1)
 
 - Owner: Jason
-- Status: [ ] Not started — unblocked (B1 done; vCPU headroom freed)
+- Status: [x] Done (2026-07-18, PR #39 addon + #40 TLS)
 - Dependencies: B1 (met); vCPU headroom (met — systempool 2->1)
 - Checklist:
-  - [ ] Choose the ingress path (see open questions: NGINX ingress vs Application Gateway
-    /AGIC vs Front Door) and stand it up as IaC.
-  - [ ] TLS with a real certificate (cert-manager + Let's Encrypt, Azure-managed cert, or
-    a Key Vault cert — see open questions); HTTP -> HTTPS redirect.
-  - [ ] Only the web app is published; hub-api/docs-api stay private (reachable only via the
-    web app's server-side proxy) except the OIDC callback path required by C2.
+  - [x] Ingress as IaC: AKS **managed NGINX** (web-app-routing addon), enabled via Pulumi
+    (`compute_aks.py` ingress_profile). Public LB IP 172.175.33.251; class
+    `webapprouting.kubernetes.azure.com`.
+  - [x] TLS with a real certificate: **cert-manager + Let's Encrypt prod** (HTTP-01), host
+    `172.175.33.251.sslip.io` (no domain needed). HTTP -> HTTPS 308 redirect. Debugged the
+    HTTP-01 flow on LE staging first, then flipped to prod. Issuers/Ingress/policies as IaC
+    (`k8s/base/ingress`, `k8s/base/web/ingress.yaml`, `network-policies.yaml`); cert-manager
+    install + IP tracking documented in `runbooks/ingress-tls-setup.md`.
+  - [x] Only the web app is published; hub-api/docs-api stay private (reached only via the
+    web app's server-side proxy). NetworkPolicies added for controller -> web and the ACME
+    solver (both blocked by the docs-platform deny-all otherwise).
 - Done criteria:
-  - [ ] The Spotlight UI is reachable at a public HTTPS URL with a valid certificate; the
-    backend APIs are not directly reachable from the internet.
+  - [x] The Spotlight UI is reachable at a public HTTPS URL with a valid certificate; the
+    backend APIs are not directly reachable from the internet. Verified from outside the
+    cluster: `https://172.175.33.251.sslip.io/api/health` -> 200, ssl_verify=0 (valid cert);
+    root serves the UI; a `POST /api/query` returns a valid answer through the full public
+    chain; `http://` -> 308 to https.
 
 ### C2. Non-localhost OIDC redirect (P1)
 
 - Owner: Jason
-- Status: [ ] Not started
-- Dependencies: C1
+- Status: [ ] Not started — unblocked (C1 done; public callback URL exists at
+  `https://172.175.33.251.sslip.io`)
+- Dependencies: C1 (met)
 - Checklist:
   - [ ] Add the public callback URL to the `cani-hub` Entra app registration redirect URIs.
   - [ ] hub-api `ENTRA_OIDC_REDIRECT_URI` set to the public callback; the callback path is
@@ -263,3 +272,12 @@ Use one line per day.
   serves, and `/api/query` works through the full web->hub-api->docs-api->retrieval-worker
   proxy chain with only the web pod exposed. Next: C1 (ingress + TLS + public endpoint) —
   now unblocked (headroom freed).
+- 2026-07-18 (cont.): C1 DONE (44%) — **CanI is live on the public internet.** Enabled the
+  AKS managed-NGINX ingress addon via Pulumi (PR #39, in-place cluster update), installed
+  cert-manager, and stood up a Let's Encrypt prod cert on `172.175.33.251.sslip.io`
+  (HTTP-01, debugged on staging first). The docs-platform deny-all blocked both the ingress
+  controller and the ACME solver — added targeted NetworkPolicies for each. Verified from
+  outside the cluster: valid cert (ssl_verify=0), UI serves, public query works through
+  NGINX -> web -> hub-api -> docs-api -> retrieval, HTTP->HTTPS 308. Codified to IaC
+  (PR #40) + `runbooks/ingress-tls-setup.md`. Next: A2 + C2 (real Entra OIDC — the public
+  callback URL that unblocks it now exists).
