@@ -3,3 +3,4 @@ config:
   cani-platform:tenantId: <tenant-id>
   cani-platform:publicDataEndpoints: "true"
   cani-platform:opsAlertEmail: <personal mailbox>
+  cani-platform:monthlyBudgetUsd: "200"
