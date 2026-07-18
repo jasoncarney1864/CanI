@@ -3,8 +3,9 @@
 // to Entra. Uses the Hub spoke's Slate Blue and the design tokens.
 
 // The guided-tour demo site, where new visitors learn the product and sign up.
-// TODO: move to a custom domain and align its branding with CanI when it's rerouted.
-const DEMO_SITE_URL = "https://happy-forest-0bce5670f.7.azurestaticapps.net/";
+// TODO(cutover): canido.co DNS must point at the marketing site, and the Cloudflare
+// Turnstile widget's allowed hostnames need canido.co + www.canido.co added.
+const DEMO_SITE_URL = "https://canido.co/";
 
 export function SignIn() {
   return (
