@@ -369,9 +369,25 @@ button {
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
+  border: none;
   border-left: 3px solid var(--brand-accent);
   background: color-mix(in srgb, var(--brand-accent) 6%, #fff);
   border-radius: 4px;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.citation-card:hover {
+  background: color-mix(in srgb, var(--brand-accent) 12%, #fff);
+  transform: translateX(2px);
+}
+
+.citation-card--active {
+  background: color-mix(in srgb, var(--brand-accent) 14%, #fff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-accent) 35%, transparent);
 }
 
 .citation-card__title {

@@ -13,6 +13,10 @@ interface ConversationPaneProps {
   error: string | null;
   /** Ask a question; resolves with the answer so it can be spoken aloud. */
   onAsk: (question: string) => Promise<RetrievalAnswer | null>;
+  /** The document currently open in the viewer (drives the active citation state). */
+  activeDocumentId: string | null;
+  /** Open a cited document in the viewer with its cited passages spotlighted. */
+  onSelectCitation: (documentId: string) => void;
 }
 
 const STATUS_COPY: Record<VoiceState, { title: string; hint: string }> = {
@@ -32,7 +36,15 @@ const STATUS_COPY: Record<VoiceState, { title: string; hint: string }> = {
  * glanceable canvas while the answer is spoken aloud. Typing is the quiet
  * fallback, not the primary act.
  */
-export function ConversationPane({ answer, spoke, loading, error, onAsk }: ConversationPaneProps) {
+export function ConversationPane({
+  answer,
+  spoke,
+  loading,
+  error,
+  onAsk,
+  activeDocumentId,
+  onSelectCitation,
+}: ConversationPaneProps) {
   // Stable indirection so the voice hook's callback always sees fresh handlers.
   const askRef = useRef(onAsk);
   askRef.current = onAsk;
@@ -97,13 +109,21 @@ export function ConversationPane({ answer, spoke, loading, error, onAsk }: Conve
         {!loading &&
           !error &&
           answer?.citations.map((c) => (
-            <div className="citation-card" key={c.chunk_id}>
+            <button
+              type="button"
+              className={`citation-card${
+                c.document_id === activeDocumentId ? " citation-card--active" : ""
+              }`}
+              key={c.chunk_id}
+              onClick={() => onSelectCitation(c.document_id)}
+              aria-label={`Show ${c.document_title} in the document viewer`}
+            >
               <span className="citation-card__title">{c.document_title}</span>
               <span className="citation-card__loc">
                 {c.section_label} &middot; p.{c.page_start}
               </span>
               {c.snippet && <span className="citation-card__snippet">&ldquo;{c.snippet}&rdquo;</span>}
-            </div>
+            </button>
           ))}
       </div>
 

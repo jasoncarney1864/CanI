@@ -20,9 +20,9 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "CanI \u2014 Illuminated Clarity",
+  title: "CanI — Ask Your Documents",
   description:
-    "Design-language prototype for CanI: the Spotlight layout and Spoke token framework.",
+    "Ask your documents. Get grounded, cited answers you can trust — with the source passage spotlighted.",
 };
 
 export default function RootLayout({
