@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { HUB_API_URL, forwardSetCookie } from "@/lib/backendAuth";
+import { HUB_API_URL, appRedirect, forwardSetCookie } from "@/lib/backendAuth";
 
 // Entra redirects the browser here after sign-in. We hand the code + the flow cookie to
 // hub-api, which validates (state/nonce/PKCE/ID-token), maps the identity to a CanI user,
@@ -14,7 +13,7 @@ export async function GET(request: Request) {
   const cookieHeader = request.headers.get("cookie") ?? ""; // carries cani_oidc_flow
 
   if (!code) {
-    return NextResponse.redirect(new URL("/?auth_error=1", request.url), 302);
+    return appRedirect("/?auth_error=1");
   }
 
   try {
@@ -24,13 +23,13 @@ export async function GET(request: Request) {
     );
     if (!res.ok) {
       // hub-api rejected the login (bad state/nonce, expired flow, etc.).
-      return NextResponse.redirect(new URL("/?auth_error=1", request.url), 302);
+      return appRedirect("/?auth_error=1");
     }
-    const response = NextResponse.redirect(new URL("/", request.url), 302);
+    const response = appRedirect("/");
     // Relay hub-api's session cookies (+ its deletion of the flow cookie) to our domain.
     for (const cookie of res.headers.getSetCookie()) forwardSetCookie(response, cookie);
     return response;
   } catch {
-    return NextResponse.redirect(new URL("/?auth_error=1", request.url), 302);
+    return appRedirect("/?auth_error=1");
   }
 }
