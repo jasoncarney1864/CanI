@@ -18,10 +18,11 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
 - Last updated: 2026-07-18
-- Overall status: [-] In progress (44%, 16/36) — A1, B1+B2, and C1 done. **CanI is live on
-  the public internet at https://app.canido.co** (custom domain -> managed-NGINX ingress)
-  with a valid Let's Encrypt cert. Next: A2 + C2 (real Entra OIDC — now unblocked by the
-  public callback URL).
+- Overall status: [-] In progress (64%, 23/36) — A1, B1+B2, C1, and **C2** done; **A2** in
+  final verification (build + deploy + live single-user sign-in done; two-user owner-scoping
+  pass outstanding). **CanI is live on the public internet at https://app.canido.co** with
+  real Entra OIDC sign-in. Next: A2's two-user owner-scoping confirmation, then A3 (upload in
+  the UI), C3 (edge rate limit/headers), D1 (Key Vault CSI), closeout.
 
 ## Status legend
 
@@ -83,16 +84,23 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### A2. Real authentication in the web app (P1)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [-] In progress — build, deploy, and live single-user sign-in done (2026-07-18,
+  PR #42); remaining: manual two-user owner-scoping confirmation through the web UI.
 - Dependencies: A1
 - Checklist:
-  - [ ] Web app has a real sign-in via hub-api's Entra OIDC flow (not the mock profile);
-    signed-in user shown in the rail footer.
-  - [ ] The session is carried to docs-api calls so responses are owner-scoped to the
-    logged-in user.
-  - [ ] Unauthenticated users cannot reach the workspace (redirect to login); logout works.
+  - [x] Web app has a real sign-in via hub-api's Entra OIDC flow (not the mock profile);
+    signed-in user shown in the rail footer (and top bar). Verified live at
+    `https://app.canido.co`: `/auth/login` -> caniauth -> `/auth/callback` -> session.
+  - [x] The session is carried to docs-api calls so responses are owner-scoped to the
+    logged-in user (server-side token mint from `cani_session`; query returned the correct
+    fail-closed "insufficient evidence" for the signed-in user's empty corpus).
+  - [x] Unauthenticated users cannot reach the workspace (server-side whoami gate renders the
+    sign-in screen); logout works.
 - Done criteria:
   - [ ] Two different users see only their own documents/answers through the web app.
+    (Pending a manual two-user pass. Owner-scoping is enforced at every data boundary and
+    covered by the cross-user isolation integration test; this item is the browser-level
+    confirmation of that guarantee.)
 
 ### A3. Upload + ingestion status in the web app (P2)
 
@@ -172,18 +180,19 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### C2. Non-localhost OIDC redirect (P1)
 
 - Owner: Jason
-- Status: [ ] Not started — unblocked (C1 done; public callback URL exists at
-  `https://app.canido.co`)
+- Status: [x] Done (2026-07-18, PR #42)
 - Dependencies: C1 (met)
 - Checklist:
-  - [ ] Add the public callback URL to the `cani-hub` Entra app registration redirect URIs.
-  - [ ] hub-api `ENTRA_OIDC_REDIRECT_URI` set to the public callback; the callback path is
-    reachable through the ingress.
-  - [ ] The full authorization-code + PKCE flow completes over the public endpoint; the
-    localhost-only redirect is retired for non-dev.
+  - [x] Add the public callback URL (`https://app.canido.co/auth/callback`) to the
+    `cani-hub` Entra app registration redirect URIs (caniauth CIAM tenant, Web platform).
+  - [x] hub-api `ENTRA_OIDC_REDIRECT_URI` set to the public callback (via the
+    `cani-hub-oidc` cluster secret); the callback path is reachable through the ingress.
+  - [x] The full authorization-code + PKCE flow completes over the public endpoint; the
+    localhost redirect remains only as a dev entry.
 - Done criteria:
-  - [ ] A real browser sign-in through the public URL creates a session and reaches the
-    workspace. (Closes the long-standing "public redirect URI" production blocker.)
+  - [x] A real browser sign-in through the public URL creates a session and reaches the
+    workspace. (Verified live 2026-07-18 — closes the long-standing "public redirect URI"
+    production blocker.)
 
 ### C3. Edge rate limiting + security headers (P2)
 
@@ -254,6 +263,13 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 7. **Full AV vs EICAR dev backend (C2 of Sprint 2).** Public exposure raises the value of a
    real clamd deployment over the EICAR-only dev scanner — but that also needs vCPU
    headroom. Decide alongside the quota outcome.
+8. **Cross-browser voice input (backlog).** The voice-first UI uses the browser Web Speech
+   API (`webkitSpeechRecognition`), which only transcribes in Chrome — Edge exposes the API
+   but ships no speech backend, so it silently fails (fix in PR #43 now surfaces the error).
+   For voice to work everywhere, replace the browser API with server-side STT (Azure Speech)
+   fed by `getUserMedia`. Decide whether cross-browser voice is worth that build, or whether
+   "voice in Chrome, type elsewhere" is acceptable for a solo-user product. See memory
+   `voice-web-speech-edge-limitation`.
 
 ## Daily standup log
 
@@ -287,3 +303,15 @@ Use one line per day.
   `app -> 172.175.33.251` (the ingress static LB IP), switched the web Ingress host to
   app.canido.co, and cert-manager re-issued a Let's Encrypt cert for it. Verified valid
   (ssl_verify=0) + query works. This is the hostname A2/C2's OIDC redirect will register.
+- 2026-07-18 (cont.): **C2 DONE, A2 in final verification (64%) — real Entra OIDC sign-in is
+  live.** Delivered the `cani-hub-oidc` secret to the cluster; registered
+  `https://app.canido.co/auth/callback` on the `cani-hub` app registration (caniauth CIAM
+  tenant, Web platform). Built the web OIDC layer (PR #42, bundled with parallel voice-UI +
+  marketing-site + zip-ingestion work): session-based token mint from `cani_session`, the
+  three `/auth/*` proxy routes, a server-side whoami gate, and the signed-in user + sign-out
+  in the rail/top bar. Verified live: a real browser sign-in round-trips through Entra into
+  the workspace, and an authenticated query fails closed ("insufficient evidence") for an
+  empty corpus. Remaining for A2: the manual two-user owner-scoping pass. Also diagnosed the
+  voice mic (works in Chrome; Edge's Web Speech API has no speech backend) and fixed the
+  silent-failure UX + a mis-affirming verdict glyph (PR #43). Next: upload-in-UI test +
+  two-user owner-scoping, then A3/C3/D1/closeout.

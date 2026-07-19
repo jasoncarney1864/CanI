@@ -158,7 +158,13 @@ export function ConversationPane({
             status.title
           )}
         </p>
-        {status.hint && <p className="presence__hint">{status.hint}</p>}
+        {voice.error ? (
+          <p className="presence__error" role="alert">
+            {voice.error}
+          </p>
+        ) : (
+          status.hint && <p className="presence__hint">{status.hint}</p>
+        )}
       </div>
 
       <form className="ask" onSubmit={handleSubmit}>

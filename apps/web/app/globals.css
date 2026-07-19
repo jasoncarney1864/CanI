@@ -328,6 +328,12 @@ button {
   transition: background 0.2s ease;
 }
 
+/* "No" / "Insufficient evidence" must not wear the success colour — a green pill reads
+   as an affirmative regardless of the glyph. Render those neutral (slate grey). */
+.verdict-badge--neutral {
+  background: #6b7280;
+}
+
 .verdict-badge__check {
   font-size: 14px;
   line-height: 1;
@@ -558,6 +564,16 @@ button {
   font-size: 12px;
   color: var(--muted);
   max-width: 260px;
+  line-height: 1.45;
+}
+
+/* Voice failure (mic blocked/busy, or no working speech backend — e.g. Edge). Shown in
+   place of the hint so a silent "Listening…" never leaves the user guessing. */
+.presence__error {
+  margin: 0;
+  font-size: 12px;
+  color: #8a1c1c;
+  max-width: 280px;
   line-height: 1.45;
 }
 

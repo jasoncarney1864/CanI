@@ -43,6 +43,9 @@ function getRecognitionCtor(): RecognitionCtor | undefined {
 export function useVoiceConversation({ onUtterance }: { onUtterance: (text: string) => void }) {
   const [state, setState] = useState<VoiceState>("off");
   const [transcript, setTranscript] = useState("");
+  // A user-visible reason the last voice attempt couldn't run (mic blocked/busy, no speech
+  // backend — e.g. Edge exposes the API but doesn't transcribe). Null when voice is healthy.
+  const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<RecognitionLike | null>(null);
   const activeRef = useRef(false);
 
@@ -80,12 +83,24 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
       }
     };
     rec.onerror = (e) => {
+      // no-speech (silence) and aborted (our own stop/interject) are benign: fall through
+      // to onend, which keeps waiting patiently. Everything else means voice can't run —
+      // stop the loop and tell the user why, instead of silently re-listening forever.
+      if (e.error === "no-speech" || e.error === "aborted") return;
+      activeRef.current = false;
+      setTranscript("");
+      setState("off");
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        activeRef.current = false;
-        setTranscript("");
-        setState("off");
+        setError("Microphone access is blocked. Allow the mic for this site, then tap to try again.");
+      } else if (e.error === "audio-capture") {
+        setError("No microphone found, or another app is using it. Free the mic, then tap to try again.");
+      } else if (e.error === "network") {
+        // Chromium exposes SpeechRecognition but only Chrome ships a working speech backend;
+        // Edge fails here with `network`. See memory: voice-web-speech-edge-limitation.
+        setError("Voice couldn't reach the speech service — this browser may not support it. Try Chrome, or type your question below.");
+      } else {
+        setError("Voice input stopped unexpectedly. Tap to try again, or type your question below.");
       }
-      // other errors (no-speech, aborted, network) fall through to onend
     };
     setTranscript("");
     setState("listening");
@@ -99,6 +114,7 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
   /** Begin a hands-free conversation session (requires a user gesture). */
   const start = useCallback(() => {
     if (!getRecognitionCtor()) return;
+    setError(null); // clear any prior failure message on a fresh attempt
     activeRef.current = true;
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     listen();
@@ -157,5 +173,5 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
     [],
   );
 
-  return { state, transcript, start, stop, speak, interject };
+  return { state, transcript, error, start, stop, speak, interject };
 }
