@@ -4,9 +4,11 @@ import { useState } from "react";
 import { SPOKES, type SpokeKey } from "@/lib/spokes";
 import type { Principal } from "@/lib/backendAuth";
 import type { DocumentText, RetrievalAnswer } from "@/lib/types";
-import { LeftRail } from "./LeftRail";
+import { LeftRail, type NavView } from "./LeftRail";
 import { ConversationPane } from "./ConversationPane";
 import { DocumentViewer } from "./DocumentViewer";
+import { UploadView } from "./UploadView";
+import { DocumentsView } from "./DocumentsView";
 
 interface AppShellProps {
   initialSpoke?: SpokeKey;
@@ -22,6 +24,7 @@ interface AppShellProps {
  */
 export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
   const [spokeKey, setSpokeKey] = useState<SpokeKey>(initialSpoke);
+  const [view, setView] = useState<NavView>("workspace");
   const [collapsed, setCollapsed] = useState(false);
   const [answer, setAnswer] = useState<RetrievalAnswer | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,6 +106,8 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
         onToggle={() => setCollapsed((v) => !v)}
         onSpokeChange={setSpokeKey}
         user={user}
+        activeView={view}
+        onNavigate={setView}
       />
 
       <div className="main">
@@ -119,20 +124,34 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
           </span>
         </header>
 
-        <div className="workspace">
-          <ConversationPane
-            answer={answer}
-            spoke={spoke}
-            loading={loading}
-            error={error}
-            onAsk={handleAsk}
-            activeDocumentId={doc?.document_id ?? null}
-            onSelectCitation={(documentId) => {
-              if (answer) void showCitedDocument(documentId, answer);
-            }}
-          />
-          <DocumentViewer doc={doc} highlightChunkIds={highlightChunkIds} loading={docLoading} />
-        </div>
+        {view === "workspace" && (
+          <div className="workspace">
+            <ConversationPane
+              answer={answer}
+              spoke={spoke}
+              loading={loading}
+              error={error}
+              onAsk={handleAsk}
+              activeDocumentId={doc?.document_id ?? null}
+              onSelectCitation={(documentId) => {
+                if (answer) void showCitedDocument(documentId, answer);
+              }}
+            />
+            <DocumentViewer doc={doc} highlightChunkIds={highlightChunkIds} loading={docLoading} />
+          </div>
+        )}
+
+        {view === "upload" && (
+          <div className="panel">
+            <UploadView onGoToDocuments={() => setView("documents")} />
+          </div>
+        )}
+
+        {view === "documents" && (
+          <div className="panel">
+            <DocumentsView />
+          </div>
+        )}
       </div>
     </div>
   );
