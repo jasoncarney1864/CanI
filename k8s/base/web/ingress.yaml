@@ -15,6 +15,13 @@ metadata:
     # NGINX defaults to a 1 MB client body limit, which 413s any real document upload.
     # Raise it to match the app/docs-api cap (25 MB) plus a little multipart overhead.
     nginx.ingress.kubernetes.io/proxy-body-size: "26m"
+    # Edge rate limiting (Sprint 3 C3): a global per-client-IP throttle in front of the app,
+    # complementing the Sprint 2 per-pod service-layer limit. 20 req/s sustained with a
+    # burst bucket (20 x 5 = 100) absorbs a normal page load / status polling, but throttles
+    # a flood (NGINX returns 503 once the bucket drains). 20 concurrent connections per IP.
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
 spec:
   ingressClassName: webapprouting.kubernetes.azure.com
   tls:
