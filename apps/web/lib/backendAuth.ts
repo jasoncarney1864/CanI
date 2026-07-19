@@ -70,6 +70,18 @@ export async function whoami(cookieHeader: string): Promise<Principal | null> {
   }
 }
 
+/** Redirect to a path on THIS app's own origin, using a *relative* Location header.
+ *
+ * The Next server sits behind the ingress and binds 0.0.0.0:3000, so `request.url` reflects
+ * that internal address — a redirect built from it (`new URL("/", request.url)`) sends the
+ * browser to https://0.0.0.0:3000/ (ERR_ADDRESS_INVALID). A relative Location is instead
+ * resolved by the browser against its own address bar (e.g. https://app.canido.co), which is
+ * always correct and needs no host config. `path` must start with "/".
+ */
+export function appRedirect(path: string): NextResponse {
+  return new NextResponse(null, { status: 302, headers: { location: path } });
+}
+
 /** Re-set an upstream Set-Cookie on our own response for the app's own domain. hub-api sets
  * these without a domain (so they bind to the request host) and, in dev, without Secure;
  * we always mark them Secure (the app is HTTPS) and keep hub-api's httponly intent

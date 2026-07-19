@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { HUB_API_URL, readCookie } from "@/lib/backendAuth";
+import { HUB_API_URL, appRedirect, readCookie } from "@/lib/backendAuth";
 
 // Sign out: best-effort tell hub-api (for the audit event + its own cookie clear), then
 // clear the session cookies on our domain and land back on the sign-in screen.
@@ -17,7 +16,7 @@ export async function GET(request: Request) {
   } catch {
     // Best effort — clear our own cookies regardless.
   }
-  const response = NextResponse.redirect(new URL("/", request.url), 302);
+  const response = appRedirect("/");
   response.cookies.set({ name: "cani_session", value: "", maxAge: 0, path: "/" });
   response.cookies.set({ name: "cani_csrf", value: "", maxAge: 0, path: "/" });
   return response;
