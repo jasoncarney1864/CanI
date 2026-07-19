@@ -18,11 +18,12 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
 - Last updated: 2026-07-18
-- Overall status: [-] In progress (64%, 23/36) — A1, B1+B2, C1, and **C2** done; **A2** in
-  final verification (build + deploy + live single-user sign-in done; two-user owner-scoping
-  pass outstanding). **CanI is live on the public internet at https://app.canido.co** with
-  real Entra OIDC sign-in. Next: A2's two-user owner-scoping confirmation, then A3 (upload in
-  the UI), C3 (edge rate limit/headers), D1 (Key Vault CSI), closeout.
+- Overall status: [-] In progress (75%, 27/36) — A1, B1+B2, C1, C2, and **A3** done; **A2**
+  in final verification (build + deploy + live single-user sign-in done; two-user
+  owner-scoping pass outstanding). **CanI is live on the public internet at
+  https://app.canido.co** with real Entra OIDC sign-in and in-UI upload. Next: A2's two-user
+  owner-scoping confirmation (now unblocked by A3's upload UI), C3 (edge rate limit/headers),
+  D1 (Key Vault CSI), closeout.
 
 ## Status legend
 
@@ -105,15 +106,24 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### A3. Upload + ingestion status in the web app (P2)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-18, PR #44) — server path verified end-to-end locally; browser
+  visual pass pending.
 - Dependencies: A1, A2
 - Checklist:
-  - [ ] A user can upload a PDF from the UI (type/size validated client- and server-side).
-  - [ ] The UI shows ingestion progress (uploaded -> scanning -> extracting -> indexed) and
-    surfaces a clear failure for a blocked (malware) or OCR-unsupported document.
-  - [ ] After indexing, the document is queryable from the UI.
+  - [x] A user can upload a PDF from the UI (type/size validated client-side in
+    `lib/uploads.ts` and server-side in docs-api). Upload/Documents nav items are now real
+    views (were inert placeholders); the file posts through a new owner-scoped
+    `/api/documents` proxy.
+  - [x] The UI shows ingestion progress (queued -> extracting -> chunking -> embedding ->
+    indexed) via the Documents view, which polls while anything is in flight and surfaces a
+    plain "Failed" badge for a blocked (malware) or OCR-unsupported document.
+  - [x] After indexing, the document is queryable from the UI (the existing query loop).
 - Done criteria:
-  - [ ] Upload-to-queryable works from the browser, with honest status and failure states.
+  - [x] Upload-to-queryable works from the browser, with honest status and failure states.
+    Verified end-to-end against the local stack through the actual proxy routes (the same
+    requests the browser issues): PDF upload -> queued -> indexed -> query returned a
+    grounded answer citing the uploaded doc; unsupported type -> honest 400; no session ->
+    401. Web tsc/build/lint clean. Final browser click-through is the remaining confirmation.
 
 ## Workstream B - Deploy the frontend
 
@@ -315,3 +325,14 @@ Use one line per day.
   voice mic (works in Chrome; Edge's Web Speech API has no speech backend) and fixed the
   silent-failure UX + a mis-affirming verdict glyph (PR #43). Next: upload-in-UI test +
   two-user owner-scoping, then A3/C3/D1/closeout.
+- 2026-07-18 (cont.): **A3 DONE (75%) — upload + ingestion status in the UI.** The rail's
+  Upload/Documents items were inert prototype placeholders; wired them to real views. Added
+  an owner-scoped `/api/documents` proxy (POST multipart upload + GET list, session-token
+  minted server-side), an UploadView (file picker + drag-drop, client-side type/size
+  validation mirroring docs-api), and a DocumentsView (status badges, polls queued ->
+  extracting -> ... -> indexed while in flight, plain "Failed" badge for blocked/OCR-
+  unsupported). Verified end-to-end against the local compose stack through the actual proxy
+  routes: PDF upload -> queued -> indexed -> query returned a grounded answer citing the
+  uploaded doc; unsupported type -> 400; no session -> 401. This unblocks A2's two-user
+  owner-scoping pass (there is finally a browser path to add documents). Next: A2 two-user
+  check, then C3/D1/closeout.

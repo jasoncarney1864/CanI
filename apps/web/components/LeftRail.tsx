@@ -4,18 +4,23 @@ import type { Spoke, SpokeKey } from "@/lib/spokes";
 import type { Principal } from "@/lib/backendAuth";
 import { SpokeSwitcher } from "./SpokeSwitcher";
 
+/** The primary views the rail switches between. */
+export type NavView = "workspace" | "upload" | "documents";
+
 interface LeftRailProps {
   spoke: Spoke;
   collapsed: boolean;
   onToggle: () => void;
   onSpokeChange: (key: SpokeKey) => void;
   user: Principal;
+  activeView: NavView;
+  onNavigate: (view: NavView) => void;
 }
 
-const NAV_ITEMS = [
-  { glyph: "\u25EB", label: "Workspace", active: true },
-  { glyph: "\u2191", label: "Upload", active: false },
-  { glyph: "\u2751", label: "Documents", active: false },
+const NAV_ITEMS: { glyph: string; label: string; view: NavView }[] = [
+  { glyph: "\u25EB", label: "Workspace", view: "workspace" },
+  { glyph: "\u2191", label: "Upload", view: "upload" },
+  { glyph: "\u2751", label: "Documents", view: "documents" },
 ];
 
 /**
@@ -23,7 +28,15 @@ const NAV_ITEMS = [
  * icon-only rail. Hosts the domain icon, primary nav, spoke switcher, and the
  * user profile stub.
  */
-export function LeftRail({ spoke, collapsed, onToggle, onSpokeChange, user }: LeftRailProps) {
+export function LeftRail({
+  spoke,
+  collapsed,
+  onToggle,
+  onSpokeChange,
+  user,
+  activeView,
+  onNavigate,
+}: LeftRailProps) {
   // Short label for the signed-in principal: the local part of an email, else the raw id.
   const shortName = user.user_id.includes("@") ? user.user_id.split("@")[0] : user.user_id;
   return (
@@ -43,14 +56,19 @@ export function LeftRail({ spoke, collapsed, onToggle, onSpokeChange, user }: Le
 
       <ul className="rail__nav">
         {NAV_ITEMS.map((item) => (
-          <li
-            key={item.label}
-            className={`rail__item${item.active ? " rail__item--active" : ""}`}
-          >
-            <span className="rail__glyph" aria-hidden>
-              {item.glyph}
-            </span>
-            {!collapsed && <span className="rail__itemlabel">{item.label}</span>}
+          <li key={item.label}>
+            <button
+              type="button"
+              className={`rail__item${activeView === item.view ? " rail__item--active" : ""}`}
+              onClick={() => onNavigate(item.view)}
+              aria-current={activeView === item.view ? "page" : undefined}
+              title={collapsed ? item.label : undefined}
+            >
+              <span className="rail__glyph" aria-hidden>
+                {item.glyph}
+              </span>
+              {!collapsed && <span className="rail__itemlabel">{item.label}</span>}
+            </button>
           </li>
         ))}
       </ul>
