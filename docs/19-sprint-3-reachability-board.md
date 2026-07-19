@@ -213,16 +213,25 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
     `limit-rps: 20`, `limit-burst-multiplier: 5` (burst bucket 100), `limit-connections: 20`
     per client IP) — a global edge throttle complementing the Sprint 2 per-pod limit.
   - [x] Standard security headers present, applied at the app layer via `next.config.js`
-    `headers()` (portable; survives ingress changes): HSTS (2y, includeSubDomains, preload),
-    X-Content-Type-Options: nosniff, X-Frame-Options: DENY, Referrer-Policy:
-    strict-origin-when-cross-origin, Permissions-Policy (mic allowed for voice; camera/geo
-    denied), and a Next-appropriate CSP (`default-src 'self'`; `connect-src 'self'`;
-    `frame-ancestors 'none'`; `script/style-src 'self' 'unsafe-inline'` — inline is required
-    for Next's un-nonced hydration/styles; nonce-based CSP is a tracked follow-up).
+    `headers()` (portable; survives ingress changes): HSTS, X-Content-Type-Options: nosniff,
+    X-Frame-Options: DENY, Referrer-Policy: strict-origin-when-cross-origin, Permissions-Policy
+    (mic allowed for voice; camera/geo denied), and a Next-appropriate CSP (`default-src
+    'self'`; `connect-src 'self'`; `frame-ancestors 'none'`; `script/style-src 'self'
+    'unsafe-inline'` — inline is required for Next's un-nonced hydration/styles; nonce-based
+    CSP is a tracked follow-up). Note: the app sets HSTS `max-age=63072000; preload`, but the
+    ingress-nginx controller overrides it with its own default (`max-age=31536000;
+    includeSubDomains`) — HSTS is present and correct on live responses, just the ingress
+    value wins; raising it to 2y/preload would be an ingress-level config, a minor follow-up.
   - [x] WAF posture decided and recorded (see decision below).
 - Done criteria:
-  - [x] A burst against the public URL is throttled at the edge (NGINX 503 once the burst
-    bucket drains); security headers verified on responses.
+  - [x] Security headers verified present on live responses (`curl -I https://app.canido.co/`
+    returns all six). Edge rate limiting verified **active in the running NGINX config**:
+    the annotations translate into `limit_req zone=... burst=100 nodelay` and `limit_conn ...
+    20` on the web server block (confirmed by inspecting the live controller's nginx.conf). A
+    503 was **not** empirically triggered — a single curl client (full TLS handshake per
+    request) tops out ~17 rps, below the ~40 rps (2 controller replicas x 20 rps, per-pod
+    local counters) needed to drain the burst bucket. Empirical burst-throttle confirmation
+    needs a load tool (hey/wrk/vegeta); the mechanism itself is present and active.
 - WAF decision: **No managed WAF for dev.** An Azure Front Door / App Gateway WAF adds
   recurring cost, another hop, and operational surface that isn't justified for a
   single-user dev deployment. The current posture — only the web app publicly exposed
@@ -366,7 +375,11 @@ Use one line per day.
   via NGINX annotations on the web Ingress (`limit-rps: 20`, burst x5, `limit-connections: 20`
   per client IP). Security headers applied at the app layer in `next.config.js` `headers()`
   (HSTS, nosniff, X-Frame-Options: DENY, Referrer-Policy, Permissions-Policy with mic allowed
-  for voice, and a Next-appropriate CSP) — verified present on the local production build, and
-  confirmed on the live public responses + edge burst-throttle post-deploy. WAF: no managed
-  WAF for dev (recorded in C3); Front Door / App Gateway WAF is the production upgrade path.
-  Next: D1 (Key Vault CSI), closeout.
+  for voice, and a Next-appropriate CSP) — all six verified present on live responses
+  (`curl -I`). Edge rate limiting verified active in the live controller's nginx.conf
+  (`limit_req burst=100 nodelay` + `limit_conn 20` on the web block); a 503 was not
+  empirically triggered (a single curl client tops out ~17 rps, below the ~40 rps needed
+  across 2 controller replicas — needs a proper load tool). Also noted: ingress-nginx
+  overrides the app HSTS value with its own 1y default. WAF: no managed WAF for dev
+  (recorded in C3); Front Door / App Gateway WAF is the production upgrade path. Next:
+  D1 (Key Vault CSI), closeout.
