@@ -18,12 +18,11 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
 - Last updated: 2026-07-18
-- Overall status: [-] In progress (75%, 27/36) — A1, B1+B2, C1, C2, and **A3** done; **A2**
-  in final verification (build + deploy + live single-user sign-in done; two-user
-  owner-scoping pass outstanding). **CanI is live on the public internet at
-  https://app.canido.co** with real Entra OIDC sign-in and in-UI upload. Next: A2's two-user
-  owner-scoping confirmation (now unblocked by A3's upload UI), C3 (edge rate limit/headers),
-  D1 (Key Vault CSI), closeout.
+- Overall status: [-] In progress (78%, 28/36) — **Workstream A complete** (A1, A2, A3), plus
+  B1+B2, C1, C2. **CanI is live on the public internet at https://app.canido.co**: real Entra
+  OIDC sign-in, in-UI upload with OCR ingestion, voice + typed query, grounded cited answers,
+  and two-user owner-scoping confirmed live. Remaining: C3 (edge rate limit/headers), D1 (Key
+  Vault CSI), closeout.
 
 ## Status legend
 
@@ -85,8 +84,7 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### A2. Real authentication in the web app (P1)
 
 - Owner: Jason
-- Status: [-] In progress — build, deploy, and live single-user sign-in done (2026-07-18,
-  PR #42); remaining: manual two-user owner-scoping confirmation through the web UI.
+- Status: [x] Done (2026-07-18, PR #42; two-user owner-scoping confirmed live 2026-07-18)
 - Dependencies: A1
 - Checklist:
   - [x] Web app has a real sign-in via hub-api's Entra OIDC flow (not the mock profile);
@@ -98,10 +96,11 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
   - [x] Unauthenticated users cannot reach the workspace (server-side whoami gate renders the
     sign-in screen); logout works.
 - Done criteria:
-  - [ ] Two different users see only their own documents/answers through the web app.
-    (Pending a manual two-user pass. Owner-scoping is enforced at every data boundary and
-    covered by the cross-user isolation integration test; this item is the browser-level
-    confirmation of that guarantee.)
+  - [x] Two different users see only their own documents/answers through the web app.
+    Confirmed live 2026-07-18: user A (`3de34a00...`) uploaded + queried a document; user B
+    (`1c8664cb...`, separate Entra sign-in, incognito) saw an empty Documents list and no
+    access to A's content. This is the browser-level proof of the owner-scoping that is
+    enforced at every data boundary and covered by the cross-user isolation integration test.
 
 ### A3. Upload + ingestion status in the web app (P2)
 
@@ -336,3 +335,14 @@ Use one line per day.
   uploaded doc; unsupported type -> 400; no session -> 401. This unblocks A2's two-user
   owner-scoping pass (there is finally a browser path to add documents). Next: A2 two-user
   check, then C3/D1/closeout.
+- 2026-07-18 (cont.): **Workstream A COMPLETE (78%) — full loop proven live on real content.**
+  Caught + fixed a production-only bug the local A3 test missed: uploads >1 MB 413'd at the
+  managed-NGINX ingress (1 MB default client-body limit). Raised
+  `nginx.ingress.kubernetes.io/proxy-body-size` to 26m — applied live via `kubectl annotate`
+  and persisted to the manifest (PR #45; verified it renders through the dev kustomize
+  overlay so future deploys don't revert it). Then walked the whole loop in the browser: a
+  JPEG uploaded -> **OCR via Document Intelligence** -> chunked/embedded (real Azure OpenAI)
+  -> indexed -> a **voice** question returned a grounded answer with a citation and the
+  Document Viewer spotlight. Finally confirmed **A2's two-user owner-scoping** live: user B
+  (separate Entra sign-in, incognito) saw none of user A's documents. A1+A2+A3 all Done.
+  Next: C3 (edge rate limit/headers), D1 (Key Vault CSI), closeout.
