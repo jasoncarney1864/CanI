@@ -12,6 +12,9 @@ metadata:
   namespace: docs-platform
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # NGINX defaults to a 1 MB client body limit, which 413s any real document upload.
+    # Raise it to match the app/docs-api cap (25 MB) plus a little multipart overhead.
+    nginx.ingress.kubernetes.io/proxy-body-size: "26m"
 spec:
   ingressClassName: webapprouting.kubernetes.azure.com
   tls:
