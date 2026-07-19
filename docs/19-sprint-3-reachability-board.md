@@ -18,11 +18,11 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
 - Last updated: 2026-07-18
-- Overall status: [-] In progress (78%, 28/36) — **Workstream A complete** (A1, A2, A3), plus
-  B1+B2, C1, C2. **CanI is live on the public internet at https://app.canido.co**: real Entra
-  OIDC sign-in, in-UI upload with OCR ingestion, voice + typed query, grounded cited answers,
-  and two-user owner-scoping confirmed live. Remaining: C3 (edge rate limit/headers), D1 (Key
-  Vault CSI), closeout.
+- Overall status: [-] In progress (89%, 32/36) — **Workstream A complete** (A1, A2, A3), plus
+  B1+B2, C1, C2, **C3**. **CanI is live on the public internet at https://app.canido.co**:
+  real Entra OIDC sign-in, in-UI upload with OCR ingestion, voice + typed query, grounded
+  cited answers, two-user owner-scoping, and now edge rate limiting + security headers.
+  Remaining: D1 (Key Vault CSI), closeout.
 
 ## Status legend
 
@@ -206,17 +206,29 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### C3. Edge rate limiting + security headers (P2)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-18, PR #48)
 - Dependencies: C1
 - Checklist:
-  - [ ] Rate limiting enforced at the ingress edge (a real global limit, complementing /
-    superseding the Sprint 2 C3 per-pod service-layer limit).
-  - [ ] Standard security headers present (HSTS, X-Content-Type-Options, Referrer-Policy,
-    a CSP appropriate to the Next.js app), verified.
-  - [ ] Decide WAF posture (managed ruleset vs none for dev) and record it.
+  - [x] Rate limiting enforced at the ingress edge (NGINX annotations on the web Ingress:
+    `limit-rps: 20`, `limit-burst-multiplier: 5` (burst bucket 100), `limit-connections: 20`
+    per client IP) — a global edge throttle complementing the Sprint 2 per-pod limit.
+  - [x] Standard security headers present, applied at the app layer via `next.config.js`
+    `headers()` (portable; survives ingress changes): HSTS (2y, includeSubDomains, preload),
+    X-Content-Type-Options: nosniff, X-Frame-Options: DENY, Referrer-Policy:
+    strict-origin-when-cross-origin, Permissions-Policy (mic allowed for voice; camera/geo
+    denied), and a Next-appropriate CSP (`default-src 'self'`; `connect-src 'self'`;
+    `frame-ancestors 'none'`; `script/style-src 'self' 'unsafe-inline'` — inline is required
+    for Next's un-nonced hydration/styles; nonce-based CSP is a tracked follow-up).
+  - [x] WAF posture decided and recorded (see decision below).
 - Done criteria:
-  - [ ] A burst against the public URL is throttled at the edge; security headers verified
-    on responses.
+  - [x] A burst against the public URL is throttled at the edge (NGINX 503 once the burst
+    bucket drains); security headers verified on responses.
+- WAF decision: **No managed WAF for dev.** An Azure Front Door / App Gateway WAF adds
+  recurring cost, another hop, and operational surface that isn't justified for a
+  single-user dev deployment. The current posture — only the web app publicly exposed
+  (backend private), edge rate limiting, security headers, and TLS — is the accepted dev
+  baseline. A managed WAF (Front Door or App Gateway + AGIC) is the documented production
+  upgrade path if/when the app takes real multi-tenant traffic.
 
 ## Workstream D - Hardening elevated by public exposure
 
@@ -346,3 +358,15 @@ Use one line per day.
   Document Viewer spotlight. Finally confirmed **A2's two-user owner-scoping** live: user B
   (separate Entra sign-in, incognito) saw none of user A's documents. A1+A2+A3 all Done.
   Next: C3 (edge rate limit/headers), D1 (Key Vault CSI), closeout.
+- 2026-07-18 (cont.): Fixed a post-auth redirect bug (PR #47): sign-in/out landed on
+  `https://0.0.0.0:3000/` (ERR_ADDRESS_INVALID) because the redirect was built from the Next
+  server's internal `request.url`. Now uses a relative Location so the browser resolves it
+  against the public host; verified live.
+- 2026-07-18 (cont.): **C3 DONE (89%) — edge rate limiting + security headers.** Rate limiting
+  via NGINX annotations on the web Ingress (`limit-rps: 20`, burst x5, `limit-connections: 20`
+  per client IP). Security headers applied at the app layer in `next.config.js` `headers()`
+  (HSTS, nosniff, X-Frame-Options: DENY, Referrer-Policy, Permissions-Policy with mic allowed
+  for voice, and a Next-appropriate CSP) — verified present on the local production build, and
+  confirmed on the live public responses + edge burst-throttle post-deploy. WAF: no managed
+  WAF for dev (recorded in C3); Front Door / App Gateway WAF is the production upgrade path.
+  Next: D1 (Key Vault CSI), closeout.
