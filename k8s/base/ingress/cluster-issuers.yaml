@@ -8,7 +8,7 @@ metadata:
 spec:
   acme:
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: jasoncarney1864@gmail.com
+    email: ops@canido.co
     privateKeySecretRef: { name: letsencrypt-staging-key }
     solvers:
       - http01:
@@ -22,7 +22,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: jasoncarney1864@gmail.com
+    email: ops@canido.co
     privateKeySecretRef: { name: letsencrypt-prod-key }
     solvers:
       - http01:
