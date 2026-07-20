@@ -157,6 +157,8 @@ pulumi.export(
 pulumi.export("acr_login_server", acr.registry.login_server)
 pulumi.export("acr_id", acr.registry.id)
 pulumi.export("platform_key_vault_id", platform_vault.vault.id)
+pulumi.export("platform_key_vault_name", platform_vault.vault.name)
+pulumi.export("platform_key_vault_rg", resource_group.name)
 pulumi.export("workload_management_group_id", workload_mg.id)
 pulumi.export("ops_action_group_id", ops_alerting.action_group.id)
 pulumi.export("monthly_budget_id", subscription_budget.budget.id)
