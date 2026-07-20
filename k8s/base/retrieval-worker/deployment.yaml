@@ -10,7 +10,9 @@ spec:
     matchLabels: { app: retrieval-worker }
   template:
     metadata:
-      labels: { app: retrieval-worker }
+      labels:
+        app: retrieval-worker
+        azure.workload.identity/use: "true"
     spec:
       serviceAccountName: retrieval-worker
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
@@ -25,6 +27,7 @@ spec:
             - { name: TMPDIR, value: "/tmp" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: secrets-store, mountPath: /mnt/secrets-store, readOnly: true }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -36,6 +39,11 @@ spec:
             limits: { cpu: "1", memory: "512Mi" }
       volumes:
         - { name: tmp, emptyDir: {} }
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: cani-keyvault-secrets }
 ---
 apiVersion: v1
 kind: Service
@@ -52,4 +60,4 @@ metadata:
   name: retrieval-worker
   namespace: docs-platform
   annotations:
-    azure.workload.identity/client-id: "REPLACE_WITH_RETRIEVAL_WORKER_WORKLOAD_IDENTITY_CLIENT_ID"
+    azure.workload.identity/client-id: "4a790202-610f-499c-bb0b-2c64b2d42898"

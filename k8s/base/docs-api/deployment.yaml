@@ -10,7 +10,9 @@ spec:
     matchLabels: { app: docs-api }
   template:
     metadata:
-      labels: { app: docs-api }
+      labels:
+        app: docs-api
+        azure.workload.identity/use: "true"
     spec:
       serviceAccountName: docs-api
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
@@ -25,6 +27,7 @@ spec:
             - { name: TMPDIR, value: "/tmp" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: secrets-store, mountPath: /mnt/secrets-store, readOnly: true }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -36,6 +39,11 @@ spec:
             limits: { cpu: "500m", memory: "256Mi" }
       volumes:
         - { name: tmp, emptyDir: {} }
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: cani-keyvault-secrets }
 ---
 apiVersion: v1
 kind: Service
@@ -52,7 +60,7 @@ metadata:
   name: docs-api
   namespace: docs-platform
   annotations:
-    azure.workload.identity/client-id: "REPLACE_WITH_DOCS_API_WORKLOAD_IDENTITY_CLIENT_ID"
+    azure.workload.identity/client-id: "4a790202-610f-499c-bb0b-2c64b2d42898"
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
