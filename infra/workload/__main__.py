@@ -17,6 +17,7 @@ from modules.data_services import WorkloadBlobStorage, WorkloadPostgres
 from modules.naming import NamingContext, base_tags
 from modules.networking import WorkloadNetwork
 from modules.observability import ContainerInsightsCollection, send_diagnostics_to_workspace
+from modules.workload_secrets import KeyVaultPrivateAccess, WorkloadSecretsIdentity
 
 config = pulumi.Config()
 environment = pulumi.get_stack()
@@ -42,6 +43,8 @@ hub_vnet_id = platform_stack_ref.get_output("hub_vnet_id")
 log_analytics_workspace_id = platform_stack_ref.get_output("log_analytics_workspace_id")
 acr_id = platform_stack_ref.get_output("acr_id")
 ops_action_group_id = platform_stack_ref.get_output("ops_action_group_id")
+platform_key_vault_id = platform_stack_ref.get_output("platform_key_vault_id")
+platform_key_vault_name = platform_stack_ref.get_output("platform_key_vault_name")
 
 naming = NamingContext(project="workload", layer="core", environment=environment)
 tags = base_tags(environment=environment, owner=owner, spoke="docs-platform", workload_type="api")
@@ -85,6 +88,25 @@ blob_storage = WorkloadBlobStorage(
     public_network_access=public_data_endpoints,
 )
 
+# D1: Key Vault CSI access — a private endpoint so the CSI driver can reach the
+# public-access-Disabled platform Key Vault, plus a workload identity federated to each app
+# service account with read access to the vault's secrets.
+key_vault_access = KeyVaultPrivateAccess(
+    "cani",
+    resource_group_name=resource_group.name,
+    key_vault_id=platform_key_vault_id,
+    private_endpoints_subnet_id=network.private_endpoints_subnet_id,
+    vnet_id=network.vnet.id,
+    tags=tags,
+)
+
+secrets_identity = WorkloadSecretsIdentity(
+    "cani-secrets",
+    resource_group_name=resource_group.name,
+    oidc_issuer_url=aks.cluster.oidc_issuer_profile.issuer_url,
+    tags=tags,
+)
+
 send_diagnostics_to_workspace(
     "aks",
     target_resource_id=aks.cluster.id,
@@ -120,6 +142,11 @@ node_not_ready_alert(
 
 pulumi.export("aks_cluster_id", aks.cluster.id)
 pulumi.export("aks_oidc_issuer_url", aks.cluster.oidc_issuer_profile.issuer_url)
+# D1: consumed by the k8s SecretProviderClass / service-account annotations, and by the
+# out-of-band elevated cutover (principal_id → the KV Secrets User role assignment).
+pulumi.export("secrets_identity_client_id", secrets_identity.client_id)
+pulumi.export("secrets_identity_principal_id", secrets_identity.principal_id)
+pulumi.export("key_vault_name", platform_key_vault_name)
 pulumi.export("postgres_fqdn", postgres.server.fully_qualified_domain_name)
 pulumi.export("storage_account_id", blob_storage.account.id)
 pulumi.export("acr_id_reference", acr_id)
