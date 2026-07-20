@@ -88,6 +88,7 @@ class WorkloadNetwork(ComponentResource):
         )
 
         self.aks_subnet_id = self.vnet.subnets[0].id
+        self.private_endpoints_subnet_id = self.vnet.subnets[1].id
         self.postgres_subnet_id = self.vnet.subnets[2].id
 
         self.postgres_private_dns_zone = azure_native.privatedns.PrivateZone(
@@ -126,6 +127,7 @@ class WorkloadNetwork(ComponentResource):
             {
                 "vnet_id": self.vnet.id,
                 "aks_subnet_id": self.aks_subnet_id,
+                "private_endpoints_subnet_id": self.private_endpoints_subnet_id,
                 "postgres_subnet_id": self.postgres_subnet_id,
                 "postgres_private_dns_zone_id": self.postgres_private_dns_zone.id,
             }
