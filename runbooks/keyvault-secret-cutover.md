@@ -106,27 +106,84 @@ implicit (the deployment spec changes force new pods). Watch each rollout.
 
 ## Step 4 — Rotate the backing services (after the app is on CSI)
 
-Do one at a time; update the backing service AND the KV secret, then restart the affected
-deployments so pods re-read via the CSI sync.
+> **CRITICAL — the CSI driver does NOT auto-propagate Key Vault changes.** Secret rotation
+> (`Rotation` / `--enable-secret-rotation`) is **off** on this cluster, so writing a new value
+> to Key Vault does **nothing** on its own: the driver only re-reads a secret when a pod
+> mounts the SPC volume, and it will **not** overwrite the existing `cani-secrets`/
+> `cani-keda-postgres` k8s Secret it already created. A plain `kubectl rollout restart` reuses
+> the stale k8s Secret — pods come back on the OLD value and look "fine". This misled us once
+> (a self-consistent old signing secret read as "rotation verified"). **You must delete the
+> synced k8s Secret so the driver rebuilds it from Key Vault on the next mount.**
+
+**Corrected rotation procedure (every secret):**
+
+1. Set the new value in Key Vault via ARM PUT (`kvset`, Step 2) — never echo the value.
+2. **Delete the synced Secret in BOTH namespaces** so the driver re-syncs from KV:
+
+   ```bash
+   RG=cani-workload-core-dev-eastus2-rg9c8e66d0; CL=cani-aks64bdb7d1
+   az aks command invoke -g $RG -n $CL --command \
+     "kubectl delete secret cani-secrets -n docs-platform -n hub-system --ignore-not-found"
+   # if rotating the KEDA connection, also: kubectl delete secret cani-keda-postgres -n docs-platform --ignore-not-found
+   ```
+
+3. **Restart ALL consuming services together** (not just the "affected" one). Shared secrets
+   like the signing/session key live in every namespace; refreshing only one side leaves
+   hub-api and docs-api on different values and breaks cross-service token validation.
+
+   ```bash
+   az aks command invoke -g $RG -n $CL --command \
+     "kubectl -n hub-system rollout restart deploy/hub-api; \
+      kubectl -n docs-platform rollout restart deploy/docs-api deploy/retrieval-worker deploy/ingestion-worker"
+   ```
+
+4. Verify per the **Verify** section above (pods Ready, CD smoke check, live sign-in).
+
+Per-secret specifics (each still follows the four steps above):
 
 - **Postgres admin password**: `pulumi config set --secret postgresAdminPassword <new>` in
-  `infra/workload` → merge/apply (updates the Flexible Server) → `kvset postgres-password …`
-  → rebuild + `kvset keda-postgres-connection …` → restart docs-platform + hub-system pods.
-- **Storage account key**: `az storage account keys renew --account-name cani9820b2c229 -g $RG --key key1`
-  → build the new connection string → `kvset azure-storage-connection-string …` → restart.
-- **Entra client secret**: `az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416`
-  → `kvset entra-oidc-client-secret …` → also update the cluster `cani-hub-oidc` fallback if
-  still present → restart hub-api.
+  `infra/workload` → merge/apply on `main` (CI updates the Flexible Server) → `kvset
+  postgres-password …` → rebuild the KEDA connection string + `kvset keda-postgres-connection …`
+  → delete `cani-secrets` (both ns) **and** `cani-keda-postgres` → restart all. Highest risk;
+  watch the DB.
+- **Storage account key**: `az storage account keys renew --account-name cani9820b2c229 -g $RG --key key1`,
+  then **build the connection string in Python from `az storage account keys list -o json`**
+  (the `--key secondary` / `show-connection-string` CLI forms returned empty on Windows) and
+  **TEST it authenticates before writing to KV** — `az storage container list --connection-string "<new>"`
+  must succeed — then `kvset azure-storage-connection-string …` → refresh. A previous attempt
+  wrote an unverified key2 string and crashlooped docs-api; the test-first guard prevents that.
+- **Entra client secret**: cross-tenant — the `cani-hub` app is in the caniauth CIAM tenant,
+  not your default `az` session. `az login --tenant 43189f5e-8c1b-4e3f-9cf7-d17babc03e36 --allow-no-subscriptions`,
+  then `az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416` → switch the CLI
+  back → `kvset entra-oidc-client-secret …` → refresh (only hub-system carries this secret, but
+  still delete `cani-secrets` there and restart hub-api).
 
 ## Rollback
 
-If pods fail to mount / read secrets: re-apply the manual secret
-(`CANI_DEV_SECRETS_FILE=~/.cani/dev-secrets.env scripts/apply_dev_secrets.sh` — keep it until
-the cutover is confirmed) and `kubectl rollout undo` the four deployments. The CSI wiring is
-inert without the driver-populated Secret, so the old path resumes.
+> The cutover is **confirmed complete** (2026-07-20) and `scripts/apply_dev_secrets.sh` has
+> been removed, so the original script-based rollback no longer applies.
 
-## Step 5 — Cleanup
+If pods fail to mount / read secrets after a change, recover within the CSI model: check the
+SecretProviderClass + `SecretProviderClassPodStatus` and the CSI driver logs, confirm the
+workload identity can reach the vault, and if a rotation produced a bad value re-run the
+corrected rotation procedure (Step 4) with a known-good value — delete `cani-secrets` in both
+namespaces and restart all services so the driver re-syncs from Key Vault. Values can be
+re-created locally from `~/.cani/dev-secrets.env` if the vault needs re-populating (ARM PUT via
+`kvset`), since ARM cannot read secret values back.
 
-- Remove `scripts/apply_dev_secrets.sh`; point `runbooks/rotate-dev-secrets.md` at the KV
-  (`kvset`) flow.
-- Close D1 on `docs/19-sprint-3-reachability-board.md`.
+## Step 5 — Cleanup (2026-07-20)
+
+- [x] Removed `scripts/apply_dev_secrets.sh`; `runbooks/rotate-dev-secrets.md` rewritten to
+  the KV (`kvset`) delete-secret rotation flow.
+- [x] Closed D1 on `docs/19-sprint-3-reachability-board.md` (cutover done; storage/Entra/
+  Postgres rotation tracked as a follow-up).
+- [ ] Delete the leftover `d1-connectivity-test` validation secret. **Blocked from a laptop:**
+  ARM management-plane PUT can create/update secrets but the resource type does **not** support
+  DELETE (`DeleteNotSupported`); deletion is a **data-plane** op, and the vault has
+  `public_network_access=Disabled`, so it's unreachable from outside the vnet. The value is a
+  throwaway connectivity probe (no real material), so this is tidiness, not exposure. Delete it
+  from inside the vnet with a principal holding **Key Vault Secrets Officer** (the CI/operator
+  UAMI has only *Secrets User*), e.g. a short-lived pod:
+  `az aks command invoke -g cani-workload-core-dev-eastus2-rg9c8e66d0 -n cani-aks64bdb7d1 --command "kubectl run kvdel --rm -i --restart=Never --image=mcr.microsoft.com/azure-cli -- az keyvault secret delete --vault-name cani-platform-kv6370c4cb --name d1-connectivity-test"`
+  (the pod needs a workload-identity binding to a Secrets Officer identity). Deferred with the
+  other rotation follow-ups.

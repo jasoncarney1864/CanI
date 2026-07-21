@@ -17,12 +17,14 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Owner: Jason
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
-- Last updated: 2026-07-18
-- Overall status: [-] In progress (89%, 32/36) — **Workstream A complete** (A1, A2, A3), plus
-  B1+B2, C1, C2, **C3**. **CanI is live on the public internet at https://app.canido.co**:
-  real Entra OIDC sign-in, in-UI upload with OCR ingestion, voice + typed query, grounded
-  cited answers, two-user owner-scoping, and now edge rate limiting + security headers.
-  Remaining: D1 (Key Vault CSI), closeout.
+- Last updated: 2026-07-20
+- Overall status: [-] In progress (97%, 35/36) — **Workstreams A, B, C complete** (A1–A3,
+  B1+B2, C1, C2, C3) **plus D1 (Key Vault CSI cutover)**. **CanI is live on the public internet
+  at https://app.canido.co**: real Entra OIDC sign-in, in-UI upload with OCR ingestion, voice +
+  typed query, grounded cited answers, two-user owner-scoping, edge rate limiting + security
+  headers, and secrets now sourced from Azure Key Vault via the CSI driver + workload identity
+  (manual secret script retired). Remaining: closeout gate — plus the deferred storage/Entra/
+  Postgres secret rotations tracked under D1.
 
 ## Status legend
 
@@ -244,17 +246,34 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ### D1. Key Vault CSI secret cutover (P2)
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-07-20, PRs #52 infra + #53 k8s) — cutover complete and verified live;
+  full secret rotation partially done (signing/session rotated; storage/Entra/Postgres deferred,
+  tracked below).
 - Dependencies: none (independent; higher priority now the surface is public)
 - Checklist:
-  - [ ] Workloads read secrets from Key Vault via the CSI driver + workload identity
-    (`k8s/base/secret-provider-class.yaml` is already scaffolded).
-  - [ ] Retire the manual `scripts/apply_dev_secrets.sh` + storage-account-key path.
-  - [ ] Rotate the exposed pre-migration secret values per
-    `runbooks/rotate-dev-secrets.md`.
+  - [x] Workloads read secrets from Key Vault via the CSI driver + workload identity. All four
+    services (docs-api, hub-api, retrieval-worker, ingestion-worker) mount the
+    `cani-keyvault-secrets` SPC; the driver syncs `cani-secrets` (both namespaces) +
+    `cani-keda-postgres` from the private vault `cani-platform-kv6370c4cb` over a private
+    endpoint, authenticated by the `cani-secrets` workload identity. Config split out to the
+    `cani-config` ConfigMap; orphaned `cani-hub-oidc` removed.
+  - [x] Retire the manual `scripts/apply_dev_secrets.sh` path. Script removed; Key Vault is now
+    the source of truth; runbooks rewritten to the KV rotation flow. (Storage-account-key auth
+    itself remains a dev stopgap — the KV secret still holds a connection string; RBAC-only
+    storage is a later hardening.)
+  - [-] Rotate the exposed pre-migration secret values per `runbooks/rotate-dev-secrets.md`.
+    `CANI_TOKEN_SIGNING_SECRET` + `CANI_SESSION_SECRET` rotated and propagated. Storage key,
+    Entra client secret, and Postgres admin password rotation **deferred** to a focused
+    follow-up (a storage-key rotation attempt during the cutover wrote an unverified key and
+    briefly crashlooped docs-api — reverted; the runbook now mandates a test-first, CSI-aware
+    delete-secret procedure).
 - Done criteria:
-  - [ ] Services boot with secrets sourced from Key Vault; the manual stopgap is removed
-    and pre-migration values rotated.
+  - [x] Services boot with secrets sourced from Key Vault; the manual stopgap is removed.
+    Verified live: healthy pods on KV-sourced secrets and a clean end-to-end incognito Entra
+    sign-in (proves the vaulted Entra/session/signing secrets all work). The remaining
+    pre-migration value rotations (storage/Entra/Postgres) are tracked, not a blocker for the
+    cutover objective — the closeout gate accepts "Key Vault CSI (or an explicit, documented
+    deferral)".
 
 ## Sprint closeout gate
 
@@ -383,3 +402,18 @@ Use one line per day.
   overrides the app HSTS value with its own 1y default. WAF: no managed WAF for dev
   (recorded in C3); Front Door / App Gateway WAF is the production upgrade path. Next:
   D1 (Key Vault CSI), closeout.
+- 2026-07-20: **D1 DONE (97%) — Key Vault CSI secret cutover.** All four services now source
+  secrets from the private platform Key Vault via the Secrets Store CSI driver + a
+  workload-identity-federated UAMI (infra PR #52: KV private endpoint + DNS + UAMI + per-SA
+  federated creds; k8s PR #53: SPC filled, `cani-config` ConfigMap split out, four deployments
+  wired with the CSI volume + SA client-id + workload-identity label). Cut over live with zero
+  downtime (validated the CSI read path with a throwaway pod, populated the vault via ARM PUT,
+  flipped namespace-by-namespace), retired `scripts/apply_dev_secrets.sh`, and deleted the
+  orphaned `cani-hub-oidc`. Rotated the signing + session secrets and
+  verified end-to-end with a clean incognito Entra sign-in. **Key learning:** the CSI driver
+  does NOT auto-propagate KV changes — rotation requires deleting the synced `cani-secrets` in
+  both namespaces and restarting all services (a restart-only attempt read the stale secret as
+  a false "verified"); a storage-key rotation that wrote an unverified key briefly crashlooped
+  docs-api (reverted). Storage/Entra/Postgres rotations deferred to a focused follow-up with
+  the corrected, test-first procedure now in `runbooks/rotate-dev-secrets.md`. Next: closeout
+  gate.
