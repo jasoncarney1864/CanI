@@ -10,7 +10,9 @@ spec:
     matchLabels: { app: ingestion-worker }
   template:
     metadata:
-      labels: { app: ingestion-worker }
+      labels:
+        app: ingestion-worker
+        azure.workload.identity/use: "true"
     spec:
       serviceAccountName: ingestion-worker
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
@@ -29,6 +31,7 @@ spec:
             - { name: TMPDIR, value: "/tmp" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: secrets-store, mountPath: /mnt/secrets-store, readOnly: true }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -38,6 +41,11 @@ spec:
             limits: { cpu: "1", memory: "512Mi" }
       volumes:
         - { name: tmp, emptyDir: {} }
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: cani-keyvault-secrets }
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -45,7 +53,7 @@ metadata:
   name: ingestion-worker
   namespace: docs-platform
   annotations:
-    azure.workload.identity/client-id: "REPLACE_WITH_INGESTION_WORKER_WORKLOAD_IDENTITY_CLIENT_ID"
+    azure.workload.identity/client-id: "4a790202-610f-499c-bb0b-2c64b2d42898"
 # KEDA scaling objects live in scaling.yaml (separate file so it can be applied on its
 # own — this file contains the REPLACE_WITH_IMAGE_TAG placeholder and must only be
 # applied through the kustomize overlay).
