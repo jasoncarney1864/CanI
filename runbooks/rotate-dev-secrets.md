@@ -1,166 +1,187 @@
-# Runbook: dev secrets — storage, apply, and rotation
+# Runbook: dev secrets — where they live and how to rotate them
 
-Covers the `cani-secrets` Kubernetes Secret consumed by all four services in dev
-(`hub-system` and `docs-platform` namespaces).
+As of D1 (2026-07-20) the dev cluster sources every runtime secret from **Azure Key Vault**
+via the Secrets Store CSI driver + workload identity. The manual `cani-secrets` script
+(`scripts/apply_dev_secrets.sh`) is **retired** — Key Vault is the source of truth for what
+the cluster runs on. This runbook covers where the values live now and the correct rotation
+procedure. The one-time cutover itself is documented in
+[`keyvault-secret-cutover.md`](keyvault-secret-cutover.md).
 
 ## Where secret values live
 
-- **Canonical location:** `~/.cani/dev-secrets.env` on the operator's machine —
-  deliberately **outside** the repo (so it can't be committed) and **outside OneDrive**
-  (so it never syncs to a cloud account). Plain `KEY=VALUE` lines, no quotes needed.
-- **Never** store secret values anywhere under the repo tree. `.gitignore` blocks
-  `*secrets-bootstrap*.yaml` as a backstop, but the rule is: the file shouldn't exist
-  there in the first place.
+- **Cluster (canonical): Azure Key Vault `cani-platform-kv6370c4cb`.** The CSI driver syncs
+  the KV secrets into the `cani-secrets` k8s Secret (both `docs-platform` and `hub-system`)
+  plus `cani-keda-postgres` (KEDA connection), on pod mount. See
+  [`k8s/base/secret-provider-class.yaml`](../k8s/base/secret-provider-class.yaml) for the
+  KV-name → env-key mapping.
+- **The vault is private** (`public_network_access=Disabled`, RBAC auth). Its **data plane**
+  is reachable only via the private endpoint from inside the cluster — you can't read/write
+  values with a plain `az keyvault secret` command from a laptop. Writes go through the **ARM
+  management plane** (`az rest ... PUT`, the `kvset` helper below), which is reachable from
+  anywhere; note ARM **cannot read** secret values back (GET returns metadata only).
+- **Local docker-compose only:** `~/.cani/dev-secrets.env` on the operator's machine —
+  outside the repo and outside OneDrive. This is now *only* for running the stack locally; it
+  is **not** applied to the cluster anymore. Keep it in sync with KV when you rotate.
 - The Postgres admin password additionally lives, encrypted, in Pulumi stack config
-  (`infra/workload`, key `postgresAdminPassword`) — Pulumi is the source of truth for
-  what the *server* accepts; the env file must be kept in sync with it.
+  (`infra/workload`, key `postgresAdminPassword`) — Pulumi is the source of truth for what the
+  *server* accepts; KV + the env file must match it.
 
-Required keys (the first seven are required by `cani_shared.config.Settings` in every
-service, even where a service doesn't functionally use them; the last one feeds KEDA):
+KV secret name → env key consumed by the app:
 
-```
-CANI_TOKEN_SIGNING_SECRET=   # >=32 chars
-CANI_SESSION_SECRET=         # >=32 chars
-POSTGRES_PASSWORD=
-POSTGRES_HOST=               # Postgres Flexible Server FQDN
-QDRANT_URL=
-QDRANT_COLLECTION=
-AZURE_STORAGE_CONNECTION_STRING=
-KEDA_POSTGRES_CONNECTION=    # postgresql://keda_scaler:<pass>@<host>:5432/cani?sslmode=require
-ENTRA_OIDC_AUTHORITY=        # https://caniauth.ciamlogin.com/<tenant-id>/v2.0
-ENTRA_OIDC_CLIENT_ID=
-ENTRA_OIDC_CLIENT_SECRET=    # rotate: az ad app credential reset (see section 5)
-ENTRA_OIDC_REDIRECT_URI=
-```
+| KV secret name | env key |
+| --- | --- |
+| `cani-token-signing-secret` | `CANI_TOKEN_SIGNING_SECRET` (>=32 chars) |
+| `cani-session-secret` | `CANI_SESSION_SECRET` (>=32 chars) |
+| `postgres-password` | `POSTGRES_PASSWORD` |
+| `azure-storage-connection-string` | `AZURE_STORAGE_CONNECTION_STRING` |
+| `azure-documentintelligence-api-key` | `AZURE_DOCUMENTINTELLIGENCE_API_KEY` |
+| `applicationinsights-connection-string` | `APPLICATIONINSIGHTS_CONNECTION_STRING` |
+| `entra-oidc-client-secret` | `ENTRA_OIDC_CLIENT_SECRET` |
+| `keda-postgres-connection` | `connection` in `cani-keda-postgres` |
 
-`KEDA_POSTGRES_CONNECTION` uses the dedicated `keda_scaler` Postgres role (LOGIN +
-SELECT on `ingestion_jobs` only — never the admin credential), consumed by the
-`cani-postgres-keda-auth` TriggerAuthentication in
-`k8s/base/ingestion-worker/scaling.yaml` via the `cani-keda-postgres` Secret.
+Non-secret config (`POSTGRES_HOST`, `QDRANT_URL`, `QDRANT_COLLECTION`,
+`AZURE_DOCUMENTINTELLIGENCE_ENDPOINT`, `ENTRA_OIDC_*` except the client secret) now lives in
+the `cani-config` ConfigMap ([`k8s/base/config.yaml`](../k8s/base/config.yaml)), not in any
+secret.
 
-## Applying to the cluster
+## The one rule that matters: the CSI driver does NOT auto-propagate KV changes
 
-```bash
-bash scripts/apply_dev_secrets.sh
-```
+Secret rotation is **off** on this cluster (the default). Writing a new value to Key Vault
+does **nothing** on its own, and a plain `kubectl rollout restart` reuses the **stale**
+`cani-secrets` k8s Secret — pods come back on the OLD value and appear healthy. (This bit us
+during D1: a self-consistent old signing secret read as "rotation verified".) The driver only
+rebuilds the k8s Secret from KV when a pod mounts the SPC volume **and** the k8s Secret does
+not already exist — so you must delete it.
 
-> **Private cluster note:** the dev AKS API server is private — plain `kubectl` only
-> works from inside the VNet. From an outside machine, wrap the kubectl steps in
-> `az aks command invoke -g <workload-rg> -n <cluster> --command "..."` (attach files
-> with `--file` where a command needs one).
-
-The script reads `~/.cani/dev-secrets.env` (override with `CANI_DEV_SECRETS_FILE`),
-validates all keys are present and the signing secrets meet the app's 32-char minimum,
-and streams the Secret manifests to `kubectl apply` over stdin — nothing is written to
-disk. Then restart the workloads (the script prints the exact commands).
-
-## One-time migration note (2026-07-15)
-
-Dev secrets previously sat in a plaintext manifest inside the repo working tree
-(`k8s/overlays/dev/cani-secrets-bootstrap.yaml` — untracked but not gitignored, and
-synced to OneDrive by virtue of the repo's location). That file has been moved to
-`~/.cani/cani-secrets-bootstrap.yaml`. **Treat every value in it as exposed** to the
-OneDrive account and rotate all of them (procedure below), then delete the moved file
-once `~/.cani/dev-secrets.env` is populated and applied.
-
-## Rotation procedures
-
-### 1. Token signing + session secrets (`CANI_TOKEN_SIGNING_SECRET`, `CANI_SESSION_SECRET`)
-
-Rotating these invalidates **all** outstanding access tokens and sessions — that is the
-point (it's also the documented containment step in
-`suspected-cross-tenant-access.md`). Users just re-login; no server-side state to update.
+## Rotation procedure (all secrets)
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"   # run twice, one per key
-# update both values in ~/.cani/dev-secrets.env
-bash scripts/apply_dev_secrets.sh
-kubectl -n hub-system rollout restart deployment/hub-api
-kubectl -n docs-platform rollout restart deployment/docs-api deployment/retrieval-worker deployment/ingestion-worker
+# --- setup: management-plane PUT helper (never echoes values) ---
+KV_MGMT="https://management.azure.com/subscriptions/6591cee6-ee26-4155-ae71-3777bf7e9c73/resourceGroups/cani-platform-core-dev-eastus2-rg1227b5a0/providers/Microsoft.KeyVault/vaults/cani-platform-kv6370c4cb/secrets"
+kvset() {  # kvset <kv-secret-name> <env-var-holding-value>
+  local name="$1" val="${!2}"
+  az rest --method put --url "$KV_MGMT/${name}?api-version=2023-07-01" \
+    --body "$(jq -nc --arg v "$val" '{properties:{value:$v}}')" >/dev/null && echo "set $name"
+}
+RG=cani-workload-core-dev-eastus2-rg9c8e66d0; CL=cani-aks64bdb7d1
 ```
 
-### 2. Postgres admin password (`POSTGRES_PASSWORD`)
+1. **Set the new value in KV** with `kvset` (never `echo` the value; source it from a shell
+   var or `~/.cani/dev-secrets.env`).
+2. **Delete the synced k8s Secret in BOTH namespaces** so the driver re-syncs from KV:
 
-Pulumi owns the server-side password — change it there first, then update the env file:
+   ```bash
+   az aks command invoke -g $RG -n $CL --command \
+     "kubectl delete secret cani-secrets -n docs-platform -n hub-system --ignore-not-found"
+   # KEDA connection too, when rotating it:
+   # az aks command invoke -g $RG -n $CL --command "kubectl delete secret cani-keda-postgres -n docs-platform --ignore-not-found"
+   ```
+
+3. **Restart ALL services together** — shared secrets (signing/session) exist in both
+   namespaces; refreshing one side leaves hub-api and docs-api on different values and breaks
+   cross-service token validation:
+
+   ```bash
+   az aks command invoke -g $RG -n $CL --command \
+     "kubectl -n hub-system rollout restart deploy/hub-api; \
+      kubectl -n docs-platform rollout restart deploy/docs-api deploy/retrieval-worker deploy/ingestion-worker"
+   ```
+
+4. **Verify** (see section at the end). Also update `~/.cani/dev-secrets.env` to the new value
+   so local compose stays in sync.
+
+## Per-secret specifics
+
+### 1. Token signing + session secrets (`cani-token-signing-secret`, `cani-session-secret`)
+
+Rotating these invalidates **all** outstanding access tokens and sessions — that is the point
+(also the containment step in `suspected-cross-tenant-access.md`). Users just re-login.
+
+```bash
+CANI_TOKEN_SIGNING_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+CANI_SESSION_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+kvset cani-token-signing-secret CANI_TOKEN_SIGNING_SECRET
+kvset cani-session-secret CANI_SESSION_SECRET
+# then: delete cani-secrets (both ns) -> restart all -> verify
+```
+
+### 2. Storage connection string (`azure-storage-connection-string`)
+
+Storage accounts have two keys, so rotate without downtime by renewing one, but **build and
+TEST the connection string before writing it to KV** — a previous rotation wrote an unverified
+key2 string and crashlooped docs-api. The `--key secondary` / `show-connection-string` CLI
+forms returned empty on Windows; build it in Python from the key list instead:
+
+```bash
+ACCT=cani9820b2c229
+az storage account keys renew --account-name $ACCT -g $RG --key key1 >/dev/null
+KEY="$(az storage account keys list --account-name $ACCT -g $RG -o json \
+  | python -c 'import json,sys; print([k["value"] for k in json.load(sys.stdin) if k["keyName"]=="key1"][0])')"
+AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=$ACCT;AccountKey=$KEY;EndpointSuffix=core.windows.net"
+# TEST it authenticates BEFORE writing to KV:
+az storage container list --connection-string "$AZURE_STORAGE_CONNECTION_STRING" -o none && echo "auth OK"
+kvset azure-storage-connection-string AZURE_STORAGE_CONNECTION_STRING
+# then: delete cani-secrets (both ns) -> restart all -> verify
+```
+
+(Longer term this key goes away entirely — the target is a storage RBAC role on the workload
+identity, no account key. Account-key auth is the current dev stopgap.)
+
+### 3. Postgres admin password (`postgres-password`) + KEDA connection (`keda-postgres-connection`)
+
+Highest risk — changing the server password breaks in-flight connections until pods restart.
+Pulumi owns the server-side password; change it there first so server + KV stay in sync:
 
 ```bash
 cd infra/workload
 pulumi config set --secret postgresAdminPassword   # prompts; paste the new value
-pulumi up                                          # applies the server-side change
-# update POSTGRES_PASSWORD in ~/.cani/dev-secrets.env to the same value
-bash scripts/apply_dev_secrets.sh
-# restart all four deployments (commands printed by the script)
+# merge/apply on main (CI runs infra-apply-dev) — this updates the Flexible Server
 ```
 
-Expect a brief window where running pods hold the old password; restart promptly after
-`pulumi up` completes.
-
-### 3. Storage connection string (`AZURE_STORAGE_CONNECTION_STRING`)
-
-Storage accounts have two keys, so rotate without downtime by switching keys:
+Then mirror it into KV, rebuild the KEDA connection (dedicated `keda_scaler` role — LOGIN +
+SELECT on `ingestion_jobs` only, never the admin credential), and refresh:
 
 ```bash
-# If currently on key1, first point the app at key2:
-az storage account show-connection-string \
-  --name <storage-account-name> -g <workload-rg> --key secondary -o tsv
-# update AZURE_STORAGE_CONNECTION_STRING in ~/.cani/dev-secrets.env, apply, restart
-
-# Then invalidate the exposed key:
-az storage account keys renew --account-name <storage-account-name> -g <workload-rg> --key key1
+POSTGRES_PASSWORD="<same value>"
+kvset postgres-password POSTGRES_PASSWORD
+KEDA_POSTGRES_CONNECTION="postgresql://keda_scaler:<keda-pass>@cani-pgfd564d67.postgres.database.azure.com:5432/cani?sslmode=require"
+kvset keda-postgres-connection KEDA_POSTGRES_CONNECTION
+# delete cani-secrets (both ns) AND cani-keda-postgres -> restart all -> verify -> watch the DB
+az aks command invoke -g $RG -n $CL --command \
+  "kubectl -n docs-platform annotate scaledobject ingestion-worker cani.io/reconcile-nudge=$(date +%s) --overwrite"
 ```
 
-(Longer term this key goes away entirely — workload identity + Key Vault CSI is the
-target state per `k8s/base/secret-provider-class.yaml`; account-key auth is a dev
-stopgap.)
+`kubectl get scaledobject -n docs-platform` — READY must return to `True`.
 
-### 4. KEDA scaler credential (`KEDA_POSTGRES_CONNECTION`)
+### 4. Entra OIDC client secret (`entra-oidc-client-secret`)
 
-The `keda_scaler` role's password is set with `ALTER ROLE`, executed through a running
-docs-api pod (it holds the admin credential in env). Generate a new password, then:
+Cross-tenant: the `cani-hub` app registration lives in the `caniauth` CIAM tenant
+(43189f5e-8c1b-4e3f-9cf7-d17babc03e36), not your default `az` session — authenticate there
+first:
 
 ```bash
-kubectl -n docs-platform exec -i deploy/docs-api -- python -c '
-import os, sys, psycopg
-with psycopg.connect(host=os.environ["POSTGRES_HOST"], port=os.environ.get("POSTGRES_PORT","5432"),
-                     dbname=os.environ["POSTGRES_DB"], user=os.environ["POSTGRES_USER"],
-                     password=os.environ["POSTGRES_PASSWORD"]) as conn:
-    conn.execute("ALTER ROLE keda_scaler WITH LOGIN PASSWORD %s", (sys.stdin.read().strip(),))
-print("keda_scaler password updated")' <<< "<new-password>"
-# rebuild KEDA_POSTGRES_CONNECTION in ~/.cani/dev-secrets.env with the new password
-bash scripts/apply_dev_secrets.sh
-kubectl -n docs-platform annotate scaledobject ingestion-worker cani.io/reconcile-nudge=$(date +%s) --overwrite
-```
-
-Verify with `kubectl get scaledobject -n docs-platform` — READY must return to `True`.
-
-### 5. Entra OIDC client secret (`ENTRA_OIDC_CLIENT_SECRET`)
-
-The `cani-hub` app registration lives in the `caniauth` external tenant
-(43189f5e-8c1b-4e3f-9cf7-d17babc03e36), not the workforce tenant — authenticate there
-first, then reset the credential:
-
-```
 az login --tenant 43189f5e-8c1b-4e3f-9cf7-d17babc03e36 --allow-no-subscriptions
-az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416 \
-  --display-name "hub-api-dev" --years 1 --query password -o tsv
-# update ENTRA_OIDC_CLIENT_SECRET in ~/.cani/dev-secrets.env (never echo/commit it)
+NEW="$(az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416 \
+  --display-name hub-api-dev --years 1 --query password -o tsv)"
 az account set --subscription 6591cee6-ee26-4155-ae71-3777bf7e9c73   # switch CLI back
-bash scripts/apply_dev_secrets.sh
-kubectl -n hub-system rollout restart deployment/hub-api
+ENTRA_OIDC_CLIENT_SECRET="$NEW"; unset NEW
+kvset entra-oidc-client-secret ENTRA_OIDC_CLIENT_SECRET
+# only hub-system carries this, but still: delete cani-secrets (both ns) -> restart all -> verify a live sign-in
 ```
 
-Note `credential reset` replaces ALL existing secrets on the app by default — in-flight
-hub-api pods keep working until restart because the token exchange only happens at
-login time, but restart promptly.
+`credential reset` replaces ALL existing secrets on the app by default; in-flight hub-api pods
+keep working until restart (token exchange only happens at login), but refresh promptly and
+confirm a fresh incognito sign-in works.
 
-### 6. Verify after any rotation
+## Verify after any rotation
 
 ```bash
-kubectl -n hub-system get pods && kubectl -n docs-platform get pods   # all Running
-# then exercise the real path: dev-login -> token -> upload -> poll indexed -> query
-# (see README.md "Walk the core loop by hand")
+az aks command invoke -g $RG -n $CL --command \
+  "kubectl -n hub-system get pods; kubectl -n docs-platform get pods"   # all Running/Ready
 ```
 
-A failed rotation shows up as CrashLoopBackOff with a `ValidationError` from
-`cani_shared.config` (missing/short values) or auth failures in logs (stale password) —
-`kubectl logs` on the failing pod says which.
+Then exercise the real path end-to-end at `https://app.canido.co` (a fresh **incognito**
+sign-in — Entra SSO will silently re-login an existing browser session, masking a broken
+secret): Entra login → upload → query → cited answer. A failed rotation shows up as
+CrashLoopBackOff with a `ValidationError` from `cani_shared.config` (missing/short values) or
+auth failures in logs (stale password/secret) — `kubectl logs` on the failing pod says which.

@@ -2,9 +2,9 @@
 #
 # The postgresql trigger authenticates via the TriggerAuthentication below, which reads
 # a full connection string from the `cani-keda-postgres` Secret (key `connection`). That
-# Secret is applied out-of-band by scripts/apply_dev_secrets.sh — never committed — and
-# its credential is the `keda_scaler` Postgres role: LOGIN + SELECT on ingestion_jobs
-# only, so a KEDA compromise cannot read document data (least privilege per docs/14).
+# Secret is synced from Key Vault by the CSI driver (secret-provider-class.yaml, D1) — never
+# committed — and its credential is the `keda_scaler` Postgres role: LOGIN + SELECT on
+# ingestion_jobs only, so a KEDA compromise cannot read document data (least privilege per docs/14).
 # Role creation/rotation: runbooks/rotate-dev-secrets.md.
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
