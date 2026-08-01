@@ -1,0 +1,6 @@
+config:
+  azure-native:location: eastus2
+  cani-platform:tenantId: 641146b0-a933-4bd1-b7cd-c7cbafcbba01
+  cani-platform:publicDataEndpoints: "true"
+  cani-platform:opsAlertEmail: ops@canido.co
+  cani-platform:monthlyBudgetUsd: "200"
