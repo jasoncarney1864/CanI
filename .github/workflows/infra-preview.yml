@@ -31,7 +31,7 @@ jobs:
       - uses: pulumi/actions@v5
         with:
           command: preview
-          stack-name: dev
+          stack-name: canido-dev
           work-dir: infra/${{ matrix.project }}
           comment-on-pr: true
         env:
