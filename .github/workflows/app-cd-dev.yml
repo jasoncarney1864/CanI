@@ -18,12 +18,19 @@ on:
   workflow_dispatch: {} # manual on-demand deploy (e.g. to exercise the migration gate)
 
 env:
-  AKS_RESOURCE_GROUP: cani-workload-core-dev-eastus2-rg9c8e66d0
-  AKS_CLUSTER_NAME: cani-aks64bdb7d1
-  ACR_NAME: canishareded20367db8
-  ACR_LOGIN_SERVER: canishareded20367db8.azurecr.io
-  ACR_ID_REFERENCE: /subscriptions/6591cee6-ee26-4155-ae71-3777bf7e9c73/resourceGroups/cani-platform-core-dev-eastus2-rg1227b5a0/providers/Microsoft.ContainerRegistry/registries/canishareded20367db8
-  WORKLOAD_STORAGE_ACCOUNT_ID: /subscriptions/6591cee6-ee26-4155-ae71-3777bf7e9c73/resourceGroups/cani-workload-core-dev-eastus2-rg9c8e66d0/providers/Microsoft.Storage/storageAccounts/cani9820b2c229
+  # These are Pulumi stack-output values, not source-controlled constants — they contain
+  # subscription/resource-group/resource names that change whenever the target
+  # subscription changes. Sourced from the GitHub "dev" Environment's variables
+  # (Settings > Environments > dev > Variables) rather than hardcoded here, so retargeting
+  # to a new subscription is a config change, not a code change. Populate/update with:
+  #   pulumi stack output --stack dev --json   (in infra/workload)
+  # then: gh variable set <NAME> --env dev --body "<value>"
+  AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+  AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  ACR_ID_REFERENCE: ${{ vars.ACR_ID_REFERENCE }}
+  WORKLOAD_STORAGE_ACCOUNT_ID: ${{ vars.WORKLOAD_STORAGE_ACCOUNT_ID }}
 
 jobs:
   build-and-push:
