@@ -35,7 +35,7 @@ jobs:
       - uses: pulumi/actions@v5
         with:
           command: up
-          stack-name: dev
+          stack-name: canido-dev
           work-dir: infra/platform
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
       - uses: pulumi/actions@v5
         with:
           command: up
-          stack-name: dev
+          stack-name: canido-dev
           work-dir: infra/workload
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
