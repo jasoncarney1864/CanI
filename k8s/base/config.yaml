@@ -20,7 +20,13 @@ data:
   POSTGRES_DB: "cani"
   POSTGRES_USER: "caniadmin"
   AZURE_STORAGE_ACCOUNT_NAME: "cani9820b2c229"
-  AZURE_STORAGE_ACCOUNT_ID: "/subscriptions/6591cee6-ee26-4155-ae71-3777bf7e9c73/resourceGroups/cani-workload-core-dev-eastus2-rg9c8e66d0/providers/Microsoft.Storage/storageAccounts/cani9820b2c229"
+  # AZURE_STORAGE_ACCOUNT_ID (full ARM resource ID) was removed here: it hardcoded the old
+  # subscription/resource-group, is not read anywhere in apps/shared-lib/cani_shared/config.py
+  # or any app service (confirmed unused), and blocked retargeting to a new subscription.
+  # AZURE_STORAGE_ACCOUNT_NAME above is what the apps actually use for blob SDK auth via
+  # workload identity. If a future consumer genuinely needs the full ARM ID, source it via a
+  # per-overlay kustomize patch (like the CI workflow's image-tag substitution) rather than
+  # hardcoding it in this shared base ConfigMap.
   AZURE_DOCUMENTINTELLIGENCE_ENDPOINT: "https://sondra-legal-docintel.cognitiveservices.azure.com/"
 ---
 apiVersion: v1

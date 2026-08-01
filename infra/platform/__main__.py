@@ -7,6 +7,7 @@ required the one-time interactive `pulumi up` under an "elevated access" admin s
 """
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pulumi
@@ -130,7 +131,11 @@ subscription_budget = SubscriptionBudget(
     subscription_id=azure_native.authorization.get_client_config().subscription_id,
     monthly_amount=monthly_budget_usd,
     alert_email=ops_alert_email,
-    start_date="2026-07-01T00:00:00Z",
+    # First of the *current* UTC month at first-deploy time. Azure rejects a monthly-grain
+    # budget whose start_date is before the current month, and rejects moving start_date on
+    # an existing budget — so this is computed once (fixed thereafter for this resource) at
+    # the moment the budget is first created, not hardcoded to a specific past deploy date.
+    start_date=datetime.now(timezone.utc).strftime("%Y-%m-01T00:00:00Z"),
 )
 
 acr = SharedContainerRegistry(

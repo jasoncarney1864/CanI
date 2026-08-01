@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 
 import pulumi_azure_native as azure_native
-from pulumi import ComponentResource, Input, ResourceOptions
+from pulumi import ComponentResource, Input, Output, ResourceOptions
 
 
 def _normalized_alnum_lower(value: str) -> str:
@@ -41,14 +41,23 @@ class SharedContainerRegistry(ComponentResource):
         self,
         name: str,
         *,
-        resource_group_name: str,
+        resource_group_name: Input[str],
         tags: dict,
         public_network_access: str = "Disabled",
         opts: ResourceOptions | None = None,
     ):
         super().__init__("cani:platform:SharedContainerRegistry", name, None, opts)
 
-        registry_name = _acr_registry_name(base=name, seed=f"{resource_group_name}:{name}:acr")
+        # resource_group_name is an Output[str] (the RG resource's .name), not a plain str.
+        # Interpolating it directly into an f-string (the original bug here) stringifies to a
+        # placeholder rather than the resolved value, so the SHA1 seed below was effectively
+        # constant across every subscription/stack — producing the SAME registry name
+        # ("canishareded20367db8") regardless of which subscription it deployed into. Resolving
+        # it via .apply() first ensures the seed — and therefore the generated name — is
+        # genuinely unique per resource group / subscription.
+        registry_name = Output.from_input(resource_group_name).apply(
+            lambda rg: _acr_registry_name(base=name, seed=f"{rg}:{name}:acr")
+        )
 
         self.registry = azure_native.containerregistry.Registry(
             f"{name}-acr",
@@ -108,14 +117,21 @@ class WorkloadBlobStorage(ComponentResource):
         self,
         name: str,
         *,
-        resource_group_name: str,
+        resource_group_name: Input[str],
         tags: dict,
         public_network_access: str = "Disabled",
         opts: ResourceOptions | None = None,
     ):
         super().__init__("cani:workload:WorkloadBlobStorage", name, None, opts)
 
-        account_name = _storage_account_name(base=name, seed=f"{resource_group_name}:{name}:storage")
+        # See the identical note in SharedContainerRegistry above: resource_group_name is an
+        # Output[str], so it must be resolved via .apply() before being used in the naming
+        # seed — otherwise every stack hashes the same placeholder string and collides on the
+        # same global storage account name ("cani9820b2c229" here, which is how this collided
+        # with the still-live storage account in the old subscription).
+        account_name = Output.from_input(resource_group_name).apply(
+            lambda rg: _storage_account_name(base=name, seed=f"{rg}:{name}:storage")
+        )
 
         self.account = azure_native.storage.StorageAccount(
             f"{name}-st",
