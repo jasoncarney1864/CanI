@@ -1,0 +1,8 @@
+config:
+  azure-native:location: eastus2
+  cani-workload:platformStackRef: personal/cani-platform/canido-dev
+  cani-workload:aadAdminGroupObjectIds:
+    - <object-id>
+  cani-workload:publicDataEndpoints: "true"
+  cani-workload:postgresAdminPassword:
+    secure: AAABANV1057m27tGAbjF9KWND+CyEctvYNg6vybi7q8DUJ6nBuZBWWy2eMkfqwlwGy0c4f6V04NhIYsq2Y2WhQ==
