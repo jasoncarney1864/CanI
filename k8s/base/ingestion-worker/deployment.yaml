@@ -23,7 +23,7 @@ spec:
         - { key: "dedicated", operator: "Equal", value: "batch", effect: "NoSchedule" }
       containers:
         - name: ingestion-worker
-          image: canishareded20367db8.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
+          image: canishared19088c8d54.azurecr.io/ingestion-worker:REPLACE_WITH_IMAGE_TAG
           envFrom:
             - configMapRef: { name: cani-config }
             - secretRef: { name: cani-secrets }
@@ -53,7 +53,7 @@ metadata:
   name: ingestion-worker
   namespace: docs-platform
   annotations:
-    azure.workload.identity/client-id: "4a790202-610f-499c-bb0b-2c64b2d42898"
+    azure.workload.identity/client-id: "984dbce5-2209-4df0-b904-41bdcce2596c"
 # KEDA scaling objects live in scaling.yaml (separate file so it can be applied on its
 # own — this file contains the REPLACE_WITH_IMAGE_TAG placeholder and must only be
 # applied through the kustomize overlay).

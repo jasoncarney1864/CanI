@@ -18,7 +18,7 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: docs-api
-          image: canishareded20367db8.azurecr.io/docs-api:REPLACE_WITH_IMAGE_TAG
+          image: canishared19088c8d54.azurecr.io/docs-api:REPLACE_WITH_IMAGE_TAG
           ports: [{ containerPort: 8002 }]
           envFrom:
             - configMapRef: { name: cani-config }
@@ -60,7 +60,7 @@ metadata:
   name: docs-api
   namespace: docs-platform
   annotations:
-    azure.workload.identity/client-id: "4a790202-610f-499c-bb0b-2c64b2d42898"
+    azure.workload.identity/client-id: "984dbce5-2209-4df0-b904-41bdcce2596c"
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

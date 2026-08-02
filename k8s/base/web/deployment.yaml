@@ -18,7 +18,7 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: web
-          image: canishareded20367db8.azurecr.io/web:REPLACE_WITH_IMAGE_TAG
+          image: canishared19088c8d54.azurecr.io/web:REPLACE_WITH_IMAGE_TAG
           ports: [{ containerPort: 3000 }]
           env:
             # In-cluster backends for the server-side proxy (lib/backendAuth). The browser
