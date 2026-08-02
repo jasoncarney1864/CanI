@@ -24,13 +24,13 @@ patches:
         value: 1
 
 images:
-  - name: canishareded20367db8.azurecr.io/hub-api
+  - name: canishared19088c8d54.azurecr.io/hub-api
     newTag: dev
-  - name: canishareded20367db8.azurecr.io/docs-api
+  - name: canishared19088c8d54.azurecr.io/docs-api
     newTag: dev
-  - name: canishareded20367db8.azurecr.io/retrieval-worker
+  - name: canishared19088c8d54.azurecr.io/retrieval-worker
     newTag: dev
-  - name: canishareded20367db8.azurecr.io/ingestion-worker
+  - name: canishared19088c8d54.azurecr.io/ingestion-worker
     newTag: dev
-  - name: canishareded20367db8.azurecr.io/web
+  - name: canishared19088c8d54.azurecr.io/web
     newTag: dev

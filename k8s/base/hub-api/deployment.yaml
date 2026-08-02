@@ -18,7 +18,7 @@ spec:
       securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: hub-api
-          image: canishareded20367db8.azurecr.io/hub-api:REPLACE_WITH_IMAGE_TAG
+          image: canishared19088c8d54.azurecr.io/hub-api:REPLACE_WITH_IMAGE_TAG
           ports: [{ containerPort: 8001 }]
           envFrom:
             - configMapRef: { name: cani-config }
@@ -60,4 +60,4 @@ metadata:
   name: hub-api
   namespace: hub-system
   annotations:
-    azure.workload.identity/client-id: "<identity-client-id>"
+    azure.workload.identity/client-id: "<managed-identity-client-id>"
