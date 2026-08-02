@@ -15,10 +15,15 @@ MIGRATIONS_DIR = pathlib.Path(__file__).parent / "migrations"
 
 
 def build_dsn() -> str:
-    return (
-        f"host={os.environ['POSTGRES_HOST']} port={os.environ.get('POSTGRES_PORT', '5432')} "
-        f"dbname={os.environ['POSTGRES_DB']} user={os.environ['POSTGRES_USER']} "
-        f"password={os.environ['POSTGRES_PASSWORD']}"
+    # Use psycopg's own conninfo builder rather than manual string formatting: it
+    # correctly quotes/escapes values (e.g. passwords containing spaces or other
+    # libpq-significant characters), which naive f-string concatenation does not.
+    return psycopg.conninfo.make_conninfo(
+        host=os.environ["POSTGRES_HOST"],
+        port=os.environ.get("POSTGRES_PORT", "5432"),
+        dbname=os.environ["POSTGRES_DB"],
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
     )
 
 

@@ -110,9 +110,17 @@ class Settings(BaseSettings):
 
     @property
     def postgres_dsn(self) -> str:
-        return (
-            f"host={self.postgres_host} port={self.postgres_port} "
-            f"dbname={self.postgres_db} user={self.postgres_user} password={self.postgres_password}"
+        # Use psycopg's own conninfo builder rather than manual string formatting: it
+        # correctly quotes/escapes values (e.g. passwords containing spaces or other
+        # libpq-significant characters), which naive f-string concatenation does not.
+        import psycopg
+
+        return psycopg.conninfo.make_conninfo(
+            host=self.postgres_host,
+            port=self.postgres_port,
+            dbname=self.postgres_db,
+            user=self.postgres_user,
+            password=self.postgres_password,
         )
 
     @property
