@@ -15,11 +15,11 @@ data:
   QDRANT_COLLECTION: "cani_docs_dev"
   RETRIEVAL_WORKER_URL: "http://retrieval-worker.docs-platform.svc.cluster.local:8003"
   AZURE_OPENAI_API_VERSION: "2024-10-21"
-  POSTGRES_HOST: "cani-pgfd564d67.postgres.database.azure.com"
+  POSTGRES_HOST: "cani-pg484bf91d.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "cani"
   POSTGRES_USER: "caniadmin"
-  AZURE_STORAGE_ACCOUNT_NAME: "cani9820b2c229"
+  AZURE_STORAGE_ACCOUNT_NAME: "cani6ada34dffd"
   # AZURE_STORAGE_ACCOUNT_ID (full ARM resource ID) was removed here: it hardcoded the old
   # subscription/resource-group, is not read anywhere in apps/shared-lib/cani_shared/config.py
   # or any app service (confirmed unused), and blocked retargeting to a new subscription.
@@ -27,7 +27,7 @@ data:
   # workload identity. If a future consumer genuinely needs the full ARM ID, source it via a
   # per-overlay kustomize patch (like the CI workflow's image-tag substitution) rather than
   # hardcoding it in this shared base ConfigMap.
-  AZURE_DOCUMENTINTELLIGENCE_ENDPOINT: "https://sondra-legal-docintel.cognitiveservices.azure.com/"
+  AZURE_DOCUMENTINTELLIGENCE_ENDPOINT: "https://cani-docintel.cognitiveservices.azure.com/"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -38,11 +38,11 @@ data:
   ENV: "dev"
   QDRANT_URL: "http://qdrant.docs-platform.svc.cluster.local:6333"
   QDRANT_COLLECTION: "cani_docs_dev"
-  POSTGRES_HOST: "cani-pgfd564d67.postgres.database.azure.com"
+  POSTGRES_HOST: "cani-pg484bf91d.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "cani"
   POSTGRES_USER: "caniadmin"
-  AZURE_DOCUMENTINTELLIGENCE_ENDPOINT: "https://sondra-legal-docintel.cognitiveservices.azure.com/"
+  AZURE_DOCUMENTINTELLIGENCE_ENDPOINT: "https://cani-docintel.cognitiveservices.azure.com/"
   ENTRA_OIDC_AUTHORITY: "https://caniauth.ciamlogin.com/43189f5e-8c1b-4e3f-9cf7-d17babc03e36/v2.0"
   ENTRA_OIDC_CLIENT_ID: "1f0927a0-fe19-4661-93e0-019e94b05416"
   ENTRA_OIDC_REDIRECT_URI: "https://app.canido.co/auth/callback"
