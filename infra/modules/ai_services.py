@@ -51,6 +51,13 @@ CHAT_CAPACITY = 30
 # than being an invisible service default.
 RAI_POLICY = "Microsoft.DefaultV2"
 
+# AI Foundry project management, off. Both accounts are consumed directly by the app through
+# their endpoints; enabling it would let projects (and their own connections, deployments and
+# identities) be created inside these accounts from the portal, outside this file. Stated
+# explicitly rather than left to the service default so the declared shape matches what the
+# API reports and the import is a genuine no-op.
+ALLOW_PROJECT_MANAGEMENT = False
+
 
 def _deny_all_network_acls() -> azure_native.cognitiveservices.NetworkRuleSetArgs:
     return azure_native.cognitiveservices.NetworkRuleSetArgs(default_action="Deny")
@@ -141,6 +148,7 @@ class PlatformAiServices(ComponentResource):
                 custom_sub_domain_name=openai_name,
                 public_network_access=public_network_access,
                 network_acls=_deny_all_network_acls() if private else None,
+                allow_project_management=ALLOW_PROJECT_MANAGEMENT,
             ),
             tags=tags,
             opts=child("openai"),
@@ -156,6 +164,7 @@ class PlatformAiServices(ComponentResource):
                 custom_sub_domain_name=docintel_name,
                 public_network_access=public_network_access,
                 network_acls=_deny_all_network_acls() if private else None,
+                allow_project_management=ALLOW_PROJECT_MANAGEMENT,
             ),
             tags=tags,
             opts=child("documentIntelligence"),
