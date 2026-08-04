@@ -11,6 +11,39 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-08-04 update (Sprint 3 complete — public reachability)
+
+Sprint 3 (tracked in `19-sprint-3-reachability-board.md`) closed 2026-08-04. CanI is a
+reachable, real-user product:
+
+- **Live at https://app.canido.co** — AKS managed-NGINX ingress + cert-manager
+  (Let's Encrypt prod), custom domain, HTTP→HTTPS, edge rate limiting
+  (20 rps / 20 conns per IP) and six security headers verified on live responses. Only
+  the web app is publicly exposed; every backend API is private (verified at the LB and
+  at the edge during the closeout gate).
+- **Real Entra External ID sign-in from the browser**, session-based token mint, and
+  two-user owner-scoping verified live. Web app (Next.js standalone) deployed via CD.
+- **Full loop in the UI:** upload (incl. drag-drop + OCR via Document Intelligence) →
+  ingestion status polling → voice/typed query → grounded, cited answer with the
+  Spotlight document viewer.
+- **Real AI providers since 2026-08-04.** The closeout gate exposed that production had
+  silently run the fake embedder/grounder the whole sprint (no Azure OpenAI resource had
+  ever existed; the provider factory fell back without erroring). Fixed: `cani-openai` +
+  `cani-docintel` provisioned, codified in Pulumi (adopted via `import_`), locked behind
+  private endpoints, corpus re-embedded at 1536 dims, and `ensure_collection` now fails
+  loudly on vector-dimension mismatch. Treat pre-2026-08-04 "grounded answer" claims as
+  plumbing-only proof.
+- **Secrets via Key Vault CSI + workload identity** for all four services; manual secret
+  script retired (storage/Entra/Postgres *value* rotations deferred with a documented
+  test-first procedure in `runbooks/rotate-dev-secrets.md`).
+- **Web tier observability closed at the gate:** two scheduled-query alerts over the
+  managed-NGINX access log (`cani-p1-edge-5xx`, `cani-p2-edge-latency-slo`) — the
+  AppRequests alert baseline never saw the web tier (no App Insights SDK in Next.js).
+- **Known follow-ups:** cost run rate ~$540/mo projected vs the $200 budget (ingress
+  itself is ~$16/mo; drivers are VMs + Log Analytics — needs a focused cost pass),
+  deferred secret value rotations, subscription-migration sitrep, runbook
+  old-subscription-name cleanup.
+
 ## 2026-07-15 update (live dev apply — B1/B2/C1)
 
 Sprint 1 execution (tracked in `17-sprint-1-execution-board.md`) has materially changed
