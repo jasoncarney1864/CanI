@@ -154,21 +154,19 @@ platform_vault = PlatformKeyVault(
 )
 
 # Azure OpenAI + Document Intelligence. Both accounts predate this code (created by hand via
-# the CLI), so canido-dev pins their literal names and adoption ids in stack config; a stack
-# that sets neither gets a derived, collision-safe name and creates them fresh.
+# the CLI), so canido-dev pins their literal names; a stack that sets none gets a derived,
+# collision-safe name and creates them fresh.
 #
-# publicNetworkAccess is Enabled here only until the workload stack's private endpoints are
-# applied and verified — the workload stack runs *after* this one, so flipping both in a
-# single change would leave the accounts unreachable in between, taking embeddings, grounding
-# and OCR down with them. Phase 2 removes this argument and the adoption ids.
+# Public network access is off (the module default). The workload stack's private endpoints
+# are live and verified — pods resolve both accounts to 10.1.4.x and get real responses — so
+# nothing legitimate is left on the public path. This does mean the accounts can no longer be
+# called from a laptop, exactly like Key Vault and Postgres.
 ai_services = PlatformAiServices(
     "cani",
     resource_group_name=resource_group.name,
     openai_account_name=config.get("openAiAccountName"),
     document_intelligence_account_name=config.get("documentIntelligenceAccountName"),
     tags=tags,
-    public_network_access="Enabled",
-    adopt_existing_ids=config.get_object("adoptExistingAiServiceIds") or {},
 )
 
 # Stable output contract consumed by cani-workload via StackReference (§11.6).
