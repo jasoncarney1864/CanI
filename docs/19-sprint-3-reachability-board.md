@@ -457,3 +457,44 @@ Use one line per day.
   Aug 1-2 subscription migration and several runbooks still name old-subscription resources;
   `test-upload.png` shows "Queued" in the UI although its job is terminally `failed`
   ("no extractable text content" — a blank image), which is a status-display bug.
+
+- 2026-08-04 (cont.): **Both AI accounts codified in Pulumi and taken off the public internet
+  (PRs #57 + #58)** — closing the first two follow-ups from the entry above. `cani-openai` and
+  `cani-docintel` existed only as hand-made CLI resources, so a rebuild from source would have
+  produced a cluster that came up healthy and answered every question wrongly; and `cani-openai`
+  was the last data-plane service still reachable from the internet. New
+  `infra/modules/ai_services.py` owns both accounts and both model deployments in the platform
+  stack, with the private endpoints and DNS in the workload stack (the `KeyVaultPrivateAccess`
+  split). The four live resources were **adopted via `import_`, not recreated** — the preview
+  showed zero property drift on all four after tagging the accounts and pinning
+  `allowProjectManagement`, leaving only the one deliberate change (`NoAutoUpgrade` on the
+  embedding deployment: a silent model-version bump keeps the 1536-dim width, so retrieval would
+  quietly degrade against already-persisted vectors instead of erroring). Rolled out in two
+  phases because the platform stack applies before the workload stack, so disabling public
+  access in the same change that creates the endpoints would have left the accounts unreachable
+  in between.
+  **Two latent defects surfaced doing it.**
+  (1) *Infra CI could not deploy at all.* The first preview failed
+  `InvalidAuthenticationTokenTenant` — the repo's Azure OIDC secrets still named the
+  pre-migration tenant, and `cani-gh-workload-dev` had no `pull_request` federated credential.
+  Nothing caught it because **`pulumi preview` only makes authenticated Azure calls for
+  resources it must read**; with none in the stack, every run since the migration reported
+  "38 unchanged" and went green without a single authenticated call. Same shape as the
+  fake-provider bug: a green signal that never exercised what it claimed to verify. Secrets
+  repointed at the canido tenant + the missing credential added; `diff: true` added to the
+  preview workflow so `~properties` is never again reported without saying which.
+  (2) *Phase 1 briefly broke production.* Once the private DNS zones existed, both hostnames
+  resolved to 10.1.4.x for every pod — inside the `except: [10.1.0.0/16]` of the workers'
+  443 egress rule, written when these were genuinely external services. Calico silently dropped
+  every embedding, grounding and OCR call, presenting as a bare connect timeout because DNS
+  resolved and TLS never started. Fixed with an explicit 443 allow to the private-endpoint
+  subnet for `ingestion-worker` and `retrieval-worker` (the only two services that construct an
+  AI client), applied live immediately and then codified. The header comment on
+  `network-policies.yaml` was wrong twice over — it claimed the policies were inert pending
+  Calico (Calico is enforcing) and listed both AI services as external HTTPS; corrected, with a
+  warning that any future private endpoint fails the same silent way.
+  Verified after lockdown: both accounts `publicNetworkAccess: Disabled` with deny-all ACLs; a
+  request with a **valid key** from outside the VNet gets 403; from `retrieval-worker`,
+  `cani-openai` resolves to 10.1.4.5 and returns 1536-dim embeddings and a live chat completion,
+  `cani-docintel` resolves to 10.1.4.6 and answers over TLS; and the closeout gate still passes
+  end-to-end in the browser — **CLOSEOUT-ZEPHYR-7734**, cited and spotlighted.
