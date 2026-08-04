@@ -498,3 +498,17 @@ Use one line per day.
   `cani-openai` resolves to 10.1.4.5 and returns 1536-dim embeddings and a live chat completion,
   `cani-docintel` resolves to 10.1.4.6 and answers over TLS; and the closeout gate still passes
   end-to-end in the browser — **CLOSEOUT-ZEPHYR-7734**, cited and spotlighted.
+- 2026-08-04 (cont.): **Status-display bug fixed (PR #60)** — closing another follow-up from the
+  closeout-gate entry: `test-upload.png` showed "Queued" in the UI although its job was
+  terminally `failed`. Root cause: `documents.current_status` (what the UI's DocumentsView
+  renders and polls) was only ever written on the happy path — `mark_document_status` fired for
+  `indexed`/`unpacking`/`unpacked`, but `handle_job_failure`'s dead-letter branch updated only
+  `ingestion_jobs`, so any document that failed before indexing stayed "Queued" forever and the
+  UI polled it indefinitely. The web layer already had a `failed` -> "Failed" badge; it just
+  never received the status. Fix: the dead-letter branch now resolves the document via its
+  version and marks it `failed` (skipped when the version row itself is gone; the retry path is
+  untouched, so in-flight statuses are unaffected). Covered by four new unit tests
+  (`tests/unit/test_pipeline_failure.py`); rolled out via CD, then a one-time in-cluster
+  backfill repaired pre-fix rows — exactly one matched (`test-upload.png`), which now renders
+  the honest "Failed" badge. Remaining follow-ups from the closeout-gate entry: the missing
+  subscription-migration sitrep and the runbooks still naming old-subscription resources.
