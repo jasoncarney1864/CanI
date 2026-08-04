@@ -99,7 +99,10 @@ class AzureOpenAIChatGrounder(ChatGrounder):
                 {"role": "user", "content": _build_user_prompt(question, context_chunks)},
             ],
             temperature=0.1,
-            max_tokens=800,
+            # Current Azure OpenAI chat models (gpt-5.x) reject `max_tokens` outright
+            # ("Unsupported parameter ... use 'max_completion_tokens' instead"), so the
+            # older name is not a safe default. `temperature` is still accepted.
+            max_completion_tokens=800,
         )
         raw = response.choices[0].message.content or ""
         verdict, text = extract_verdict(raw)
