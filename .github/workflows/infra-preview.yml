@@ -1,8 +1,11 @@
 name: infra-preview
 
-# Requires Azure OIDC federated credentials configured as repo/environment secrets
-# (AZURE_CLIENT_ID_PLATFORM, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) before this can run for real —
-# not configured this session (docs/12-cicd-strategy.md §12.6). See docs/implementation-status.md.
+# Requires Azure OIDC federated credentials configured as repo secrets
+# (AZURE_CLIENT_ID_PLATFORM, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID). These were repointed at
+# the canido tenant on 2026-08-04 — they had still named the pre-migration tenant, and nothing
+# caught it because `pulumi preview` only contacts Azure for resources it must read (imports,
+# refreshes). Every run since the migration reported "38 unchanged" without making a single
+# authenticated call, so the workflow stayed green while being completely unable to deploy.
 
 on:
   pull_request:
@@ -34,5 +37,10 @@ jobs:
           stack-name: canido-dev
           work-dir: infra/${{ matrix.project }}
           comment-on-pr: true
+          # Without this the preview only reports *that* a resource changes, not what
+          # changes about it — which is unreviewable for anything that says `~properties`,
+          # and worthless for the one case that matters most: confirming an adoption
+          # imports cleanly rather than quietly rewriting a live resource.
+          diff: true
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

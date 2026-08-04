@@ -4,3 +4,16 @@ config:
   cani-platform:publicDataEndpoints: "true"
   cani-platform:opsAlertEmail: ops@canido.co
   cani-platform:monthlyBudgetUsd: "200"
+  # These two accounts were created by hand before they were codified, so this stack pins
+  # their existing names rather than taking the derived default (which would create new,
+  # differently-named accounts and orphan the live ones).
+  cani-platform:openAiAccountName: cani-openai
+  cani-platform:documentIntelligenceAccountName: cani-docintel
+  # One-shot adoption: tells Pulumi to import these existing resources into state instead of
+  # creating them. Delete this block once the import has applied — leaving it in makes every
+  # later apply re-assert an import that has already happened.
+  cani-platform:adoptExistingAiServiceIds:
+    openai: /subscriptions/833d780f-03ed-4f6b-959e-f87d2a1435da/resourceGroups/cani-platform-core-canido-dev-eastus2-rged7032c2/providers/Microsoft.CognitiveServices/accounts/cani-openai
+    documentIntelligence: /subscriptions/833d780f-03ed-4f6b-959e-f87d2a1435da/resourceGroups/cani-platform-core-canido-dev-eastus2-rged7032c2/providers/Microsoft.CognitiveServices/accounts/cani-docintel
+    embeddingDeployment: /subscriptions/833d780f-03ed-4f6b-959e-f87d2a1435da/resourceGroups/cani-platform-core-canido-dev-eastus2-rged7032c2/providers/Microsoft.CognitiveServices/accounts/cani-openai/deployments/text-embedding-3-small
+    chatDeployment: /subscriptions/833d780f-03ed-4f6b-959e-f87d2a1435da/resourceGroups/cani-platform-core-canido-dev-eastus2-rged7032c2/providers/Microsoft.CognitiveServices/accounts/cani-openai/deployments/gpt-5-1

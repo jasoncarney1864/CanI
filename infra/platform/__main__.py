@@ -14,6 +14,7 @@ import pulumi
 import pulumi_azure_native as azure_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.ai_services import PlatformAiServices
 from modules.alerting import OpsAlerting
 from modules.cost import SubscriptionBudget
 from modules.data_services import SharedContainerRegistry
@@ -152,6 +153,24 @@ platform_vault = PlatformKeyVault(
     tags=tags,
 )
 
+# Azure OpenAI + Document Intelligence. Both accounts predate this code (created by hand via
+# the CLI), so canido-dev pins their literal names and adoption ids in stack config; a stack
+# that sets neither gets a derived, collision-safe name and creates them fresh.
+#
+# publicNetworkAccess is Enabled here only until the workload stack's private endpoints are
+# applied and verified — the workload stack runs *after* this one, so flipping both in a
+# single change would leave the accounts unreachable in between, taking embeddings, grounding
+# and OCR down with them. Phase 2 removes this argument and the adoption ids.
+ai_services = PlatformAiServices(
+    "cani",
+    resource_group_name=resource_group.name,
+    openai_account_name=config.get("openAiAccountName"),
+    document_intelligence_account_name=config.get("documentIntelligenceAccountName"),
+    tags=tags,
+    public_network_access="Enabled",
+    adopt_existing_ids=config.get_object("adoptExistingAiServiceIds") or {},
+)
+
 # Stable output contract consumed by cani-workload via StackReference (§11.6).
 pulumi.export("hub_vnet_id", hub_network.vnet.id)
 pulumi.export("log_analytics_workspace_id", log_analytics.workspace.id)
@@ -164,6 +183,12 @@ pulumi.export("acr_id", acr.registry.id)
 pulumi.export("platform_key_vault_id", platform_vault.vault.id)
 pulumi.export("platform_key_vault_name", platform_vault.vault.name)
 pulumi.export("platform_key_vault_rg", resource_group.name)
+# Consumed by cani-workload to build the AI private endpoints (§11.6). The endpoints are
+# exported too so k8s config can be traced back to the resource that owns it.
+pulumi.export("openai_account_id", ai_services.openai.id)
+pulumi.export("openai_endpoint", ai_services.openai.properties.endpoint)
+pulumi.export("document_intelligence_account_id", ai_services.document_intelligence.id)
+pulumi.export("document_intelligence_endpoint", ai_services.document_intelligence.properties.endpoint)
 pulumi.export("workload_management_group_id", workload_mg.id)
 pulumi.export("ops_action_group_id", ops_alerting.action_group.id)
 pulumi.export("monthly_budget_id", subscription_budget.budget.id)
