@@ -17,13 +17,16 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Owner: Jason
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
-- Last updated: 2026-07-20
+- Last updated: 2026-08-04
 - Overall status: [-] In progress (97%, 35/36) — **Workstreams A, B, C complete** (A1–A3,
   B1+B2, C1, C2, C3) **plus D1 (Key Vault CSI cutover)**. **CanI is live on the public internet
   at https://app.canido.co**: real Entra OIDC sign-in, in-UI upload with OCR ingestion, voice +
   typed query, grounded cited answers, two-user owner-scoping, edge rate limiting + security
   headers, and secrets now sourced from Azure Key Vault via the CSI driver + workload identity
-  (manual secret script retired). Remaining: closeout gate — plus the deferred storage/Entra/
+  (manual secret script retired). Real Azure OpenAI providers were finally wired in on
+  2026-08-04 — until then the deployed environment ran the fake embedder/grounder, so treat
+  pre-2026-08-04 "grounded answer" claims as proving plumbing only (see the changelog).
+  Remaining: closeout gate — plus the deferred storage/Entra/
   Postgres secret rotations tracked under D1.
 
 ## Status legend
@@ -280,8 +283,9 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 - Owner: Jason
 - Status: [ ] Not started
 - Checklist:
-  - [ ] End-to-end from the public URL: Entra login -> upload -> query -> cited answer in
-    the Spotlight UI, owner-scoped.
+  - [x] End-to-end from the public URL: Entra login -> upload -> query -> cited answer in
+    the Spotlight UI, owner-scoped. (Verified 2026-08-04, but only after fixing the
+    fake-provider defect below — the first attempt failed semantically.)
   - [ ] Only the web app is publicly exposed; backend APIs are private.
   - [ ] Edge TLS + rate limiting + security headers active.
   - [ ] Secrets sourced from Key Vault CSI (or an explicit, documented deferral).
@@ -417,3 +421,39 @@ Use one line per day.
   docs-api (reverted). Storage/Entra/Postgres rotations deferred to a focused follow-up with
   the corrected, test-first procedure now in `runbooks/rotate-dev-secrets.md`. Next: closeout
   gate.
+- 2026-08-04: **Closeout gate run — and it caught a latent defect that invalidates every
+  earlier "grounded answer" claim on this board.** Driving the gate end-to-end from
+  `https://app.canido.co` (Entra sign-in -> in-UI PDF upload -> ingestion to Ready -> typed
+  query) passed *mechanically* but failed *semantically*: the answer to "What is the closeout
+  verification code for Sprint 3?" was an unrelated Washoe County tax coupon, rendered in
+  `FakeGrounder.ground()`'s exact format. Root cause: **no Azure OpenAI resource had ever
+  existed in any subscription**, so `AZURE_OPENAI_ENDPOINT`/`_API_KEY` were unset,
+  `Settings.azure_ai_providers_configured` was False, and `providers/factory.py` had been
+  silently returning `FakeEmbedder` (32-dim hash vectors) and `FakeGrounder` in production the
+  whole time. Not a migration regression —
+  `git log -S AZURE_OPENAI_ENDPOINT -- k8s/ infra/` returns nothing. Auth, upload, OCR
+  ingestion, storage, citation plumbing and the spotlight were all genuinely working; only the
+  intelligence layer was stubbed. **Read the earlier A1/A2/A3 "grounded, cited answer" entries
+  as proving the plumbing, not the retrieval quality.**
+  Resolution (PR #55 + this PR): provisioned `cani-openai` (S0, eastus2) with
+  `text-embedding-3-small` and `gpt-5-1` deployments, both on regional **Standard** SKU to
+  honour the single-region data-residency constraint in
+  `06-azure-landing-zone-design.md:29`; wired endpoint + deployment names into `cani-config`
+  and the API key through Key Vault -> the CSI SecretProviderClass; changed the grounder's
+  `max_tokens` to `max_completion_tokens` (gpt-5.x rejects the former); and cut
+  `QDRANT_COLLECTION` over to `cani_docs_dev_v2` because `ensure_collection` never validated
+  dimensionality and would have silently kept the 32-dim collection. Re-ingested the whole
+  corpus: 105 chunks across 72 documents now carry
+  `embedding_version = azure-openai:text-embedding-3-small`, and `cani_docs_dev_v2` holds 105
+  points at 1536 dims. Re-ran the gate: the same question now returns
+  **CLOSEOUT-ZEPHYR-7734** citing `sprint3-closeout-verification.pdf` with the correct
+  spotlight, and an out-of-corpus question ("average annual rainfall in Reykjavik") correctly
+  returns **INSUFFICIENT EVIDENCE** rather than a guess — fail-closed confirmed.
+  Hardening added here: `ensure_collection` now raises `VectorDimensionMismatchError` instead
+  of reusing a collection built for a different embedder, so this class of silent corruption
+  fails loudly at startup.
+  Known follow-ups: `cani-openai` was created with public network access (unlike KV/Postgres);
+  neither `cani-openai` nor `cani-docintel` is codified in Pulumi; no sitrep exists for the
+  Aug 1-2 subscription migration and several runbooks still name old-subscription resources;
+  `test-upload.png` shows "Queued" in the UI although its job is terminally `failed`
+  ("no extractable text content" — a blank image), which is a status-display bug.

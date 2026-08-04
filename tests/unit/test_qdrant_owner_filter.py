@@ -1,5 +1,12 @@
+from types import SimpleNamespace
+
 import pytest
-from cani_shared.vector.qdrant_client import MissingOwnerFilterError, OwnerScopedQdrant
+from cani_shared.vector.qdrant_client import (
+    MissingOwnerFilterError,
+    OwnerScopedQdrant,
+    VectorDimensionMismatchError,
+)
+from qdrant_client.http import models as qmodels
 
 
 @pytest.fixture
@@ -48,3 +55,42 @@ def test_chunks_for_document_reverifies_owner_and_orders(qdrant, monkeypatch):
 
     assert [c["chunk_id"] for c in result] == ["a", "b"]  # ordered, intruder dropped
     assert all(c["owner_user_id"] == "owner-1" for c in result)
+
+
+class _Named:
+    def __init__(self, name):
+        self.name = name
+
+
+def _stub_existing_collection(qdrant, monkeypatch, size):
+    monkeypatch.setattr(
+        qdrant._client,
+        "get_collections",
+        lambda: SimpleNamespace(collections=[_Named("unit_test_collection")]),
+    )
+    monkeypatch.setattr(
+        qdrant._client,
+        "get_collection",
+        lambda _name: SimpleNamespace(
+            config=SimpleNamespace(
+                params=SimpleNamespace(
+                    vectors=qmodels.VectorParams(size=size, distance=qmodels.Distance.COSINE)
+                )
+            )
+        ),
+    )
+
+
+def test_ensure_collection_rejects_dimension_mismatch(qdrant, monkeypatch):
+    # A collection built by the 32-dim fake embedder must not be silently reused once the
+    # real 1536-dim Azure OpenAI embedder is configured.
+    _stub_existing_collection(qdrant, monkeypatch, size=32)
+
+    with pytest.raises(VectorDimensionMismatchError):
+        qdrant.ensure_collection(1536)
+
+
+def test_ensure_collection_accepts_matching_dimension(qdrant, monkeypatch):
+    _stub_existing_collection(qdrant, monkeypatch, size=1536)
+
+    qdrant.ensure_collection(1536)  # no raise
