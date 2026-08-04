@@ -12,9 +12,21 @@ metadata:
 data:
   ENV: "dev"
   QDRANT_URL: "http://qdrant.docs-platform.svc.cluster.local:6333"
-  QDRANT_COLLECTION: "cani_docs_dev"
+  # v2 = the real 1536-dim text-embedding-3-small space. The original `cani_docs_dev`
+  # collection was created at 32 dims by FakeEmbedder (no Azure OpenAI was ever configured
+  # in-cluster). `QdrantVectorStore.ensure_collection` returns early when the collection
+  # already exists and never validates dimensionality, so reusing the old name would leave
+  # a 32-dim collection in place and fail every upsert. A new name gets a correctly-sized
+  # collection without a destructive drop, and leaves the old one for rollback.
+  QDRANT_COLLECTION: "cani_docs_dev_v2"
   RETRIEVAL_WORKER_URL: "http://retrieval-worker.docs-platform.svc.cluster.local:8003"
   AZURE_OPENAI_API_VERSION: "2024-10-21"
+  AZURE_OPENAI_ENDPOINT: "https://cani-openai.openai.azure.com/"
+  # Deployment names (not model names) — this is what the SDK addresses. Both are on the
+  # regional `Standard` SKU rather than GlobalStandard, to stay inside the single-region
+  # data-residency boundary set by docs/06-azure-landing-zone-design.md.
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "text-embedding-3-small"
+  AZURE_OPENAI_CHAT_DEPLOYMENT: "gpt-5-1"
   POSTGRES_HOST: "cani-pg484bf91d.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "cani"
@@ -37,7 +49,7 @@ metadata:
 data:
   ENV: "dev"
   QDRANT_URL: "http://qdrant.docs-platform.svc.cluster.local:6333"
-  QDRANT_COLLECTION: "cani_docs_dev"
+  QDRANT_COLLECTION: "cani_docs_dev_v2"
   POSTGRES_HOST: "cani-pg484bf91d.postgres.database.azure.com"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "cani"
