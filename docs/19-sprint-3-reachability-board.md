@@ -18,16 +18,17 @@ has. Only the web app is publicly exposed; the backend services stay private.
 - Start date: 2026-07-18 (pulled forward — Sprint 2 closed ~4 weeks early)
 - Target end date: 2026-08-22
 - Last updated: 2026-08-04
-- Overall status: [-] In progress (97%, 35/36) — **Workstreams A, B, C complete** (A1–A3,
-  B1+B2, C1, C2, C3) **plus D1 (Key Vault CSI cutover)**. **CanI is live on the public internet
-  at https://app.canido.co**: real Entra OIDC sign-in, in-UI upload with OCR ingestion, voice +
-  typed query, grounded cited answers, two-user owner-scoping, edge rate limiting + security
-  headers, and secrets now sourced from Azure Key Vault via the CSI driver + workload identity
-  (manual secret script retired). Real Azure OpenAI providers were finally wired in on
-  2026-08-04 — until then the deployed environment ran the fake embedder/grounder, so treat
-  pre-2026-08-04 "grounded answer" claims as proving plumbing only (see the changelog).
-  Remaining: closeout gate — plus the deferred storage/Entra/
-  Postgres secret rotations tracked under D1.
+- Overall status: [x] Done (100%, 36/36) — **Sprint 3 complete (closeout gate passed
+  2026-08-04).** Workstreams A, B, C, D1 and the closeout gate all Done. **CanI is live on the
+  public internet at https://app.canido.co**: real Entra OIDC sign-in, in-UI upload with OCR
+  ingestion, voice + typed query, grounded cited answers (real Azure OpenAI providers since
+  2026-08-04 — treat earlier "grounded answer" claims as proving plumbing only, see the
+  changelog), two-user owner-scoping, edge rate limiting + security headers, edge 5xx/latency
+  alerts over the NGINX access log, and secrets sourced from Azure Key Vault via the CSI
+  driver + workload identity. Post-sprint follow-ups (tracked, not blockers): deferred
+  storage/Entra/Postgres secret value rotations (D1), the ~$540/mo cost run rate vs the $200
+  budget (gate finding), the missing subscription-migration sitrep, and runbook
+  old-subscription-name cleanup.
 
 ## Status legend
 
@@ -281,19 +282,43 @@ hub-api flow. The Spotlight UI stays exactly as designed — only the data sourc
 ## Sprint closeout gate
 
 - Owner: Jason
-- Status: [ ] Not started
+- Status: [x] Done (2026-08-04)
 - Checklist:
   - [x] End-to-end from the public URL: Entra login -> upload -> query -> cited answer in
     the Spotlight UI, owner-scoped. (Verified 2026-08-04, but only after fixing the
     fake-provider defect below — the first attempt failed semantically.)
-  - [ ] Only the web app is publicly exposed; backend APIs are private.
-  - [ ] Edge TLS + rate limiting + security headers active.
-  - [ ] Secrets sourced from Key Vault CSI (or an explicit, documented deferral).
-  - [ ] Observability/alerts cover the public web tier (5xx + latency include the web app);
+  - [x] Only the web app is publicly exposed; backend APIs are private. Verified 2026-08-04:
+    a single Ingress exists cluster-wide and it routes only to `web:3000`; the ingress LB
+    has inbound rules for 80/443 on one frontend IP only (the second public IP is the
+    `aksOutboundRule` egress SNAT, no inbound rules); probing the public IP without the
+    host header returns the controller 404, and a backend path (`/auth/token`) 404s at the
+    edge rather than reaching hub-api.
+  - [x] Edge TLS + rate limiting + security headers active. Verified live 2026-08-04:
+    Let's Encrypt prod cert valid for app.canido.co, HTTP -> HTTPS 308, all six headers
+    present on live responses (HSTS, nosniff, X-Frame-Options DENY, Referrer-Policy,
+    Permissions-Policy, CSP), and the rate-limit annotations (20 rps burst x5,
+    20 conns/IP) rendered into the running controller config (C3).
+  - [x] Secrets sourced from Key Vault CSI (or an explicit, documented deferral). All four
+    services on the CSI + workload-identity path since D1; the storage/Entra/Postgres
+    *value* rotations are the explicit, documented deferral (tracked under D1 with the
+    corrected test-first procedure in `runbooks/rotate-dev-secrets.md`).
+  - [x] Observability/alerts cover the public web tier (5xx + latency include the web app);
     the budget still holds (public ingress cost checked against B1's $200 cap).
-  - [ ] `implementation-status.md` and docs updated with Sprint 3 outcomes.
+    Gate work 2026-08-04 (PR #62): the web tier was **not** covered — Next.js has no App
+    Insights SDK, so the existing AppRequests alerts never saw it (or nginx-generated
+    502/503/504 when the web pod itself is down). Added two scheduled-query alerts over
+    the managed-NGINX access log in ContainerLogV2: `cani-p1-edge-5xx` (Sev1, >=5
+    status>=500 in 15m) and `cani-p2-edge-latency-slo` (Sev2, p95 > 5s over 30m); KQL
+    validated against live logs before merge, both rules confirmed deployed and enabled.
+    Budget: ingress-attributable spend is trivial — Aug 1-4 actuals: Load Balancer $1.72 +
+    Azure DNS $0.42 + bandwidth <$0.01, ~= $16/mo — well inside the $200 cap. **However**,
+    total MTD spend is $69.94 in ~4 days (~$17.5/day, ~$540/mo run rate), which will blow
+    the cap mid-month regardless of ingress; top drivers VMs (~$8/day), Log Analytics
+    (~$4/day), AKS/Storage/ACR/Postgres (~$1-1.7/day each). The 50% budget alert will fire
+    around Aug 6. Flagged as an explicit follow-up (not caused by the public ingress).
+  - [x] `implementation-status.md` and docs updated with Sprint 3 outcomes.
 - Done criteria:
-  - [ ] Sprint 3 marked complete: CanI is a reachable, real-user product.
+  - [x] Sprint 3 marked complete: CanI is a reachable, real-user product.
 
 ## Open questions and key decisions
 
@@ -512,3 +537,19 @@ Use one line per day.
   backfill repaired pre-fix rows — exactly one matched (`test-upload.png`), which now renders
   the honest "Failed" badge. Remaining follow-ups from the closeout-gate entry: the missing
   subscription-migration sitrep and the runbooks still naming old-subscription resources.
+- 2026-08-04 (cont.): **Closeout gate passed — Sprint 3 complete.** Worked the remaining gate
+  items to verified closure. Public surface: exactly one Ingress cluster-wide, routing only to
+  `web:3000`; the ingress LB's only inbound rules are 80/443 on the ingress frontend (the
+  second public IP is egress-only SNAT); no-host probes hit the controller 404 and backend
+  paths don't traverse the edge. Edge TLS/headers/rate-limit re-confirmed live. KV CSI
+  accepted with the documented D1 rotation deferral. The observability item found a real gap:
+  the web tier was invisible to the AppRequests alerts (no App Insights SDK in Next.js) and
+  nothing watched nginx-generated 502/503/504 — closed with two new scheduled-query alerts
+  over the managed-NGINX access log in ContainerLogV2 (`cani-p1-edge-5xx`,
+  `cani-p2-edge-latency-slo`; PR #62, KQL validated against live logs first, both rules
+  confirmed enabled post-apply). Budget check: ingress-attributable cost ~= $16/mo (LB + DNS +
+  bandwidth, Aug 1-4 actuals) — the gate question passes — **but the total run rate is the
+  real finding: $69.94 MTD in ~4 days (~$540/mo projected) vs the $200 cap**; top drivers VMs
+  ~$8/day and Log Analytics ~$4/day; the 50% alert will fire ~Aug 6. Logged as a follow-up
+  for a focused cost pass rather than papered over. `implementation-status.md` updated with
+  the Sprint 3 outcomes. **CanI is a reachable, real-user product.**
