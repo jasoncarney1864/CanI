@@ -253,6 +253,11 @@ def handle_job_failure(conn: Connection, job: IngestionJob, error: Exception) ->
             error_code=type(error).__name__,
             error_detail=str(error)[:2000],
         )
+        # The UI reads documents.current_status, which only the happy path updated —
+        # without this, a dead-lettered document shows "Queued" forever.
+        version = get_document_version(conn, job.owner_user_id, job.document_version_id)
+        if version is not None:
+            mark_document_status(conn, job.owner_user_id, version.document_id, IngestionStage.FAILED)
         logger.error(
             "job_dead_lettered",
             ingestion_job_id=job.ingestion_job_id,
