@@ -18,6 +18,16 @@ class MissingOwnerFilterError(Exception):
     """Raised instead of ever issuing an unscoped vector query."""
 
 
+class VectorDimensionMismatchError(Exception):
+    """Raised when an existing collection's dimensionality does not match the embedder.
+
+    This is fatal on purpose. Silently reusing a collection built by a different embedder
+    turns every upsert into a per-document runtime failure far away from the real cause,
+    and — worse — leaves any already-indexed vectors semantically meaningless while the
+    system still reports success.
+    """
+
+
 @dataclass
 class ScoredChunk:
     point_id: str
@@ -37,6 +47,7 @@ class OwnerScopedQdrant:
         create_collection is treated as success rather than a fatal error."""
         existing = [c.name for c in self._client.get_collections().collections]
         if self._collection in existing:
+            self._assert_vector_size(vector_size)
             return
         try:
             self._client.create_collection(
@@ -45,6 +56,7 @@ class OwnerScopedQdrant:
             )
         except UnexpectedResponse as exc:
             if exc.status_code == 409:
+                self._assert_vector_size(vector_size)
                 return
             raise
 
@@ -58,6 +70,23 @@ class OwnerScopedQdrant:
             except UnexpectedResponse as exc:
                 if exc.status_code != 409:
                     raise
+
+    def _assert_vector_size(self, expected: int) -> None:
+        """Fail loudly when an existing collection was built for a different embedder.
+
+        Switching embedders (e.g. the fake fallback -> Azure OpenAI) changes the vector
+        width. Without this check the mismatch only surfaces later as a per-upsert
+        "Wrong input: Vector dimension error" inside the ingestion worker's retry loop,
+        which reads like a transient fault rather than a configuration error.
+        """
+        params = self._client.get_collection(self._collection).config.params.vectors
+        actual = params.size if isinstance(params, qmodels.VectorParams) else None
+        if actual is not None and actual != expected:
+            raise VectorDimensionMismatchError(
+                f"collection {self._collection!r} has vector size {actual} but the configured "
+                f"embedder produces {expected}. Point QDRANT_COLLECTION at a new collection "
+                f"or delete the existing one; reusing it would corrupt retrieval."
+            )
 
     def upsert_chunk(
         self, *, owner_user_id: str, vector: list[float], payload: dict, point_id: str | None = None
