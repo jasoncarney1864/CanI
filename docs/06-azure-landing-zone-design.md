@@ -19,6 +19,7 @@ No separate Connectivity / Identity / Management subscriptions, no Corp / Online
 
 - **Platform subscription** (new) — hub VNet, central Log Analytics workspace, ACR, platform-level Key Vault. Isolated blast radius from anything that redeploys often.
 - **Workload subscription** — the owner's existing subscription, moved under Landing Zones. Hosts AKS, Qdrant, Azure OpenAI, Storage, Document Intelligence.
+  - *As built:* the Azure OpenAI (`cani-openai`) and Document Intelligence (`cani-docintel`) accounts sit in the **platform** resource group alongside Key Vault and ACR, not the workload one. They are shared services with their own lifecycle — the workload stack is the thing that gets torn down and rebuilt, and losing the model deployments with it would be expensive and slow to recreate. Their private endpoints still live in the workload VNet. See `infra/modules/ai_services.py`.
 - **Sandbox** — left empty for now; a place to try new Azure services under relaxed policy without touching anything that matters.
 
 ## 6.3 Policies (assigned at Platform / Landing Zones; Sandbox gets a relaxed or absent version)
@@ -37,6 +38,7 @@ Hand-authored via Pulumi's `azure-native` policy resources rather than importing
 - **Hub VNet** `10.0.0.0/16` (Platform subscription): `NatGatewaySubnet` (`10.0.0.0/26`), `AzureBastionSubnet` (`10.0.1.0/26`), shared services / private DNS resolver (`10.0.2.0/24`)
 - **Workload VNet** `10.1.0.0/16` (Workload subscription): AKS nodes (`10.1.0.0/22`), private endpoints (`10.1.4.0/24` — Key Vault, Storage, ACR, Azure OpenAI), `10.1.8.0/22`+ reserved for whatever Section 4 (AKS cluster design) decides about additional node pools or per-spoke subnets
 - Peered hub ↔ workload. Private DNS zones (`privatelink.vaultcore.azure.net`, `privatelink.blob.core.windows.net`, `privatelink.azurecr.io`, `privatelink.openai.azure.com`) live in the hub and link to the workload VNet.
+  - *As built:* the hub zones exist but have **no virtual network links**, so they resolve nothing. Every private endpoint added since — Key Vault, and now Azure OpenAI (`privatelink.openai.azure.com`) and Document Intelligence (`privatelink.cognitiveservices.azure.com`) — creates its own zone in the workload resource group, linked to the workload VNet. Consolidating onto hub-hosted zones is worth doing, but it is a migration (endpoints must be re-pointed without a resolution gap) and is deliberately not bundled with feature work.
 - **Egress: NAT Gateway, not Azure Firewall, to start.** A fraction of the cost, still gets a stable outbound IP and real NSG/subnet design experience. Azure Firewall is a reasonable *later* addition specifically as a learning exercise (policies, application rules, threat intel) once the core platform is stable — not funded from day one.
 - Azure Bastion in the hub means nothing needs a public IP to be reachable for management, which matters given the PHI posture.
 

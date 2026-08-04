@@ -11,6 +11,7 @@ import pulumi
 import pulumi_azure_native as azure_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.ai_services import AiServicesPrivateAccess
 from modules.alerting import node_not_ready_alert
 from modules.compute_aks import CaniAksCluster
 from modules.data_services import WorkloadBlobStorage, WorkloadPostgres
@@ -45,6 +46,8 @@ acr_id = platform_stack_ref.get_output("acr_id")
 ops_action_group_id = platform_stack_ref.get_output("ops_action_group_id")
 platform_key_vault_id = platform_stack_ref.get_output("platform_key_vault_id")
 platform_key_vault_name = platform_stack_ref.get_output("platform_key_vault_name")
+openai_account_id = platform_stack_ref.get_output("openai_account_id")
+document_intelligence_account_id = platform_stack_ref.get_output("document_intelligence_account_id")
 
 naming = NamingContext(project="workload", layer="core", environment=environment)
 tags = base_tags(environment=environment, owner=owner, spoke="docs-platform", workload_type="api")
@@ -107,6 +110,20 @@ secrets_identity = WorkloadSecretsIdentity(
     tags=tags,
 )
 
+# Private endpoints for Azure OpenAI + Document Intelligence, so the ingestion/retrieval
+# workers reach them over the vnet instead of the public internet — the same posture Key
+# Vault and Postgres already have. Both accounts live in the platform stack; only the
+# endpoints and DNS belong here, next to the pods that resolve them.
+ai_services_access = AiServicesPrivateAccess(
+    "cani-ai",
+    resource_group_name=resource_group.name,
+    openai_account_id=openai_account_id,
+    document_intelligence_account_id=document_intelligence_account_id,
+    private_endpoints_subnet_id=network.private_endpoints_subnet_id,
+    vnet_id=network.vnet.id,
+    tags=tags,
+)
+
 send_diagnostics_to_workspace(
     "aks",
     target_resource_id=aks.cluster.id,
@@ -150,3 +167,5 @@ pulumi.export("key_vault_name", platform_key_vault_name)
 pulumi.export("postgres_fqdn", postgres.server.fully_qualified_domain_name)
 pulumi.export("storage_account_id", blob_storage.account.id)
 pulumi.export("acr_id_reference", acr_id)
+pulumi.export("openai_private_endpoint_id", ai_services_access.private_endpoints["openai"].id)
+pulumi.export("docintel_private_endpoint_id", ai_services_access.private_endpoints["docintel"].id)
