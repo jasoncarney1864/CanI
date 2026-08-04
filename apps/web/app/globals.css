@@ -298,6 +298,10 @@ button {
   min-height: 0;
   display: grid;
   grid-template-columns: 35% 65%;
+  /* Pin the single row to the pane height; the implicit row is auto-sized and a
+     long answer would grow it past the viewport, clipped by .shell's
+     overflow:hidden with no scrollbar (and the mic orb unreachable). */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* Grid items default to min-width:auto, letting long citation snippets push the
