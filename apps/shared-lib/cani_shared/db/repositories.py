@@ -392,6 +392,16 @@ def mark_document_status(
         conn.commit()
 
 
+def update_document_title(conn: Connection, owner_user_id: str, document_id: str, title: str) -> None:
+    """Update a document's title (e.g. after LLM generation from extracted text)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET title = %s, updated_at = now() WHERE owner_user_id = %s AND document_id = %s",
+            (title, owner_user_id, document_id),
+        )
+        conn.commit()
+
+
 def insert_chunk_manifests(conn: Connection, owner_user_id: str, chunks: list[ChunkManifest]) -> None:
     with conn.cursor() as cur:
         for c in chunks:
