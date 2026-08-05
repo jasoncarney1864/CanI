@@ -152,7 +152,7 @@ export function ConversationPane({
           </span>
         </button>
         <p className="presence__status" role="status">
-          {voice.state === "listening" && voice.transcript ? (
+          {(voice.state === "listening" || voice.state === "thinking") && voice.transcript ? (
             <span className="presence__transcript">&ldquo;{voice.transcript}&rdquo;</span>
           ) : (
             status.title
