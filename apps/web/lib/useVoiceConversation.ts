@@ -131,11 +131,14 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
     if (audioSourceRef.current) {
       try {
         audioSourceRef.current.stop();
+        audioSourceRef.current.disconnect();
       } catch {}
       audioSourceRef.current = null;
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      try {
+        audioContextRef.current.close();
+      } catch {}
       audioContextRef.current = null;
     }
     setTranscript("");
@@ -162,7 +165,7 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
         return;
       }
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.85;
+      u.rate = 0.75;
       u.onend = () => {
         if (activeRef.current) listen();
       };
