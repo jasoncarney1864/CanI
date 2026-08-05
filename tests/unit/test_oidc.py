@@ -50,19 +50,21 @@ def _make_id_token(private_key, **overrides) -> str:
 def test_valid_token_returns_tenant_scoped_oid_subject(rsa_keys):
     private_key, public_key = rsa_keys
     token = _make_id_token(private_key)
-    subject = validate_id_token(
+    subject, display_name = validate_id_token(
         token, client_id=CLIENT_ID, nonce="expected-nonce", issuer=ISSUER, signing_key=public_key
     )
     assert subject == "entra:tenant-id:object-id-123"
+    assert display_name is None  # Test token has no display name claims
 
 
 def test_falls_back_to_sub_when_oid_missing(rsa_keys):
     private_key, public_key = rsa_keys
     token = _make_id_token(private_key, oid=None)
-    subject = validate_id_token(
+    subject, display_name = validate_id_token(
         token, client_id=CLIENT_ID, nonce="expected-nonce", issuer=ISSUER, signing_key=public_key
     )
     assert subject == "entra:tenant-id:pairwise-sub-value"
+    assert display_name is None  # Test token has no display name claims
 
 
 def test_wrong_signature_rejected(rsa_keys):
