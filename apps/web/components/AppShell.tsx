@@ -114,7 +114,7 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
           </span>
           <span className="topbar__auth">
             <span className="topbar__user" title={user.idp_subject}>
-              {getDisplayName(user.user_id, user.idp_subject)}
+              {getDisplayName(user.user_id, user.idp_subject, user.display_name)}
             </span>
             <a className="topbar__signout" href="/auth/logout">
               Sign out

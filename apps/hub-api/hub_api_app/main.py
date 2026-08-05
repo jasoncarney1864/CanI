@@ -114,12 +114,12 @@ def _get_session_user_id(request: Request) -> str:
     return claims.sub
 
 
-def _establish_session(response: Response, *, idp_subject: str) -> DevLoginResponse:
+def _establish_session(response: Response, *, idp_subject: str, display_name: str | None = None) -> DevLoginResponse:
     """Shared session minting for both login paths: map IdP subject to internal user,
     set session + CSRF cookies, emit the audit event."""
     pool = get_pool(settings.postgres_dsn)
     with pool.connection() as conn:
-        user = get_or_create_user(conn, idp_subject)
+        user = get_or_create_user(conn, idp_subject, display_name)
         entitlements = get_entitlements(conn, str(user["user_id"]))
         record_audit_event(
             conn,
@@ -177,7 +177,7 @@ def oidc_callback(request: Request, response: Response, code: str = "", state: s
             code_verifier=flow["cv"],
         )
         metadata = oidc.discover(settings.entra_oidc_authority)
-        idp_subject = oidc.validate_id_token(
+        idp_subject, display_name = oidc.validate_id_token(
             id_token,
             client_id=settings.entra_oidc_client_id,
             nonce=flow["nonce"],
@@ -189,7 +189,7 @@ def oidc_callback(request: Request, response: Response, code: str = "", state: s
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "login failed — restart login") from exc
 
     response.delete_cookie(OIDC_FLOW_COOKIE_NAME)
-    return _establish_session(response, idp_subject=idp_subject)
+    return _establish_session(response, idp_subject=idp_subject, display_name=display_name)
 
 
 @app.post("/auth/dev-login", response_model=DevLoginResponse)
