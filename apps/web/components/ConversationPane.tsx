@@ -54,7 +54,7 @@ export function ConversationPane({
   const handleUtterance = useCallback(async (text: string) => {
     const result = await askRef.current(text);
     if (result) {
-      const spoken = result.verdict ? `${result.verdict.label}. ${result.answer}` : result.answer;
+      const spoken = (result.verdict ? `${result.verdict.label}. ${result.answer}` : result.answer).replace(/\[chunk:\d+\]/g, '');
       speakRef.current(spoken);
     } else {
       speakRef.current("Sorry, I couldn't get an answer to that. Ask again whenever you're ready.");
@@ -82,7 +82,7 @@ export function ConversationPane({
     voice.interject(); // pause listening while we answer a typed question
     const result = await onAsk(question);
     if (result && voiceActive) {
-      const spoken = result.verdict ? `${result.verdict.label}. ${result.answer}` : result.answer;
+      const spoken = (result.verdict ? `${result.verdict.label}. ${result.answer}` : result.answer).replace(/\[chunk:\d+\]/g, '');
       voice.speak(spoken);
     }
   }
