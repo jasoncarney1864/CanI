@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     azure_documentintelligence_endpoint: str = Field(default="", alias="AZURE_DOCUMENTINTELLIGENCE_ENDPOINT")
     azure_documentintelligence_api_key: str = Field(default="", alias="AZURE_DOCUMENTINTELLIGENCE_API_KEY")
 
+    azure_speech_endpoint: str = Field(default="", alias="AZURE_SPEECH_ENDPOINT")
+    azure_speech_api_key: str = Field(default="", alias="AZURE_SPEECH_API_KEY")
+    azure_speech_region: str = Field(default="eastus2", alias="AZURE_SPEECH_REGION")
+
     retrieval_worker_url: str = Field(default="http://retrieval-worker:8003", alias="RETRIEVAL_WORKER_URL")
 
     # Malware scanning (docs/08 §8.11). When clamav_host is set, ingestion scans each file
