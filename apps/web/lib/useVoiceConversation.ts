@@ -149,7 +149,7 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
         return;
       }
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.04;
+      u.rate = 0.95;
       u.onend = () => {
         if (activeRef.current) listen();
       };

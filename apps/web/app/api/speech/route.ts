@@ -12,8 +12,8 @@ const AZURE_SPEECH_KEY = process.env.AZURE_SPEECH_API_KEY || "";
 const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION || "eastus2";
 
 // Neural voice to use (Azure AI Speech neural voices are high-quality)
-// en-US-AvaMultilingualNeural is a natural-sounding multilingual voice
-const VOICE_NAME = "en-US-AvaMultilingualNeural";
+// en-US-JennyNeural is a professional, warm, and natural voice
+const VOICE_NAME = "en-US-JennyNeural";
 
 export async function POST(request: NextRequest) {
   // If Azure Speech is not configured, return 501 (Not Implemented) so the client
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const ssml = `
       <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
         <voice name="${VOICE_NAME}">
-          <prosody rate="1.04">
+          <prosody rate="0.95">
             ${escapeXml(text)}
           </prosody>
         </voice>
