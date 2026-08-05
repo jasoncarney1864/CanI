@@ -38,7 +38,7 @@ export function LeftRail({
   activeView,
   onNavigate,
 }: LeftRailProps) {
-  const displayName = getDisplayName(user.user_id, user.idp_subject);
+  const displayName = getDisplayName(user.user_id, user.idp_subject, user.display_name);
   return (
     <nav className={`rail${collapsed ? " rail--collapsed" : ""}`} aria-label="Primary">
       <button

@@ -44,15 +44,16 @@ def _row_conn(conn: Connection) -> Connection:
 # --- Users & entitlements -------------------------------------------------------------
 
 
-def get_or_create_user(conn: Connection, idp_subject: str) -> dict[str, Any]:
+def get_or_create_user(conn: Connection, idp_subject: str, display_name: str | None = None) -> dict[str, Any]:
     _row_conn(conn)
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM users WHERE idp_subject = %s", (idp_subject,))
         row = cur.fetchone()
         if row:
+            # Update last_login_at and display_name on every login
             cur.execute(
-                "UPDATE users SET last_login_at = now(), updated_at = now() WHERE user_id = %s RETURNING *",
-                (row["user_id"],),
+                "UPDATE users SET last_login_at = now(), updated_at = now(), display_name = %s WHERE user_id = %s RETURNING *",
+                (display_name, row["user_id"]),
             )
             updated = cur.fetchone()
             conn.commit()
@@ -61,11 +62,11 @@ def get_or_create_user(conn: Connection, idp_subject: str) -> dict[str, Any]:
         user_id = str(uuid.uuid4())
         cur.execute(
             """
-            INSERT INTO users (user_id, idp_subject, status, created_at, updated_at, last_login_at)
-            VALUES (%s, %s, 'active', now(), now(), now())
+            INSERT INTO users (user_id, idp_subject, display_name, status, created_at, updated_at, last_login_at)
+            VALUES (%s, %s, %s, 'active', now(), now(), now())
             RETURNING *
             """,
-            (user_id, idp_subject),
+            (user_id, idp_subject, display_name),
         )
         created = cur.fetchone()
         # Default entitlement set on first sign-in (§7.7): docs access only.
