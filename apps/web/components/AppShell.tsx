@@ -16,8 +16,9 @@ interface AppShellProps {
 }
 
 /**
- * The master "Spotlight" layout (§5): collapsible left rail + a header + a
- * dual-pane workspace (Conversation 35% / Document Viewer 65%).
+ * The master layout (§5, revised): collapsible left rail + a header + an
+ * answer-dominant workspace. The conversation fills the page; the Document
+ * Viewer opens as a slide-over only when a citation is clicked.
  *
  * Spoke tokens are injected as CSS custom properties on the wrapper, so a spoke
  * switch re-themes the whole tree without any structural change (§6).
@@ -32,6 +33,7 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
   // Document Viewer state: the cited document's source text + which chunks to spotlight.
   const [doc, setDoc] = useState<DocumentText | null>(null);
   const [docLoading, setDocLoading] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [highlightChunkIds, setHighlightChunkIds] = useState<Set<string>>(new Set());
   const spoke = SPOKES[spokeKey];
 
@@ -51,7 +53,10 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
       }
       const result = data as RetrievalAnswer;
       setAnswer(result);
-      void loadCitedDocument(result);
+      // A fresh answer invalidates whatever document the viewer was showing.
+      setViewerOpen(false);
+      setDoc(null);
+      setHighlightChunkIds(new Set());
       return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Query failed.");
@@ -62,9 +67,9 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
   }
 
   // Load the source text of one cited document and spotlight every chunk the answer
-  // cites within it (§5). Used for the initial answer (first cited doc) and when the
-  // user clicks a citation card for a different document.
+  // cites within it (§5). Opened on demand when the user clicks a citation card.
   async function showCitedDocument(documentId: string, result: RetrievalAnswer) {
+    setViewerOpen(true);
     setHighlightChunkIds(
       new Set(
         result.citations
@@ -81,16 +86,6 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
     } finally {
       setDocLoading(false);
     }
-  }
-
-  async function loadCitedDocument(result: RetrievalAnswer) {
-    const first = result.citations[0];
-    if (!first) {
-      setDoc(null);
-      setHighlightChunkIds(new Set());
-      return;
-    }
-    await showCitedDocument(first.document_id, result);
   }
 
   const shellStyle = {
@@ -132,12 +127,19 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
               loading={loading}
               error={error}
               onAsk={handleAsk}
-              activeDocumentId={doc?.document_id ?? null}
+              activeDocumentId={viewerOpen ? (doc?.document_id ?? null) : null}
               onSelectCitation={(documentId) => {
                 if (answer) void showCitedDocument(documentId, answer);
               }}
             />
-            <DocumentViewer doc={doc} highlightChunkIds={highlightChunkIds} loading={docLoading} />
+            {viewerOpen && (
+              <DocumentViewer
+                doc={doc}
+                highlightChunkIds={highlightChunkIds}
+                loading={docLoading}
+                onClose={() => setViewerOpen(false)}
+              />
+            )}
           </div>
         )}
 
