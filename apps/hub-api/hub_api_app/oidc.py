@@ -192,4 +192,16 @@ def validate_id_token(
     # Extract user-friendly display name from claims (priority order)
     display_name = claims.get("preferred_username") or claims.get("email") or claims.get("name")
     
+    # Log available claims to help diagnose missing display_name
+    import structlog
+    log = structlog.get_logger()
+    log.info(
+        "id_token_claims_parsed",
+        available_claims=list(claims.keys()),
+        has_preferred_username=bool(claims.get("preferred_username")),
+        has_email=bool(claims.get("email")),
+        has_name=bool(claims.get("name")),
+        extracted_display_name=display_name,
+    )
+    
     return (idp_subject, display_name)
