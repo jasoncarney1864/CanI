@@ -4,6 +4,7 @@ import { useState } from "react";
 import { SPOKES, type SpokeKey } from "@/lib/spokes";
 import type { Principal } from "@/lib/backendAuth";
 import type { DocumentText, RetrievalAnswer } from "@/lib/types";
+import { getDisplayName } from "@/lib/displayName";
 import { LeftRail, type NavView } from "./LeftRail";
 import { ConversationPane } from "./ConversationPane";
 import { DocumentViewer } from "./DocumentViewer";
@@ -112,8 +113,8 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
             <span className="topbar__spoke">{spoke.label}</span>
           </span>
           <span className="topbar__auth">
-            <span className="topbar__user" title={user.user_id}>
-              {user.idp_subject.includes("@") ? user.idp_subject.split("@")[0] : user.idp_subject}
+            <span className="topbar__user" title={user.idp_subject}>
+              {getDisplayName(user.user_id, user.idp_subject)}
             </span>
             <a className="topbar__signout" href="/auth/logout">
               Sign out

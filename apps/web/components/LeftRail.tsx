@@ -2,6 +2,7 @@
 
 import type { Spoke, SpokeKey } from "@/lib/spokes";
 import type { Principal } from "@/lib/backendAuth";
+import { getDisplayName } from "@/lib/displayName";
 import { SpokeSwitcher } from "./SpokeSwitcher";
 
 /** The primary views the rail switches between. */
@@ -37,8 +38,7 @@ export function LeftRail({
   activeView,
   onNavigate,
 }: LeftRailProps) {
-  // Short label for the signed-in principal: the local part of an email, else the raw id.
-  const shortName = user.user_id.includes("@") ? user.user_id.split("@")[0] : user.user_id;
+  const displayName = getDisplayName(user.user_id, user.idp_subject);
   return (
     <nav className={`rail${collapsed ? " rail--collapsed" : ""}`} aria-label="Primary">
       <button
@@ -75,13 +75,13 @@ export function LeftRail({
 
       <div className="rail__footer">
         {!collapsed && <SpokeSwitcher current={spoke.key} onChange={onSpokeChange} />}
-        <div className="rail__profile" title={user.user_id}>
+        <div className="rail__profile" title={user.idp_subject}>
           <span className="rail__avatar" aria-hidden>
-            {shortName.charAt(0).toUpperCase() || "◎"}
+            {displayName.charAt(0).toUpperCase() || "◎"}
           </span>
           {!collapsed && (
             <span className="rail__profileinfo">
-              <span className="rail__itemlabel">{shortName}</span>
+              <span className="rail__itemlabel">{displayName}</span>
               <a className="rail__signout" href="/auth/logout">
                 Sign out
               </a>
