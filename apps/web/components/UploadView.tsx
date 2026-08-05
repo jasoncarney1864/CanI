@@ -22,6 +22,7 @@ type UploadState =
 export function UploadView({ onGoToDocuments }: UploadViewProps) {
   const [state, setState] = useState<UploadState>({ kind: "idle" });
   const [dragging, setDragging] = useState(false);
+  const [spoke, setSpoke] = useState<string>("General");
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function upload(file: File) {
@@ -34,6 +35,7 @@ export function UploadView({ onGoToDocuments }: UploadViewProps) {
     try {
       const form = new FormData();
       form.append("file", file, file.name);
+      form.append("spoke", spoke);
       const res = await fetch("/api/documents", { method: "POST", body: form });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -62,6 +64,21 @@ export function UploadView({ onGoToDocuments }: UploadViewProps) {
         PDF, JPEG, PNG, or a ZIP of several files. Up to {formatBytes(25 * 1024 * 1024)}. Once
         it&rsquo;s indexed you can ask questions about it.
       </p>
+
+      <div className="uploadview__spoke-selector">
+        <label htmlFor="spoke-select">Category:</label>
+        <select
+          id="spoke-select"
+          value={spoke}
+          onChange={(e) => setSpoke(e.target.value)}
+          className="uploadview__spoke-select"
+        >
+          <option value="General">General</option>
+          <option value="Legal">Legal</option>
+          <option value="Health">Health</option>
+          <option value="Finance">Finance</option>
+        </select>
+      </div>
 
       <div
         className={`dropzone${dragging ? " dropzone--active" : ""}`}

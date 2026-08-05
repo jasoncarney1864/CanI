@@ -43,10 +43,17 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
     setLoading(true);
     setError(null);
     try {
+      // Map spoke key to title-cased spoke name for backend
+      const spokeMap: Record<SpokeKey, string> = {
+        hub: "General",
+        legal: "Legal",
+        health: "Health",
+        finance: "Finance",
+      };
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, spoke: spokeMap[spoke.key] }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

@@ -60,7 +60,7 @@ class OwnerScopedQdrant:
                 return
             raise
 
-        for field_name in ("owner_user_id", "document_id", "taxonomy_tags"):
+        for field_name in ("owner_user_id", "document_id", "taxonomy_tags", "spoke"):
             try:
                 self._client.create_payload_index(
                     collection_name=self._collection,
@@ -108,6 +108,7 @@ class OwnerScopedQdrant:
         query_vector: list[float],
         limit: int = 8,
         taxonomy_tags: list[str] | None = None,
+        spoke: str | None = None,
     ) -> list[ScoredChunk]:
         if not owner_user_id:
             # Fail closed (§8.8, §9.6): never run a vector query without a mandatory owner filter.
@@ -117,6 +118,10 @@ class OwnerScopedQdrant:
         if taxonomy_tags:
             must.append(
                 qmodels.FieldCondition(key="taxonomy_tags", match=qmodels.MatchAny(any=taxonomy_tags))
+            )
+        if spoke:
+            must.append(
+                qmodels.FieldCondition(key="spoke", match=qmodels.MatchValue(value=spoke))
             )
 
         # `search()` (not the newer `query_points()` Query API) — pinned qdrant-client
