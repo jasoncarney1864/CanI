@@ -15,4 +15,5 @@ resources:
   - qdrant/snapshot-cronjob.yaml
   - web/deployment.yaml
   - web/ingress.yaml
+  - web/root-redirect-ingress.yaml
   - ingress/cluster-issuers.yaml

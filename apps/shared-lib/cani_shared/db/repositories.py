@@ -77,6 +77,17 @@ def get_or_create_user(conn: Connection, idp_subject: str) -> dict[str, Any]:
         return created
 
 
+def get_user(conn: Connection, user_id: str) -> dict[str, Any]:
+    """Fetch a user by user_id."""
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"User {user_id} not found")
+        return row
+
+
 def get_entitlements(conn: Connection, owner_user_id: str) -> list[str]:
     _row_conn(conn)
     with conn.cursor() as cur:

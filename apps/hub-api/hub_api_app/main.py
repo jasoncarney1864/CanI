@@ -27,6 +27,7 @@ from cani_shared.db.repositories import (
     get_auth_revoked_epoch,
     get_entitlements,
     get_or_create_user,
+    get_user,
     record_audit_event,
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
@@ -83,6 +84,7 @@ class DevLoginRequest(BaseModel):
 
 class DevLoginResponse(BaseModel):
     user_id: str
+    idp_subject: str
     entitlements: list[str]
 
 
@@ -130,7 +132,9 @@ def _establish_session(response: Response, *, idp_subject: str) -> DevLoginRespo
     response.set_cookie(SESSION_COOKIE_NAME, session_token, **_cookie_kwargs())
     response.set_cookie(CSRF_COOKIE_NAME, generate_csrf_token(), httponly=False, samesite="lax")
     logger.info("auth_login_success", user_id_hash=hash_user_id(str(user["user_id"])))
-    return DevLoginResponse(user_id=str(user["user_id"]), entitlements=entitlements)
+    return DevLoginResponse(
+        user_id=str(user["user_id"]), idp_subject=str(user["idp_subject"]), entitlements=entitlements
+    )
 
 
 @app.get("/auth/login")
@@ -200,8 +204,9 @@ def whoami(request: Request) -> DevLoginResponse:
     user_id = _get_session_user_id(request)
     pool = get_pool(settings.postgres_dsn)
     with pool.connection() as conn:
+        user = get_user(conn, user_id)
         entitlements = get_entitlements(conn, user_id)
-    return DevLoginResponse(user_id=user_id, entitlements=entitlements)
+    return DevLoginResponse(user_id=user_id, idp_subject=user["idp_subject"], entitlements=entitlements)
 
 
 @app.post("/auth/token", response_model=TokenResponse)

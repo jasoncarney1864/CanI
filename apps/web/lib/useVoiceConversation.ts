@@ -140,15 +140,14 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
     setState("thinking");
   }, []);
 
-  /** Speak the answer aloud, then automatically resume listening. */
-  const speak = useCallback(
+  /** Fallback: use browser speechSynthesis when Azure Speech is unavailable. */
+  const speakWithBrowser = useCallback(
     (text: string) => {
       if (!activeRef.current) return;
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         listen();
         return;
       }
-      setState("speaking");
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.04;
       u.onend = () => {
@@ -161,6 +160,60 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
       window.speechSynthesis.speak(u);
     },
     [listen],
+  );
+
+  /** Speak the answer aloud, then automatically resume listening. */
+  const speak = useCallback(
+    (text: string) => {
+      if (!activeRef.current) return;
+
+      // Try Azure Speech first, fall back to browser speechSynthesis if unavailable
+      setState("speaking");
+
+      // Attempt to use Azure AI Speech neural TTS
+      fetch("/api/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      })
+        .then(async (response) => {
+          if (response.status === 501) {
+            // Azure Speech not configured - fall back to browser
+            throw new Error("Azure Speech not configured");
+          }
+          if (!response.ok) {
+            throw new Error(`Speech API failed: ${response.status}`);
+          }
+          return response.arrayBuffer();
+        })
+        .then((audioData) => {
+          // Play the audio using Web Audio API
+          if (!activeRef.current) return;
+          
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          audioContext.decodeAudioData(audioData, (buffer) => {
+            if (!activeRef.current) return;
+            
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.onended = () => {
+              if (activeRef.current) listen();
+            };
+            source.start(0);
+          }, (error) => {
+            console.error("Audio decode error:", error);
+            // Fall back to browser speech on decode error
+            speakWithBrowser(text);
+          });
+        })
+        .catch((error) => {
+          // Fall back to browser speechSynthesis
+          console.log("Using browser speech fallback:", error.message);
+          speakWithBrowser(text);
+        });
+    },
+    [listen, speakWithBrowser],
   );
 
   // Teardown on unmount.

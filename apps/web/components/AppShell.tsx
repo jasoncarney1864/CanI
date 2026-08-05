@@ -112,7 +112,9 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
             <span className="topbar__spoke">{spoke.label}</span>
           </span>
           <span className="topbar__auth">
-            <span className="topbar__user">{user.user_id}</span>
+            <span className="topbar__user" title={user.user_id}>
+              {user.idp_subject.includes("@") ? user.idp_subject.split("@")[0] : user.idp_subject}
+            </span>
             <a className="topbar__signout" href="/auth/logout">
               Sign out
             </a>

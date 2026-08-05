@@ -1,0 +1,28 @@
+# Redirect canido.co (root domain) to app.canido.co.
+# Users who visit canido.co without the "app." prefix will be redirected to the full app URL.
+#
+# Requires a DNS A record: canido.co -> the managed-NGINX static LB IP (same as app.canido.co).
+# cert-manager provides a Let's Encrypt cert for the root domain.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: root-domain-redirect
+  namespace: docs-platform
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Permanent redirect (301) to app.canido.co
+    nginx.ingress.kubernetes.io/permanent-redirect: https://app.canido.co$request_uri
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  tls:
+    - hosts: ["canido.co"]
+      secretName: root-domain-tls
+  rules:
+    - host: "canido.co"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              # Placeholder service (redirect happens at NGINX before reaching backend)
+              service: { name: web, port: { number: 3000 } }
