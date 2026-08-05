@@ -48,6 +48,8 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<RecognitionLike | null>(null);
   const activeRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
     if (!getRecognitionCtor()) setState("unsupported");
@@ -125,6 +127,17 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
     activeRef.current = false;
     recognitionRef.current?.abort();
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    // Stop Web Audio API playback
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.stop();
+      } catch {}
+      audioSourceRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
     setTranscript("");
     setState((s) => (s === "unsupported" ? s : "off"));
   }, []);
@@ -149,7 +162,7 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
         return;
       }
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.95;
+      u.rate = 0.85;
       u.onend = () => {
         if (activeRef.current) listen();
       };
@@ -196,13 +209,16 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
           if (!activeRef.current) return;
           
           const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          audioContextRef.current = audioContext;
           audioContext.decodeAudioData(audioData, (buffer) => {
             if (!activeRef.current) return;
             
             const source = audioContext.createBufferSource();
             source.buffer = buffer;
             source.connect(audioContext.destination);
+            audioSourceRef.current = source;
             source.onended = () => {
+              audioSourceRef.current = null;
               if (activeRef.current) listen();
             };
             source.start(0);
@@ -228,6 +244,15 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
       activeRef.current = false;
       recognitionRef.current?.abort();
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+      // Stop Web Audio API playback on unmount
+      if (audioSourceRef.current) {
+        try {
+          audioSourceRef.current.stop();
+        } catch {}
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
     },
     [],
   );
