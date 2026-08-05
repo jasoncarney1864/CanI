@@ -20,6 +20,7 @@ import uuid
 from cani_shared.archive import ZIP_CONTENT_TYPE, ArchiveValidationError, extract_archive
 from cani_shared.blob import RAW_DOCUMENTS_CONTAINER, BlobStore
 from cani_shared.chunking import PageText, chunk_document
+from cani_shared.config import get_settings
 from cani_shared.db.repositories import (
     MAX_INGESTION_ATTEMPTS,
     create_document,
@@ -30,6 +31,7 @@ from cani_shared.db.repositories import (
     get_document_version,
     insert_chunk_manifests,
     mark_document_status,
+    update_document_title,
     update_document_version_extraction,
     update_ingestion_job_stage,
 )
@@ -40,6 +42,8 @@ from cani_shared.providers.extractor import OcrUnavailableError, TextExtractor
 from cani_shared.providers.scanner import MalwareScanner
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 from psycopg import Connection
+
+from ingestion_worker_app.title_gen import generate_title
 
 logger = get_logger(__name__)
 
@@ -112,6 +116,25 @@ def process_job(
     log.info(
         "stage_completed", stage="extracting", page_count=len(extraction.pages), method=extraction.method
     )
+
+    # --- generate title -------------------------------------------------------------------
+    # Generate a human-readable title from extracted text (replaces the raw filename).
+    # This runs after extraction so we have the document content, but before chunking so
+    # we don't waste tokens if this document turns out to be blank. Title generation
+    # failures are non-fatal — we fall back to "Untitled Document" rather than blocking
+    # the entire ingestion job (the document is still searchable, just poorly named).
+    settings = get_settings()
+    if settings.azure_ai_providers_configured and settings.azure_openai_chat_deployment:
+        full_text = "\n".join(p.text for p in extraction.pages)
+        title = generate_title(
+            full_text,
+            endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key,
+            api_version=settings.azure_openai_api_version,
+            deployment=settings.azure_openai_chat_deployment,
+        )
+        update_document_title(conn, owner_user_id, document.document_id, title)
+        log.info("title_generated", title=title)
 
     # --- chunk ------------------------------------------------------------------------
     update_ingestion_job_stage(
