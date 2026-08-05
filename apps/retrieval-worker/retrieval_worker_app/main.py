@@ -60,6 +60,7 @@ instrument_fastapi(app)
 
 class RetrieveRequest(BaseModel):
     question: str
+    spoke: str = "General"
 
 
 @app.post("/retrieve", response_model=RetrievalAnswer)
@@ -75,7 +76,7 @@ def retrieve(
     # rather than silently searching unscoped, so there is no way to reach this line
     # having queried across owners.
     candidates = qdrant.search(
-        owner_user_id=principal.user_id, query_vector=query_vector, limit=CANDIDATE_POOL_SIZE
+        owner_user_id=principal.user_id, query_vector=query_vector, limit=CANDIDATE_POOL_SIZE, spoke=payload.spoke
     )
 
     # Lightweight rerank (§8.8, §8.15 open question): candidates already come back score
@@ -128,8 +129,13 @@ def retrieve(
 
     verdict = Verdict.from_kind(grounded.verdict) if grounded.verdict else None
 
+    # Add spoke-specific disclaimer
+    answer_text = grounded.answer_text
+    if payload.spoke == "Legal":
+        answer_text = "⚖️ Legal Disclaimer: This is not legal advice. Consult a qualified attorney for your specific situation.\n\n" + answer_text
+
     return RetrievalAnswer(
-        answer=grounded.answer_text,
+        answer=answer_text,
         citations=citations,
         insufficient_evidence=grounded.insufficient_evidence,
         verdict=verdict,

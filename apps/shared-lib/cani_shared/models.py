@@ -23,6 +23,13 @@ class IngestionStage(StrEnum):
     FAILED = "failed"
 
 
+class DocumentSpoke(StrEnum):
+    GENERAL = "General"
+    LEGAL = "Legal"
+    HEALTH = "Health"
+    FINANCE = "Finance"
+
+
 class VerdictKind(StrEnum):
     YES = "yes"
     YES_WITH_CONDITIONS = "yes_with_conditions"
@@ -47,6 +54,7 @@ class Document(BaseModel):
     checksum: str
     created_at: datetime
     updated_at: datetime
+    spoke: DocumentSpoke = DocumentSpoke.GENERAL
 
 
 class DocumentVersion(BaseModel):

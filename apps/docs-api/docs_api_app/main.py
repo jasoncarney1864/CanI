@@ -30,9 +30,9 @@ from cani_shared.db.repositories import (
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import RateLimitMiddleware, TraceIdMiddleware
-from cani_shared.models import Document, DocumentText, RetrievalAnswer
+from cani_shared.models import Document, DocumentSpoke, DocumentText, RetrievalAnswer
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from docs_api_app.uploads import UploadValidationError, validate_upload
@@ -79,11 +79,13 @@ class UploadResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
+    spoke: str = "General"
 
 
 @app.post("/documents", response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
+    spoke: str = Form("General"),
     principal: RequestPrincipal = Depends(get_principal),
     _: RequestPrincipal = Depends(require_docs_entitlement),
 ) -> UploadResponse:
@@ -97,6 +99,12 @@ async def upload_document(
     except UploadValidationError as exc:
         logger.warning("upload_rejected", reason=str(exc), user_id_hash=hash_user_id(principal.user_id))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    # Validate spoke
+    try:
+        spoke_enum = DocumentSpoke(spoke)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid spoke: {spoke}")
 
     checksum = hashlib.sha256(raw).hexdigest()
     pool = get_pool(settings.postgres_dsn)
@@ -115,6 +123,7 @@ async def upload_document(
             title=file.filename or "untitled",
             source_type=validated.content_type,
             checksum=checksum,
+            spoke=spoke_enum,
         )
 
         blob_store: BlobStore = app.state.blob_store
@@ -186,7 +195,7 @@ async def query(
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{settings.retrieval_worker_url}/retrieve",
-            json={"question": payload.question},
+            json={"question": payload.question, "spoke": payload.spoke},
             headers={"Authorization": f"Bearer {internal_token}"},
         )
     if response.status_code != 200:

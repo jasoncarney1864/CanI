@@ -19,7 +19,7 @@ from typing import Any
 from psycopg import Connection
 from psycopg.rows import dict_row, tuple_row
 
-from cani_shared.models import ChunkManifest, Document, DocumentVersion, IngestionJob, IngestionStage
+from cani_shared.models import ChunkManifest, Document, DocumentSpoke, DocumentVersion, IngestionJob, IngestionStage
 
 
 def _stringify_uuid_dict_row(cursor):
@@ -197,7 +197,7 @@ def record_audit_event(
 
 
 def create_document(
-    conn: Connection, owner_user_id: str, *, title: str, source_type: str, checksum: str
+    conn: Connection, owner_user_id: str, *, title: str, source_type: str, checksum: str, spoke: DocumentSpoke = DocumentSpoke.GENERAL
 ) -> Document:
     _row_conn(conn)
     document_id = str(uuid.uuid4())
@@ -205,11 +205,11 @@ def create_document(
         cur.execute(
             """
             INSERT INTO documents (document_id, owner_user_id, title, source_type, current_status,
-                                    checksum, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, now(), now())
+                                    checksum, spoke, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, now(), now())
             RETURNING *
             """,
-            (document_id, owner_user_id, title, source_type, IngestionStage.QUEUED, checksum),
+            (document_id, owner_user_id, title, source_type, IngestionStage.QUEUED, checksum, spoke),
         )
         row = cur.fetchone()
         conn.commit()

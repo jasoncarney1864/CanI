@@ -170,6 +170,7 @@ def process_job(
                 "chunk_text": chunk.text,
                 "taxonomy_tags": [],
                 "embedding_version": embedder.embedding_version,
+                "spoke": document.spoke,
             },
         )
         manifests.append(
