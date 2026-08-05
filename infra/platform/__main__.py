@@ -7,7 +7,7 @@ required the one-time interactive `pulumi up` under an "elevated access" admin s
 """
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pulumi
@@ -136,7 +136,7 @@ subscription_budget = SubscriptionBudget(
     # budget whose start_date is before the current month, and rejects moving start_date on
     # an existing budget — so this is computed once (fixed thereafter for this resource) at
     # the moment the budget is first created, not hardcoded to a specific past deploy date.
-    start_date=datetime.now(timezone.utc).strftime("%Y-%m-01T00:00:00Z"),
+    start_date=datetime.now(UTC).strftime("%Y-%m-01T00:00:00Z"),
 )
 
 acr = SharedContainerRegistry(

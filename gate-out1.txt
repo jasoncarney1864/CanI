@@ -1,0 +1,11 @@
+command started at 2026-08-04 20:34:43+00:00, finished at 2026-08-04 20:34:48+00:00 with exitcode=0
+NAMESPACE       NAME   CLASS                                HOSTS           ADDRESS           PORTS     AGE
+docs-platform   web    webapprouting.kubernetes.azure.com   app.canido.co   135.224.157.119   80, 443   2d19h
+---
+app-routing-system   nginx                              LoadBalancer   10.0.73.215    135.224.157.119   80:30626/TCP,443:31090/TCP   3d
+---
+NAME                    AGE
+cani-keyvault-secrets   2d19h
+NAME                    AGE
+cani-keyvault-secrets   2d19h
+
