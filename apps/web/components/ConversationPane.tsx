@@ -31,9 +31,10 @@ const STATUS_COPY: Record<VoiceState, { title: string; hint: string }> = {
 };
 
 /**
- * Column A — Conversation (35%). Voice-first: a single presence orb runs a
- * hands-free listen -> answer -> listen loop. The verdict and summary are the
- * glanceable canvas while the answer is spoken aloud. Typing is the quiet
+ * The conversation — now the whole workspace. Voice-first: a single presence
+ * orb runs a hands-free listen -> answer -> listen loop. The verdict and
+ * summary are the glanceable canvas while the answer is spoken aloud; compact
+ * citation cards open the source in a slide-over. Typing is the quiet
  * fallback, not the primary act.
  */
 export function ConversationPane({
@@ -102,7 +103,7 @@ export function ConversationPane({
             {loading
               ? "Checking your documents\u2026"
               : (answer?.answer ??
-                "Start talking about your documents — I'll answer out loud, with the source spotlighted beside us.")}
+                "Start talking about your documents — I'll answer out loud, and you can open any cited source to see the evidence spotlighted.")}
           </p>
         )}
 
@@ -116,13 +117,12 @@ export function ConversationPane({
               }`}
               key={c.chunk_id}
               onClick={() => onSelectCitation(c.document_id)}
-              aria-label={`Show ${c.document_title} in the document viewer`}
+              aria-label={`Open ${c.document_title} with the cited passage spotlighted`}
             >
               <span className="citation-card__title">{c.document_title}</span>
               <span className="citation-card__loc">
                 {c.section_label} &middot; p.{c.page_start}
               </span>
-              {c.snippet && <span className="citation-card__snippet">&ldquo;{c.snippet}&rdquo;</span>}
             </button>
           ))}
       </div>
