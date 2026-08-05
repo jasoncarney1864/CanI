@@ -295,21 +295,21 @@ button {
   opacity: 0.85;
 }
 
-/* ---- Workspace: dual pane (§5) ------------------------------------------- */
+/* ---- Workspace: answer-dominant (§5, revised) ----------------------------- */
 
 .workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 35% 65%;
+  grid-template-columns: 1fr;
   /* Pin the single row to the pane height; the implicit row is auto-sized and a
      long answer would grow it past the viewport, clipped by .shell's
      overflow:hidden with no scrollbar (and the mic orb unreachable). */
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* Grid items default to min-width:auto, letting long citation snippets push the
-   conversation column underneath the viewer. Clamp both columns. */
+/* Grid items default to min-width:auto, letting long content push the layout
+   wider than the pane. Clamp it. */
 .workspace > * {
   min-width: 0;
 }
@@ -322,16 +322,17 @@ button {
   color: var(--muted);
 }
 
-/* ---- Column A: Conversation ---------------------------------------------- */
+/* ---- The conversation (the whole workspace) ------------------------------- */
 
 .conversation {
   min-height: 0;
   overflow-y: auto;
-  padding: 24px;
+  padding: 32px 40px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  border-right: 1px solid var(--line);
+  width: min(820px, 100%);
+  justify-self: center;
 }
 
 .verdict-badge {
@@ -376,8 +377,8 @@ button {
 .conversation__summary {
   margin: 0;
   font-family: var(--font-content), Georgia, "Times New Roman", serif;
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: 19px;
+  line-height: 1.65;
   color: var(--charcoal);
 }
 
@@ -433,15 +434,6 @@ button {
 .citation-card__loc {
   font-size: 12px;
   color: var(--muted);
-}
-
-.citation-card__snippet {
-  margin-top: 6px;
-  font-family: var(--font-content), Georgia, "Times New Roman", serif;
-  font-size: 13px;
-  font-style: italic;
-  line-height: 1.5;
-  color: var(--charcoal);
 }
 
 /* ---- Presence orb: the voice conversation loop --------------------------- */
@@ -732,13 +724,71 @@ button {
   text-decoration: underline;
 }
 
-/* ---- Column B: Document Viewer ------------------------------------------- */
+/* ---- Document Viewer: slide-over panel ------------------------------------ */
+
+.viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.viewer-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(45, 49, 66, 0.35);
+  cursor: pointer;
+}
 
 .viewer {
-  min-height: 0;
+  position: relative;
+  width: min(760px, 92vw);
+  height: 100%;
   overflow-y: auto;
   background: var(--viewer-gray);
-  padding: 24px;
+  padding: 16px 24px 24px;
+  box-shadow: -12px 0 32px rgba(45, 49, 66, 0.25);
+  animation: viewer-slide-in 0.22s ease-out;
+}
+
+.viewer__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.viewer__bar .col-label {
+  margin: 0;
+}
+
+.viewer__close {
+  border: none;
+  background: transparent;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.viewer__close:hover {
+  color: var(--charcoal);
+  background: rgba(45, 49, 66, 0.08);
+}
+
+@keyframes viewer-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer {
+    animation: none;
+  }
 }
 
 .col-label--muted {
