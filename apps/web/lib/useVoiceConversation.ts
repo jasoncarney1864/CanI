@@ -170,16 +170,21 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
       // Try Azure Speech first, fall back to browser speechSynthesis if unavailable
       setState("speaking");
 
-      // Attempt to use Azure AI Speech neural TTS
+      // Attempt to use Azure AI Speech neural TTS with 6 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
       fetch("/api/speech", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
+        signal: controller.signal,
       })
         .then(async (response) => {
-          if (response.status === 501) {
-            // Azure Speech not configured - fall back to browser
-            throw new Error("Azure Speech not configured");
+          clearTimeout(timeoutId);
+          if (response.status === 501 || response.status === 504) {
+            // Azure Speech not configured or timed out - fall back to browser
+            throw new Error("Azure Speech not available");
           }
           if (!response.ok) {
             throw new Error(`Speech API failed: ${response.status}`);
@@ -208,8 +213,9 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
           });
         })
         .catch((error) => {
-          // Fall back to browser speechSynthesis
-          console.log("Using browser speech fallback:", error.message);
+          clearTimeout(timeoutId);
+          // Fall back to browser speechSynthesis on any error (including timeout)
+          console.log("Using browser speech fallback:", error.name, error.message);
           speakWithBrowser(text);
         });
     },
