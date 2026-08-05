@@ -114,7 +114,9 @@ def _get_session_user_id(request: Request) -> str:
     return claims.sub
 
 
-def _establish_session(response: Response, *, idp_subject: str, display_name: str | None = None) -> DevLoginResponse:
+def _establish_session(
+    response: Response, *, idp_subject: str, display_name: str | None = None
+) -> DevLoginResponse:
     """Shared session minting for both login paths: map IdP subject to internal user,
     set session + CSRF cookies, emit the audit event."""
     pool = get_pool(settings.postgres_dsn)

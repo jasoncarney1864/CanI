@@ -161,7 +161,7 @@ def validate_id_token(
 
     Uses `oid` (tenant-global object id) over `sub` (pairwise per app) so a future
     second client app maps to the same CanI user — docs/07 §7.3.
-    
+
     Display name extracted from claims in priority order: preferred_username, email, name.
     """
     key = signing_key
@@ -188,12 +188,13 @@ def validate_id_token(
     stable_id = claims.get("oid") or claims["sub"]
     tenant_id = claims.get("tid", "")
     idp_subject = f"entra:{tenant_id}:{stable_id}" if tenant_id else f"entra:{stable_id}"
-    
+
     # Extract user-friendly display name from claims (priority order)
     display_name = claims.get("preferred_username") or claims.get("email") or claims.get("name")
-    
+
     # Log available claims to help diagnose missing display_name
     import structlog
+
     log = structlog.get_logger()
     log.info(
         "id_token_claims_parsed",
@@ -203,5 +204,5 @@ def validate_id_token(
         has_name=bool(claims.get("name")),
         extracted_display_name=display_name,
     )
-    
+
     return (idp_subject, display_name)
