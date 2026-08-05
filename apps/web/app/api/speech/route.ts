@@ -53,40 +53,58 @@ export async function POST(request: NextRequest) {
 
     console.log("[speech] Calling Azure Speech API at:", speechUrl);
 
-    const response = await fetch(speechUrl, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-      },
-      body: ssml,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-    console.log("[speech] Azure Speech API response:", response.status, response.statusText);
+    try {
+      const response = await fetch(speechUrl, {
+        method: "POST",
+        headers: {
+          "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
+          "Content-Type": "application/ssml+xml",
+          "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
+        },
+        body: ssml,
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Azure Speech API error:", response.status, response.statusText, errorText);
-      return NextResponse.json(
-        { error: `Speech synthesis failed: ${response.statusText}` },
-        { status: response.status }
-      );
+      clearTimeout(timeoutId);
+
+      console.log("[speech] Azure Speech API response:", response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Azure Speech API error:", response.status, response.statusText, errorText);
+        return NextResponse.json(
+          { error: `Speech synthesis failed: ${response.statusText}` },
+          { status: response.status }
+        );
+      }
+
+      // Return the audio data with appropriate headers
+      const audioBuffer = await response.arrayBuffer();
+
+      console.log("[speech] Successfully synthesized audio, size:", audioBuffer.byteLength);
+
+      return new NextResponse(audioBuffer, {
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "Content-Length": audioBuffer.byteLength.toString(),
+          // Cache audio for 1 hour (same text = same audio)
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.error("[speech] Request timeout after 5 seconds");
+        return NextResponse.json(
+          { error: "Speech synthesis timeout - use browser fallback" },
+          { status: 504 }
+        );
+      }
+      throw fetchError;
     }
-
-    // Return the audio data with appropriate headers
-    const audioBuffer = await response.arrayBuffer();
-
-    console.log("[speech] Successfully synthesized audio, size:", audioBuffer.byteLength);
-
-    return new NextResponse(audioBuffer, {
-      headers: {
-        "Content-Type": "audio/mpeg",
-        "Content-Length": audioBuffer.byteLength.toString(),
-        // Cache audio for 1 hour (same text = same audio)
-        "Cache-Control": "public, max-age=3600",
-      },
-    });
   } catch (error) {
     console.error("TTS error:", error);
     return NextResponse.json(
