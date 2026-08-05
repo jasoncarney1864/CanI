@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const ssml = `
       <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
         <voice name="${VOICE_NAME}">
-          <prosody rate="0.95">
+          <prosody rate="0.85">
             ${escapeXml(text)}
           </prosody>
         </voice>
