@@ -165,7 +165,7 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
         return;
       }
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.75;
+      u.rate = 0.85;
       u.onend = () => {
         if (activeRef.current) listen();
       };
@@ -213,23 +213,25 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
           
           const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
           audioContextRef.current = audioContext;
-          audioContext.decodeAudioData(audioData, (buffer) => {
-            if (!activeRef.current) return;
-            
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContext.destination);
-            audioSourceRef.current = source;
-            source.onended = () => {
-              audioSourceRef.current = null;
-              if (activeRef.current) listen();
-            };
-            source.start(0);
-          }, (error) => {
-            console.error("Audio decode error:", error);
-            // Fall back to browser speech on decode error
-            speakWithBrowser(text);
-          });
+          
+          // Resume the audio context (required for autoplay policies)
+          audioContext.resume().then(() => {
+            audioContext.decodeAudioData(audioData, (buffer) => {
+              if (!activeRef.current) return;
+              
+              const source = audioContext.createBufferSource();
+              source.buffer = buffer;
+              source.connect(audioContext.destination);
+              audioSourceRef.current = source;
+              source.onended = () => {
+                audioSourceRef.current = null;
+                if (activeRef.current) listen();
+              };
+              source.start(0);
+            }, (error) => {
+              console.error("Audio decode error:", error);
+              // Fall back to browser speech on decode error
+            speakWithBrowser(text);            });          });
         })
         .catch((error) => {
           clearTimeout(timeoutId);
