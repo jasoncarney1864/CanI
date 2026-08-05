@@ -52,6 +52,7 @@ export async function mintAccessToken(cookieHeader: string): Promise<string> {
 
 export interface Principal {
   user_id: string;
+  idp_subject: string;
   entitlements: string[];
 }
 
