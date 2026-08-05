@@ -219,6 +219,14 @@ button {
   text-decoration: underline;
 }
 
+.rail__signout:visited {
+  color: var(--muted);
+}
+
+.rail__signout:visited:hover {
+  color: var(--brand-accent);
+}
+
 /* ---- Spoke switcher (§6 demo) -------------------------------------------- */
 
 .spoke-switcher__label {
@@ -293,6 +301,28 @@ button {
 .topbar__auth {
   font-size: 13px;
   opacity: 0.85;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar__user {
+  color: #fff;
+}
+
+.topbar__signout {
+  color: #fff;
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.topbar__signout:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.topbar__signout:visited {
+  color: #fff;
 }
 
 /* ---- Workspace: answer-dominant (§5, revised) ----------------------------- */
