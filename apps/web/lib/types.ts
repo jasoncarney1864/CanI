@@ -54,6 +54,7 @@ export interface DocumentMeta {
   checksum: string;
   created_at: string;
   updated_at: string;
+  spoke: string;
 }
 
 // --- Document Viewer source text (GET /documents/{id}/text) -------------------

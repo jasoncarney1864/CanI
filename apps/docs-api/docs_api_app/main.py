@@ -103,8 +103,8 @@ async def upload_document(
     # Validate spoke
     try:
         spoke_enum = DocumentSpoke(spoke)
-    except ValueError:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid spoke: {spoke}")
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid spoke: {spoke}") from e
 
     checksum = hashlib.sha256(raw).hexdigest()
     pool = get_pool(settings.postgres_dsn)
@@ -157,12 +157,16 @@ async def upload_document(
 
 @app.get("/documents", response_model=list[Document])
 def list_my_documents(
+    spoke: str | None = None,
     principal: RequestPrincipal = Depends(get_principal),
     _: RequestPrincipal = Depends(require_docs_entitlement),
 ) -> list[Document]:
+    logger.info(f"list_my_documents called: user_id={principal.user_id}, spoke={spoke}")
     pool = get_pool(settings.postgres_dsn)
     with pool.connection() as conn:
-        return list_documents(conn, principal.user_id)
+        docs = list_documents(conn, principal.user_id, spoke)
+        logger.info(f"list_my_documents returning {len(docs)} documents, spokes={[d.spoke for d in docs]}")
+        return docs
 
 
 @app.get("/documents/{document_id}", response_model=Document)

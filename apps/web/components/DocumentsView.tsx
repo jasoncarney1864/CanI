@@ -30,28 +30,37 @@ function tone(status: DocumentStatus): "progress" | "ready" | "failed" {
   return "progress";
 }
 
+interface DocumentsViewProps {
+  spoke: string;
+}
+
 /**
  * Documents view (A3). Lists the caller's documents (owner-scoped via the /api/documents
  * proxy) with honest ingestion status, polling while anything is still in flight so the
  * user watches queued -> extracting -> ... -> indexed without refreshing. A "failed" doc is
  * surfaced plainly (malware-blocked or OCR-unsupported), not hidden.
+ * 
+ * Filters by spoke to ensure data isolation across domains (Legal/Health/Finance).
  */
-export function DocumentsView() {
+export function DocumentsView({ spoke }: DocumentsViewProps) {
   const [docs, setDocs] = useState<DocumentMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/documents", { cache: "no-store" });
+      const url = `/api/documents?spoke=${encodeURIComponent(spoke)}`;
+      console.log('[DocumentsView] Fetching documents for spoke:', spoke, 'URL:', url);
+      const res = await fetch(url, { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? `Couldn't load documents (${res.status}).`);
       setError(null);
+      console.log('[DocumentsView] Received', data.length, 'documents');
       setDocs(data as DocumentMeta[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load documents.");
     }
-  }, []);
+  }, [spoke]);
 
   // Load once, then poll every 3s while any document is still ingesting; stop when all
   // documents have reached a terminal state (indexed / unpacked / failed).
@@ -105,7 +114,10 @@ export function DocumentsView() {
         <ul className="docsview__list">
           {docs.map((doc) => (
             <li className="doc-row" key={doc.document_id}>
-              <span className="doc-row__title">{doc.title}</span>
+              <div className="doc-row__info">
+                <span className="doc-row__title">{doc.title}</span>
+                <span className="doc-row__spoke">{doc.spoke}</span>
+              </div>
               <span className={`doc-badge doc-badge--${tone(doc.current_status)}`}>
                 {tone(doc.current_status) === "progress" && (
                   <span className="doc-badge__spinner" aria-hidden />

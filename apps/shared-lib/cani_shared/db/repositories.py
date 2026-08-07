@@ -19,7 +19,14 @@ from typing import Any
 from psycopg import Connection
 from psycopg.rows import dict_row, tuple_row
 
-from cani_shared.models import ChunkManifest, Document, DocumentSpoke, DocumentVersion, IngestionJob, IngestionStage
+from cani_shared.models import (
+    ChunkManifest,
+    Document,
+    DocumentSpoke,
+    DocumentVersion,
+    IngestionJob,
+    IngestionStage,
+)
 
 
 def _stringify_uuid_dict_row(cursor):
@@ -227,13 +234,19 @@ def get_document(conn: Connection, owner_user_id: str, document_id: str) -> Docu
         return Document.model_validate(row) if row else None
 
 
-def list_documents(conn: Connection, owner_user_id: str) -> list[Document]:
+def list_documents(conn: Connection, owner_user_id: str, spoke: str | None = None) -> list[Document]:
     _row_conn(conn)
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM documents WHERE owner_user_id = %s ORDER BY created_at DESC",
-            (owner_user_id,),
-        )
+        if spoke:
+            cur.execute(
+                "SELECT * FROM documents WHERE owner_user_id = %s AND spoke = %s ORDER BY created_at DESC",
+                (owner_user_id, spoke),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM documents WHERE owner_user_id = %s ORDER BY created_at DESC",
+                (owner_user_id,),
+            )
         return [Document.model_validate(r) for r in cur.fetchall()]
 
 
