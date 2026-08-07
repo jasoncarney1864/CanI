@@ -85,12 +85,19 @@ class NativeThenOcrExtractor(TextExtractor):
         from azure.core.credentials import AzureKeyCredential
 
         client = DocumentIntelligenceClient(
-            endpoint=self._di_endpoint, credential=AzureKeyCredential(self._di_api_key)
+            endpoint=self._di_endpoint,
+            credential=AzureKeyCredential(self._di_api_key),
+            # Bound both the initial call and any retries — an unresponsive DI endpoint
+            # must fail loudly, not hang the worker forever (connection/read timeouts in
+            # seconds, per azure-core transport options).
+            connection_timeout=10,
+            read_timeout=60,
         )
         poller = client.begin_analyze_document(
             "prebuilt-read", AnalyzeDocumentRequest(bytes_source=file_bytes)
         )
-        result = poller.result()
+        # Bound the polling wait too, for the same reason.
+        result = poller.result(timeout=120)
         pages = []
         for page in result.pages or []:
             text = "\n".join(line.content for line in (page.lines or []))
