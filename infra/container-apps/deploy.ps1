@@ -177,27 +177,9 @@ $deployment.properties.outputs.PSObject.Properties | ForEach-Object {
     Write-Host "   $($_.Name): $($_.Value.value)" -ForegroundColor Gray
 }
 
-# Post-deployment: Update hub-api with the correct ENTRA_OIDC_REDIRECT_URI
-Write-Host "`n🔄 Updating Entra OIDC redirect URI..." -ForegroundColor Yellow
-$webAppFqdn = az containerapp show --name web --resource-group $ResourceGroup --query "properties.configuration.ingress.fqdn" -o tsv
-if ($webAppFqdn) {
-    $redirectUri = "https://$webAppFqdn/auth/callback"
-    Write-Host "   Setting ENTRA_OIDC_REDIRECT_URI to: $redirectUri" -ForegroundColor Gray
-    
-    az containerapp update `
-        --name hub-api `
-        --resource-group $ResourceGroup `
-        --set-env-vars "ENTRA_OIDC_REDIRECT_URI=$redirectUri" `
-        --output none
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Redirect URI updated successfully" -ForegroundColor Green
-    } else {
-        Write-Host "⚠️  Failed to update redirect URI - you may need to update it manually" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "⚠️  Could not retrieve web app FQDN - redirect URI not updated" -ForegroundColor Yellow
-}
+# ENTRA_OIDC_REDIRECT_URI is set from the `customDomain` bicep parameter (app.canido.co),
+# not the Container Apps auto-generated FQDN — do not override it here (see incident
+# 2026-08-06: pointing it at the auto FQDN broke sign-in with AADSTS50011).
 
 
 # Grant permissions
