@@ -57,6 +57,9 @@ param entraOidcAuthority string
 @description('Microsoft Entra OIDC Client ID')
 param entraOidcClientId string
 
+@description('Public custom domain the web app is served on (used for the OIDC redirect_uri, NOT the Container Apps auto-generated FQDN)')
+param customDomain string = 'app.canido.co'
+
 @description('Key Vault name for secrets')
 param keyVaultName string
 
@@ -316,8 +319,7 @@ resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ENTRA_OIDC_CLIENT_SECRET', secretRef: 'entra-client-secret' }
             { name: 'ENTRA_OIDC_AUTHORITY', value: entraOidcAuthority }
             { name: 'ENTRA_OIDC_CLIENT_ID', value: entraOidcClientId }
-            // ENTRA_OIDC_REDIRECT_URI will be computed and updated after deployment
-            // It should be: https://<web-app-fqdn>/auth/callback
+            { name: 'ENTRA_OIDC_REDIRECT_URI', value: 'https://${customDomain}/auth/callback' }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
