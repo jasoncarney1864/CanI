@@ -200,8 +200,8 @@ resource qdrantApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'qdrant'
           image: 'qdrant/qdrant:v1.9.7'
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json('1.0')
+            memory: '2Gi'
           }
           volumeMounts: [
             {
