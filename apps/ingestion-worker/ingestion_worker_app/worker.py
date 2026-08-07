@@ -60,9 +60,12 @@ def run_forever() -> None:
             if job is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
-            # Lazy init: ensure collection exists before processing first job
-            ensure_qdrant_ready(qdrant, embedder.vector_size)
             try:
+                # Lazy init: ensure collection exists before processing first job. Kept
+                # inside the same try/except as process_job — a transient Qdrant hiccup
+                # here must not crash the whole worker process (it previously did,
+                # causing a restart storm instead of a simple per-job retry).
+                ensure_qdrant_ready(qdrant, embedder.vector_size)
                 process_job(
                     conn,
                     job,
