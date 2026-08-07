@@ -46,16 +46,46 @@ grounder = build_chat_grounder(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info("🔌 Connecting to PostgreSQL...")
     get_pool(settings.postgres_dsn)
-    qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
-    qdrant.ensure_collection(embedder.vector_size)
-    app.state.qdrant = qdrant
+    logger.info("✅ PostgreSQL connected")
+    
+    logger.info(f"🔌 Creating Qdrant client for: {settings.qdrant_url}")
+    try:
+        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
+        logger.info(f"✅ Qdrant client created (collection will be ensured on first use)")
+        app.state.qdrant = qdrant
+        app.state._qdrant_initialized = False  # Track initialization state
+    except Exception as e:
+        logger.error(f"❌ Failed to create Qdrant client: {type(e).__name__}: {str(e)}")
+        raise
+    
+    logger.info("🚀 Retrieval worker startup complete!")
     yield
 
 
 app = FastAPI(title="CanI Retrieval Worker", lifespan=lifespan)
 app.add_middleware(TraceIdMiddleware)
 instrument_fastapi(app)
+
+
+def ensure_qdrant_ready():
+    """Lazy-initialize Qdrant collection on first use to avoid blocking startup."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if not getattr(app.state, "_qdrant_initialized", False):
+        logger.info(f"🔄 Ensuring Qdrant collection on first use: {settings.qdrant_collection}")
+        try:
+            app.state.qdrant.ensure_collection(embedder.vector_size)
+            app.state._qdrant_initialized = True
+            logger.info(f"✅ Qdrant collection ready: {settings.qdrant_collection}")
+        except Exception as e:
+            logger.error(f"❌ Failed to ensure Qdrant collection: {type(e).__name__}: {str(e)}")
+            raise
 
 
 class RetrieveRequest(BaseModel):
@@ -69,6 +99,7 @@ def retrieve(
     principal: RequestPrincipal = Depends(get_principal),
     _: RequestPrincipal = Depends(require_docs_entitlement),
 ) -> RetrievalAnswer:
+    ensure_qdrant_ready()  # Lazy-initialize on first request
     qdrant: OwnerScopedQdrant = app.state.qdrant
     query_vector = embedder.embed_batch([payload.question])[0]
 

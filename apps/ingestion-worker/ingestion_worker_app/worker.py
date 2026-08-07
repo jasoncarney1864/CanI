@@ -24,6 +24,20 @@ POLL_INTERVAL_SECONDS = 3
 configure_logging("ingestion-worker")
 logger = get_logger(__name__)
 
+# Lazy initialization flag for Qdrant collection — postpone ensure_collection()
+# until the first job is claimed instead of blocking startup.
+_qdrant_initialized = False
+
+
+def ensure_qdrant_ready(qdrant: OwnerScopedQdrant, vector_size: int) -> None:
+    """Ensure Qdrant collection exists on first job processing (lazy init)."""
+    global _qdrant_initialized  # noqa: PLW0603
+    if not _qdrant_initialized:
+        logger.info("lazy_qdrant_init_start")
+        qdrant.ensure_collection(vector_size)
+        _qdrant_initialized = True
+        logger.info("lazy_qdrant_init_complete")
+
 
 def run_forever() -> None:
     settings = get_settings()
@@ -37,7 +51,7 @@ def run_forever() -> None:
     extractor = build_extractor(settings)
     embedder = build_embedder(settings)
     qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
-    qdrant.ensure_collection(embedder.vector_size)
+    # Postpone ensure_collection() until first job — avoids startup timeout
 
     logger.info("ingestion_worker_started")
     while True:
@@ -46,6 +60,8 @@ def run_forever() -> None:
             if job is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
+            # Lazy init: ensure collection exists before processing first job
+            ensure_qdrant_ready(qdrant, embedder.vector_size)
             try:
                 process_job(
                     conn,
