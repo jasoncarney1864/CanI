@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "dev"
+    },
+    "acrName": {
+      "value": "canishared19088c8d54"
+    },
+    "acrLoginServer": {
+      "value": "canishared19088c8d54.azurecr.io"
+    },
+    "postgresHost": {
+      "value": "cani-pg484bf91d.postgres.database.azure.com"
+    },
+    "keyVaultName": {
+      "value": "cani-platform-kv2e5cf1f6"
+    },
+    "keyVaultResourceGroup": {
+      "value": "cani-platform-core-canido-dev-eastus2-rged7032c2"
+    },
+    "managedIdentityId": {
+      "value": "/subscriptions/833d780f-03ed-4f6b-959e-f87d2a1435da/resourcegroups/cani-workload-core-canido-dev-eastus2-rgca86c588/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cani-secrets-id94978007"
+    },
+    "managedIdentityClientId": {
+      "value": "984dbce5-2209-4df0-b904-41bdcce2596c"
+    },
+    "storageAccountName": {
+      "value": "cani6ada34dffd"
+    },
+    "entraOidcAuthority": {
+      "value": "https://caniauth.ciamlogin.com/43189f5e-8c1b-4e3f-9cf7-d17babc03e36/v2.0"
+    },
+    "entraOidcClientId": {
+      "value": "1f0927a0-fe19-4661-93e0-019e94b05416"
+    }
+  }
+}
