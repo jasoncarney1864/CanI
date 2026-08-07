@@ -325,7 +325,7 @@ resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: 'https://qdrant' }
+            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
           ]
           probes: [
@@ -439,8 +439,9 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: 'https://qdrant' }
+            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
+            { name: 'RETRIEVAL_WORKER_URL', value: 'https://retrieval-worker.internal.${containerAppEnv.properties.defaultDomain}' }
           ]
           probes: [
             {
@@ -619,7 +620,7 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
-            { name: 'QDRANT_URL', value: 'https://qdrant' }
+            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
           ]
         }
@@ -716,7 +717,7 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: 'https://qdrant' }
+            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
           ]
           probes: [
