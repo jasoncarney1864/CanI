@@ -22,3 +22,5 @@ apps/web/.next/
 # db/migrate.py + db/migrations — without these re-includes its COPY steps fail.
 !db/
 !db/**
+# Exclude infra directories with venv to speed up build context
+infra/

@@ -4,12 +4,10 @@
 # --- build ---------------------------------------------------------------------
 FROM node:20-alpine AS builder
 WORKDIR /app
-# Install deps against the lockfile first for layer caching.
-COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci
-# Then the source, and produce the standalone build (.next/standalone + .next/static).
+# Copy all source first
 COPY apps/web/ ./
-RUN npm run build
+# Install deps and build (this ensures node_modules has correct permissions)
+RUN npm ci && npm run build
 
 # --- runtime -------------------------------------------------------------------
 FROM node:20-alpine AS runner
