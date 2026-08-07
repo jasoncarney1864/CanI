@@ -10,7 +10,11 @@ import { BackendError, DOCS_API_URL, UNREACHABLE_BODY, mintAccessToken } from "@
 export async function GET(request: Request) {
   try {
     const accessToken = await mintAccessToken(request.headers.get("cookie") ?? "");
-    const res = await fetch(`${DOCS_API_URL}/documents`, {
+    const { searchParams } = new URL(request.url);
+    const spoke = searchParams.get("spoke");
+    const url = new URL(`${DOCS_API_URL}/documents`);
+    if (spoke) url.searchParams.set("spoke", spoke);
+    const res = await fetch(url, {
       headers: { authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });

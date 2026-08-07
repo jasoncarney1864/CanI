@@ -161,7 +161,7 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
 
         {view === "documents" && (
           <div className="panel">
-            <DocumentsView />
+            <DocumentsView spoke={spoke.key === "hub" ? "General" : spoke.label} />
           </div>
         )}
       </div>
