@@ -1,6 +1,7 @@
 // Container Apps migration from AKS
 // Cost savings: ~50-70% reduction by eliminating node pools and cluster management fees
-// Architecture: Hub-API + Docs-API + Web + 2 workers + Qdrant on consumption-based billing
+// Architecture: Hub-API + Docs-API + Web + 2 workers on consumption-based billing.
+// Vectors live in Qdrant Cloud (managed) — Azure Files/SMB cannot host Qdrant's storage engine.
 
 targetScope = 'resourceGroup'
 
@@ -47,6 +48,33 @@ param storageConnectionString string
 @description('Microsoft Entra OIDC client secret')
 @secure()
 param entraClientSecret string
+
+@description('Qdrant endpoint URL. Qdrant Cloud cluster URL (https://<cluster-id>.<region>.<cloud>.cloud.qdrant.io:6333), or an internal Container Apps FQDN if you ever move back to self-hosting.')
+param qdrantUrl string
+
+@description('Qdrant API key. Required for Qdrant Cloud. Sourced from the qdrant-api-key Key Vault secret by deploy-with-secrets.ps1.')
+@secure()
+param qdrantApiKey string
+
+// Container images are parameters, NOT hardcoded, because container-apps-cd-dev.yml
+// deploys images out-of-band via `az containerapp update --image ...:<git-sha>`. If these
+// were pinned in the template, every infra deploy would silently roll all five apps back
+// to whatever digest happened to be committed. deploy.ps1 reads the currently-running
+// image off each app and passes it through, so an infra change never moves an image.
+@description('Currently-running hub-api image. Supplied by deploy.ps1 from the live app.')
+param hubApiImage string
+
+@description('Currently-running docs-api image. Supplied by deploy.ps1 from the live app.')
+param docsApiImage string
+
+@description('Currently-running web image. Supplied by deploy.ps1 from the live app.')
+param webImage string
+
+@description('Currently-running ingestion-worker image. Supplied by deploy.ps1 from the live app.')
+param ingestionWorkerImage string
+
+@description('Currently-running retrieval-worker image. Supplied by deploy.ps1 from the live app.')
+param retrievalWorkerImage string
 
 @description('Azure Storage account name')
 param storageAccountName string = 'cani6ada34dffd'
@@ -137,117 +165,6 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   }
 }
 
-// Storage account for Qdrant persistence
-resource qdrantStorage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: 'caniqd${uniqueString(resourceGroup().id)}'
-  location: location
-  kind: 'StorageV2'
-  sku: { name: 'Standard_LRS' }
-  properties: {
-    minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-    supportsHttpsTrafficOnly: true
-  }
-}
-
-resource qdrantStorageFileService 'Microsoft.Storage/storageAccounts/fileServices@2023-01-01' = {
-  parent: qdrantStorage
-  name: 'default'
-}
-
-resource qdrantFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
-  parent: qdrantStorageFileService
-  name: 'qdrant-data'
-  properties: {
-    shareQuota: 20 // 20 GiB (matches k8s PVC)
-    enabledProtocols: 'SMB'
-  }
-}
-
-// Qdrant storage mount
-resource qdrantStorageMount 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
-  parent: containerAppEnv
-  name: 'qdrant-storage'
-  properties: {
-    azureFile: {
-      accountName: qdrantStorage.name
-      accountKey: qdrantStorage.listKeys().keys[0].value
-      shareName: qdrantFileShare.name
-      accessMode: 'ReadWrite'
-    }
-  }
-}
-
-// Qdrant Container App (replacement for StatefulSet)
-resource qdrantApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'qdrant'
-  location: location
-  properties: {
-    environmentId: containerAppEnv.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false // internal only
-        targetPort: 6333
-        transport: 'http'
-        allowInsecure: true // Allow HTTP for internal-only traffic
-      }
-      // No registries config - using public Docker Hub image
-    }
-    template: {
-      containers: [
-        {
-          name: 'qdrant'
-          image: 'qdrant/qdrant:v1.9.7'
-          resources: {
-            cpu: json('1.0')
-            memory: '2Gi'
-          }
-          volumeMounts: [
-            {
-              volumeName: 'qdrant-storage'
-              mountPath: '/qdrant/storage'
-            }
-          ]
-          probes: [
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/'
-                port: 6333
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 15
-              periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/'
-                port: 6333
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 1 // single instance (matches k8s StatefulSet replicas: 1)
-      }
-      volumes: [
-        {
-          name: 'qdrant-storage'
-          storageName: qdrantStorageMount.name
-          storageType: 'AzureFile'
-        }
-      ]
-    }
-  }
-}
-
 // Hub API Container App
 resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'hub-api'
@@ -292,6 +209,10 @@ resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
           value: storageConnectionString
         }
         {
+          name: 'qdrant-api-key'
+          value: qdrantApiKey
+        }
+        {
           name: 'entra-client-secret'
           value: entraClientSecret
         }
@@ -301,7 +222,7 @@ resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'hub-api'
-          image: '${acrLoginServer}/hub-api:latest' // override in workflow
+          image: hubApiImage
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -325,8 +246,9 @@ resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
+            { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
+            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
           ]
           probes: [
             {
@@ -413,13 +335,17 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'storage-connection-string'
           value: storageConnectionString
         }
+        {
+          name: 'qdrant-api-key'
+          value: qdrantApiKey
+        }
       ]
     }
     template: {
       containers: [
         {
           name: 'docs-api'
-          image: '${acrLoginServer}/docs-api@sha256:85e9ac48a086c370bde6191edbf3089d0162837730132c9396572ed6144e6a6e'
+          image: docsApiImage
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -439,8 +365,9 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
+            { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
+            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
             { name: 'RETRIEVAL_WORKER_URL', value: 'https://retrieval-worker.internal.${containerAppEnv.properties.defaultDomain}' }
           ]
           probes: [
@@ -517,7 +444,7 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'web'
-          image: '${acrLoginServer}/web@sha256:df9e5554c67951841b75090b8507c2d40cf3819fbfea250dbedee8a5d538d012'
+          image: webImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -595,13 +522,17 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'storage-connection-string'
           value: storageConnectionString
         }
+        {
+          name: 'qdrant-api-key'
+          value: qdrantApiKey
+        }
       ]
     }
     template: {
       containers: [
         {
           name: 'ingestion-worker'
-          image: '${acrLoginServer}/ingestion-worker@sha256:81bbeaaec0799a6bf3742518b48762ca03a8250cadfe191161af4b296027237f'
+          image: ingestionWorkerImage
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -620,8 +551,9 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
-            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
+            { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
+            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
           ]
         }
       ]
@@ -691,13 +623,17 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'storage-connection-string'
           value: storageConnectionString
         }
+        {
+          name: 'qdrant-api-key'
+          value: qdrantApiKey
+        }
       ]
     }
     template: {
       containers: [
         {
           name: 'retrieval-worker'
-          image: '${acrLoginServer}/retrieval-worker@sha256:76f5c89a3ad1e8dfca0945eda1c6b5ce5607ae0636395759e9b77543bd824f88'
+          image: retrievalWorkerImage
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
@@ -717,8 +653,9 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: 'https://qdrant.internal.${containerAppEnv.properties.defaultDomain}' }
+            { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
+            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
           ]
           probes: [
             {
@@ -752,6 +689,96 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// Scheduled Qdrant snapshot -> Blob Storage (docs/09 section 9.10, Sprint 2 C1).
+// Replaces the deleted Kubernetes CronJob (k8s/base/qdrant/snapshot-cronjob.yaml). This
+// matters MORE on Qdrant Cloud's free tier, which has no automatic backups of its own.
+// Runs on the ingestion-worker image, which already carries httpx + the blob SDK, and
+// tracks the same image the worker runs. Restore stays a manual operator action --
+// see runbooks/backup-restore-drill.md.
+resource qdrantSnapshotJob 'Microsoft.App/jobs@2024-03-01' = {
+  name: 'qdrant-snapshot'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppEnv.id
+    configuration: {
+      triggerType: 'Schedule'
+      scheduleTriggerConfig: {
+        cronExpression: '0 2 * * *' // daily 02:00 UTC, same slot as the old CronJob
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      replicaTimeout: 1800
+      replicaRetryLimit: 2
+      registries: [
+        {
+          server: acrLoginServer
+          identity: managedIdentityId
+        }
+      ]
+      secrets: [
+        {
+          name: 'postgres-password'
+          value: postgresPassword
+        }
+        {
+          name: 'token-signing-secret'
+          value: tokenSigningSecret
+        }
+        {
+          name: 'session-secret'
+          value: sessionSecret
+        }
+        {
+          name: 'storage-connection-string'
+          value: storageConnectionString
+        }
+        {
+          name: 'qdrant-api-key'
+          value: qdrantApiKey
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'qdrant-snapshot'
+          image: ingestionWorkerImage
+          command: [
+            'python'
+            '-m'
+            'cani_shared.backup'
+          ]
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            { name: 'POSTGRES_HOST', value: postgresHost }
+            { name: 'POSTGRES_PORT', value: '5432' }
+            { name: 'POSTGRES_DB', value: postgresDb }
+            { name: 'POSTGRES_USER', value: postgresUser }
+            { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
+            { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
+            { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
+            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
+            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
+            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
+            { name: 'QDRANT_URL', value: qdrantUrl }
+            { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
+            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
+          ]
+        }
+      ]
+    }
+  }
+}
+
 // Outputs for workflow consumption
 output containerAppEnvId string = containerAppEnv.id
 output containerAppEnvDefaultDomain string = containerAppEnv.properties.defaultDomain
@@ -759,4 +786,3 @@ output webAppFqdn string = webApp.properties.configuration.ingress.fqdn
 output hubApiFqdn string = hubApiApp.properties.configuration.ingress.fqdn
 output docsApiFqdn string = docsApiApp.properties.configuration.ingress.fqdn
 output retrievalWorkerFqdn string = retrievalWorkerApp.properties.configuration.ingress.fqdn
-output qdrantFqdn string = qdrantApp.properties.configuration.ingress.fqdn

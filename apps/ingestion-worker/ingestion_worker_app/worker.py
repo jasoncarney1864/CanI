@@ -50,7 +50,7 @@ def run_forever() -> None:
     scanner = build_malware_scanner(settings)
     extractor = build_extractor(settings)
     embedder = build_embedder(settings)
-    qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
+    qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
     # Postpone ensure_collection() until first job — avoids startup timeout
 
     logger.info("ingestion_worker_started")

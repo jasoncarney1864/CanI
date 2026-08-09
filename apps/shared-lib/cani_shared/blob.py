@@ -9,6 +9,7 @@ never overwrite an existing blob path in place.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 
 from azure.storage.blob import BlobServiceClient
 
@@ -39,6 +40,30 @@ class BlobStore:
     def upload(self, *, container: str, path: str, data: bytes, overwrite: bool = False) -> str:
         client = self._client.get_blob_client(container=container, blob=path)
         client.upload_blob(data, overwrite=overwrite)
+        return f"{container}/{path}"
+
+    def upload_stream(
+        self,
+        *,
+        container: str,
+        path: str,
+        stream: Iterable[bytes],
+        overwrite: bool = False,
+        length: int | None = None,
+    ) -> str:
+        """Upload without materialising the payload in memory.
+
+        ``upload`` takes ``bytes``, which means the caller has already paid for the whole
+        object in RAM. That is fine for document artifacts, which are bounded by the upload
+        limit, and wrong for anything that grows with the size of the corpus — Qdrant
+        snapshots above all. Pass an iterator of chunks here instead and let the SDK
+        block-upload them.
+
+        ``max_concurrency=1`` is required, not tuning: a generator is not seekable, so the
+        SDK cannot hand overlapping ranges of it to parallel writers.
+        """
+        client = self._client.get_blob_client(container=container, blob=path)
+        client.upload_blob(stream, overwrite=overwrite, length=length, max_concurrency=1)
         return f"{container}/{path}"
 
     def download(self, blob_uri: str, *, max_attempts: int = 3) -> bytes:

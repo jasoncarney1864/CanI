@@ -46,8 +46,12 @@ try {
     $storageConnectionString = az keyvault secret show --vault-name $KeyVaultName --name azure-storage-connection-string --query value -o tsv
     $entraClientSecret = az keyvault secret show --vault-name $KeyVaultName --name entra-oidc-client-secret --query value -o tsv
     $postgresPassword = az keyvault secret show --vault-name $KeyVaultName --name postgres-password --query value -o tsv
+    $qdrantApiKey = az keyvault secret show --vault-name $KeyVaultName --name qdrant-api-key --query value -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($qdrantApiKey)) {
+        throw "Key Vault secret 'qdrant-api-key' is missing or empty. Create it first: az keyvault secret set --vault-name $KeyVaultName --name qdrant-api-key --value '<key from Qdrant Cloud>'"
+    }
     
-    Write-Host "✅ Retrieved all 5 secrets successfully" -ForegroundColor Green
+    Write-Host "✅ Retrieved all 6 secrets successfully" -ForegroundColor Green
 } catch {
     Write-Error "Failed to retrieve secrets: $_"
     exit 1
@@ -65,6 +69,7 @@ $secureTokenSigningSecret = ConvertTo-SecureString -String $tokenSigningSecret -
 $secureSessionSecret = ConvertTo-SecureString -String $sessionSecret -AsPlainText -Force
 $secureStorageConnectionString = ConvertTo-SecureString -String $storageConnectionString -AsPlainText -Force
 $secureEntraClientSecret = ConvertTo-SecureString -String $entraClientSecret -AsPlainText -Force
+$secureQdrantApiKey = ConvertTo-SecureString -String $qdrantApiKey -AsPlainText -Force
 
 # Clear plaintext secrets from memory
 $postgresPassword = $null
@@ -72,6 +77,7 @@ $tokenSigningSecret = $null
 $sessionSecret = $null
 $storageConnectionString = $null
 $entraClientSecret = $null
+$qdrantApiKey = $null
 
 Write-Host "🚀 Deploying Container Apps..." -ForegroundColor Cyan
 
@@ -84,6 +90,7 @@ $deployParams = @{
     SessionSecret = $secureSessionSecret
     StorageConnectionString = $secureStorageConnectionString
     EntraClientSecret = $secureEntraClientSecret
+    QdrantApiKey = $secureQdrantApiKey
 }
 
 if ($WhatIf) { $deployParams['WhatIf'] = $true }

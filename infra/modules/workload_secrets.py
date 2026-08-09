@@ -7,11 +7,12 @@ Secrets Store CSI driver can mount secrets at runtime, with no plaintext in mani
   Key Vault in the workload vnet's PrivateEndpoints subnet, plus the
   ``privatelink.vaultcore.azure.net`` private DNS zone + link so pods resolve the vault to
   its private IP. Mirrors the Postgres private-DNS pattern in ``networking.py``.
-- ``WorkloadSecretsIdentity`` — a user-assigned managed identity, a federated identity
+- ``WorkloadSecretsIdentity`` — a user-assigned managed identity, optionally a federated identity
   credential per app service account (so the CSI driver authenticates as the workload via
   the cluster's OIDC issuer), and a Key Vault Secrets User role assignment scoped to the
-  vault. The identity's ``client_id`` feeds the SecretProviderClass / service-account
-  annotations.
+  vault. Federation is Kubernetes-specific: pass ``oidc_issuer_url`` only when an AKS
+  cluster exists. On Container Apps the identity is assigned to each app directly, so the
+  identity is created without federated credentials and consumed by resource ID.
 
 Two privileged steps are applied out-of-band by an elevated operator, NOT by CI (the CI
 service principal is Contributor-only, which can't create role assignments or write RBAC
@@ -115,7 +116,7 @@ class WorkloadSecretsIdentity(ComponentResource):
         name: str,
         *,
         resource_group_name: Input[str],
-        oidc_issuer_url: Input[str],
+        oidc_issuer_url: Input[str] | None = None,
         tags: dict,
         opts: ResourceOptions | None = None,
     ):
@@ -129,8 +130,10 @@ class WorkloadSecretsIdentity(ComponentResource):
         )
 
         # One federated credential per consuming service account. The subject binds the
-        # AKS OIDC token (system:serviceaccount:<ns>:<sa>) to this managed identity.
-        self.federated_credentials = [
+        # AKS OIDC token (system:serviceaccount:<ns>:<sa>) to this managed identity. With
+        # no cluster (Container Apps), there is no OIDC issuer and nothing to federate —
+        # the identity is assigned to each container app directly by resource ID.
+        self.federated_credentials = [] if oidc_issuer_url is None else [
             azure_native.managedidentity.FederatedIdentityCredential(
                 f"{name}-fic-{namespace}-{sa}",
                 resource_group_name=resource_group_name,
