@@ -1,0 +1,17 @@
+# Shell scripts and Docker entrypoints must be LF regardless of the checkout platform —
+# CRLF here produces the classic "bad interpreter: /bin/sh^M" failure inside containers.
+*.sh              text eol=lf
+Dockerfile        text eol=lf
+*.Dockerfile      text eol=lf
+.githooks/*       text eol=lf
+
+# PowerShell deploy scripts are Windows-side tooling.
+*.ps1             text eol=crlf
+
+# Don't let Git mangle binaries or try to diff lockfiles as prose.
+*.png             binary
+*.jpg             binary
+*.pdf             binary
+*.woff            binary
+*.woff2           binary
+package-lock.json -diff linguist-generated

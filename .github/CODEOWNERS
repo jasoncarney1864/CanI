@@ -1,0 +1,10 @@
+# Default owner for everything.
+*                       @jasoncarney1864
+
+# Areas where a careless change is expensive — called out so they're never
+# reviewed on autopilot, even when the default owner is the only reviewer.
+/db/migrations/         @jasoncarney1864
+/infra/                 @jasoncarney1864
+/.github/workflows/     @jasoncarney1864
+/apps/shared-lib/cani_shared/auth/       @jasoncarney1864
+/apps/shared-lib/cani_shared/providers/  @jasoncarney1864
