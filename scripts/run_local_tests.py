@@ -15,6 +15,18 @@ def run_step(cmd: list[str], cwd: pathlib.Path) -> int:
     return completed.returncode
 
 
+def shared_lib_is_this_checkout(package_file: str, repo_root: pathlib.Path) -> bool:
+    """Is the imported cani_shared the copy living in `repo_root`?
+
+    Compares the package directory directly rather than walking up a fixed number of
+    parents — counting levels off `__init__.py` is easy to get wrong by one, and the
+    off-by-one reads as a plausible path in the error message.
+    """
+    installed = pathlib.Path(package_file).resolve().parent
+    expected = (repo_root / "apps" / "shared-lib" / "cani_shared").resolve()
+    return installed == expected
+
+
 def preflight(repo_root: pathlib.Path) -> str | None:
     """Return an error message if the interpreter can't produce a trustworthy run.
 
@@ -53,8 +65,8 @@ def preflight(repo_root: pathlib.Path) -> str | None:
     except ImportError:
         return "cani_shared is not importable. Run: pip install -r requirements-dev.txt"
 
-    installed_from = pathlib.Path(cani_shared.__file__).resolve().parents[2]
-    if installed_from != (repo_root / "apps" / "shared-lib").resolve():
+    if not shared_lib_is_this_checkout(cani_shared.__file__, repo_root):
+        installed_from = pathlib.Path(cani_shared.__file__).resolve().parent
         return (
             f"cani_shared resolves to {installed_from}, not this checkout.\n"
             "  The venv was built elsewhere and carries absolute paths. Delete it and\n"
