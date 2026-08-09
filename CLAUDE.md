@@ -74,6 +74,9 @@ too. Flag it rather than papering over it.
 - **ruff** with `E, F, I, UP, B`. Line length 110, but `E501` is ignored — so long lines
   don't error; ruff format still wraps at 110. `fastapi.Depends/File/Query` are
   allowlisted for B008 (`pyproject.toml`).
+  Pinned exactly (`ruff==0.16.2` in `requirements-dev.txt`) while everything else floats,
+  because CI gates on it: a floating linter turns main red on someone else's release
+  schedule. Bump it on purpose and keep the resulting reformat in its own commit.
 - Config is environment-only, via `cani_shared.config.Settings` (pydantic-settings).
   Add new config there with an explicit `alias=` and document it in `.env.example`.
 - Migrations are numbered SQL in `db/migrations/` (`000N_description.sql`). That file is

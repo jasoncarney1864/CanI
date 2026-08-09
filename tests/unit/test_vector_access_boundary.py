@@ -22,8 +22,17 @@ SEARCH_ROOTS = ("apps", "scripts")
 # Vendored and generated trees. Walking apps/web/node_modules is both pointless and slow
 # enough to look like a hang.
 PRUNE = {
-    "node_modules", ".venv", "venv", "__pycache__", ".next", ".git",
-    "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".next",
+    ".git",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
 }
 
 

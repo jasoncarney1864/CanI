@@ -120,9 +120,7 @@ class OwnerScopedQdrant:
                 qmodels.FieldCondition(key="taxonomy_tags", match=qmodels.MatchAny(any=taxonomy_tags))
             )
         if spoke:
-            must.append(
-                qmodels.FieldCondition(key="spoke", match=qmodels.MatchValue(value=spoke))
-            )
+            must.append(qmodels.FieldCondition(key="spoke", match=qmodels.MatchValue(value=spoke)))
 
         # `search()` (not the newer `query_points()` Query API) — pinned qdrant-client
         # 1.9.x to match the qdrant/qdrant:v1.9.7 server image, and query_points() isn't

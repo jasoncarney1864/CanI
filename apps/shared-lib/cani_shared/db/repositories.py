@@ -204,7 +204,13 @@ def record_audit_event(
 
 
 def create_document(
-    conn: Connection, owner_user_id: str, *, title: str, source_type: str, checksum: str, spoke: DocumentSpoke = DocumentSpoke.GENERAL
+    conn: Connection,
+    owner_user_id: str,
+    *,
+    title: str,
+    source_type: str,
+    checksum: str,
+    spoke: DocumentSpoke = DocumentSpoke.GENERAL,
 ) -> Document:
     _row_conn(conn)
     document_id = str(uuid.uuid4())
