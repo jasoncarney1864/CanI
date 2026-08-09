@@ -19,8 +19,60 @@ env:
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
 
 jobs:
+  # Gate the whole workflow on configuration being present, before anything builds or
+  # deploys. An unset variable expands to an empty string, so `az` receives `-g ''` and
+  # answers "argument --resource-group/-g: expected one argument" followed by twenty
+  # lines of usage examples — which reads as a malformed command rather than as missing
+  # config, and only after the six image builds have already run.
+  #
+  # Runs as its own job rather than a step so it executes once instead of once per
+  # matrix leg, and needs `environment: dev` to see environment-scoped variables.
+  check-config:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Verify required variables are set
+        env:
+          RESOURCE_GROUP: ${{ vars.CONTAINER_APPS_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+          KEY_VAULT_URI: ${{ vars.KEY_VAULT_URI }}
+          MANAGED_IDENTITY_ID: ${{ vars.MANAGED_IDENTITY_ID }}
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          missing=()
+          # $1 = env var checked, $2 = the GitHub variable name to tell the user about
+          require() { [ -n "${!1:-}" ] || missing+=("$2"); }
+
+          require RESOURCE_GROUP     CONTAINER_APPS_RESOURCE_GROUP
+          require ACR_NAME           ACR_NAME
+          require ACR_LOGIN_SERVER   ACR_LOGIN_SERVER
+          require KEY_VAULT_URI      KEY_VAULT_URI
+          require MANAGED_IDENTITY_ID MANAGED_IDENTITY_ID
+          require POSTGRES_HOST      POSTGRES_HOST
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Unset GitHub variable(s): ${missing[*]}"
+            echo "Set them under Settings -> Environments -> dev -> Variables."
+            echo "Current values for this environment are in infra/container-apps/main.parameters.json."
+            exit 1
+          fi
+
+          # KEY_VAULT_URI is concatenated straight onto 'secrets/NAME' when the
+          # keyvaultref is built, so a missing trailing slash silently produces
+          # '...vault.azure.netsecrets/POSTGRES-PASSWORD' and fails later, further away.
+          case "$KEY_VAULT_URI" in
+            */) ;;
+            *) echo "::error::KEY_VAULT_URI must end with '/' (got '$KEY_VAULT_URI')"; exit 1 ;;
+          esac
+
+          echo "All six required variables are set."
+
   build-and-push:
     runs-on: ubuntu-latest
+    needs: check-config
     environment: dev
     permissions:
       id-token: write
