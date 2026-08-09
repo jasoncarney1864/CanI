@@ -24,18 +24,25 @@ scaffolded is tracked in [docs/implementation-status.md](docs/implementation-sta
 > same version is already present it matches on package ID, reports "No available
 > upgrade found", and ignores `--architecture x64` entirely.
 >
+> Install to an explicit directory and drive the venv from that full path. **Do not use
+> the `py` launcher for this.** `py -V:3.13` prefix-matches `3.13-arm64` and will hand
+> you an ARM64 interpreter without warning if no bare `3.13` tag is registered.
+>
 > ```powershell
 > cd $env:TEMP
 > curl.exe -L -O https://www.python.org/ftp/python/3.13.15/python-3.13.15-amd64.exe
-> .\python-3.13.15-amd64.exe /passive InstallAllUsers=0 PrependPath=0 Include_launcher=1
+> .\python-3.13.15-amd64.exe /passive /log "$env:TEMP\py313x64.log" `
+>     TargetDir=C:\Python313-x64 InstallAllUsers=0 PrependPath=0 Include_launcher=0
+> "exit=$LASTEXITCODE"
+> & C:\Python313-x64\python.exe -c "import platform; print(platform.machine())"  # AMD64
 > ```
 >
-> The x64 build installs to `Python313` and the ARM64 one to `Python313-arm64`, so they
-> coexist. `py --list-paths` will then show a bare `-V:3.13` (x64) next to
-> `-V:3.13-arm64`; build the venv from the bare tag:
+> `Include_launcher=0` leaves the existing ARM64-registered `py` launcher alone. If the
+> interpreter doesn't appear, read `$env:TEMP\py313x64.log` — a `/passive` install that
+> hits an existing same-version product can exit silently without installing anything.
 >
 > ```powershell
-> py -V:3.13 -m venv .venv-test
+> & C:\Python313-x64\python.exe -m venv .venv-test
 > .\.venv-test\Scripts\Activate.ps1
 > python -c "import platform; print(platform.machine())"   # must print AMD64
 > ```

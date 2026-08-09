@@ -128,6 +128,12 @@ whole install aborts, leaving a venv with *nothing* in it — including no `pyte
 `pip install -r requirements-dev.txt` dies on a `.tar.gz` dependency, check
 `python -c "import platform; print(platform.machine())"` first; it must say `AMD64`.
 
+Do not select that interpreter with the `py` launcher. `py -V:3.13` **prefix-matches**
+`3.13-arm64`, so with only ARM64 builds registered it silently returns ARM64 instead of
+failing — which is how a venv that looks correctly versioned ends up on the wrong
+architecture. Invoke the x64 `python.exe` by absolute path when creating the venv.
+`scripts/run_local_tests.py` refuses to run on an ARM64 interpreter as a backstop.
+
 ## Where to look first
 
 - What's actually built vs. scaffolded → `docs/implementation-status.md`
