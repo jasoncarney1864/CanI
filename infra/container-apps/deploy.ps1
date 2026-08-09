@@ -105,6 +105,34 @@ $imageParams = @(
 $bicepFile = Join-Path $PSScriptRoot "main.bicep"
 $parametersFile = Join-Path $PSScriptRoot "main.parameters.json"
 
+# `az deployment group validate` and `what-if` both require every secure parameter to be
+# present even though neither reads the values. These are generated per run rather than
+# hardcoded: assigning a constant to a parameter named like a credential is
+# credential-shaped whatever the value is, and gitleaks scored the previous placeholders
+# as generic-api-key at entropy 4.6 — that failed secret-scan on 5b15408. Allowlisting
+# known-fake values in .gitleaks.toml would also clear CI, but every allowlist entry is a
+# small permanent hole in the scanner, and buys nothing that generating them doesn't.
+# (Deliberately paraphrased: spelling the old literal out here re-trips the same rule.)
+function New-PlaceholderSecret {
+    param([int]$Length = 40)
+    # Char ranges rather than a literal alphabet string: a 62-character run of unique
+    # characters is itself high-entropy, and sitting inside a function whose name
+    # contains "Secret" it is a plausible generic-api-key match. Don't reintroduce the
+    # problem while fixing it.
+    $alphabet = [char[]](([char]'a'..[char]'z') + ([char]'A'..[char]'Z') + ([char]'0'..[char]'9'))
+    -join (1..$Length | ForEach-Object { $alphabet | Get-Random })
+}
+
+# Postgres rejects passwords that miss a character class, so pin one of each on the end.
+$placeholderParams = @(
+    "postgresPassword=$(New-PlaceholderSecret -Length 24)Aa1!"
+    "tokenSigningSecret=$(New-PlaceholderSecret -Length 48)"
+    "sessionSecret=$(New-PlaceholderSecret -Length 48)"
+    "storageConnectionString=DefaultEndpointsProtocol=https;AccountName=placeholder;AccountKey=$(New-PlaceholderSecret -Length 32);EndpointSuffix=core.windows.net"
+    "entraClientSecret=$(New-PlaceholderSecret -Length 40)"
+    "qdrantApiKey=$(New-PlaceholderSecret -Length 32)"
+)
+
 # Validation
 if (-not $SkipValidation) {
     Write-Host "`n🔍 Validating Bicep template..." -ForegroundColor Yellow
@@ -112,12 +140,7 @@ if (-not $SkipValidation) {
         --resource-group $ResourceGroup `
         --template-file $bicepFile `
         --parameters $parametersFile `
-        --parameters postgresPassword=DummyPasswordForValidation123! `
-        --parameters tokenSigningSecret=DummyTokenSigningSecret123456789012345678901234567890 `
-        --parameters sessionSecret=DummySessionSecret123456789012345678901234567890 `
-        --parameters storageConnectionString="DefaultEndpointsProtocol=https;AccountName=dummy;AccountKey=dummykey123;EndpointSuffix=core.windows.net" `
-        --parameters entraClientSecret=DummyEntraClientSecret12345678901234567890 `
-        --parameters qdrantApiKey=DummyQdrantApiKey1234567890 `
+        --parameters $placeholderParams `
         --parameters $imageParams `
         --output json 2>&1
     
@@ -157,12 +180,7 @@ if ($WhatIf) {
         --resource-group $ResourceGroup `
         --template-file $bicepFile `
         --parameters $parametersFile `
-        --parameters postgresPassword=DummyPasswordForValidation123! `
-        --parameters tokenSigningSecret=DummyTokenSigningSecret123456789012345678901234567890 `
-        --parameters sessionSecret=DummySessionSecret123456789012345678901234567890 `
-        --parameters storageConnectionString="DefaultEndpointsProtocol=https;AccountName=dummy;AccountKey=dummykey123;EndpointSuffix=core.windows.net" `
-        --parameters entraClientSecret=DummyEntraClientSecret12345678901234567890 `
-        --parameters qdrantApiKey=DummyQdrantApiKey1234567890 `
+        --parameters $placeholderParams `
         --parameters $imageParams
     
     Write-Host "`n⚠️  What-If mode enabled - no changes deployed" -ForegroundColor Yellow
