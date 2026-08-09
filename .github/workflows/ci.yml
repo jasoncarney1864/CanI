@@ -16,6 +16,11 @@ on:
       - "tests/**"
       - "docker-compose.yml"
       - ".github/workflows/ci.yml"
+  # Run on demand. The path filters mean a fix that lives outside apps/db/tests cannot
+  # re-run CI: the secret-scan failure on 5b15408 was fixed in 0e560d6, which touched
+  # only infra/, so main stayed red with no way to re-verify short of an unrelated
+  # commit to a watched path.
+  workflow_dispatch: {}
 
 jobs:
   secret-scan:
