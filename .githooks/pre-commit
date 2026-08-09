@@ -1,0 +1,47 @@
+#!/usr/bin/env sh
+# CanI pre-commit hook. Enable once per clone:
+#
+#     git config core.hooksPath .githooks
+#
+# Catches the three things CI fails on, before the commit exists rather than after the
+# push. Bypass with `git commit --no-verify` when you genuinely need to.
+set -eu
+
+fail() { printf '\n\033[31mpre-commit: %s\033[0m\n' "$1" >&2; exit 1; }
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# 1. Never commit a real .env or a rendered manifest. .gitignore already covers these,
+#    but `git add -f` and renames slip past it.
+blocked=$(printf '%s\n' "$staged" \
+  | grep -E '(^|/)\.env($|\.)|^rendered-.*\.yaml$|secrets-bootstrap' \
+  | grep -v -E '(^|/)\.env\.example$' || true)
+if [ -n "$blocked" ]; then
+  fail "refusing to commit secret material:
+$blocked"
+fi
+
+# 2. Keep the repo root clean. Scratch files belong in /tmp, keepers in scripts/.
+#    (16 root artifacts were cleared in 184df3a; this stops them coming back.)
+root_junk=$(printf '%s\n' "$staged" | grep -E '^[^/]+\.(txt|b64|tar\.gz)$' || true)
+if [ -n "$root_junk" ]; then
+  fail "these look like scratch artifacts at repo root:
+$root_junk
+Move them to scripts/ if they're worth keeping, or delete them."
+fi
+
+# 3. Lint + format the staged Python only.
+py=$(printf '%s\n' "$staged" | grep -E '\.py$' || true)
+if [ -n "$py" ]; then
+  if ! command -v ruff >/dev/null 2>&1; then
+    printf 'pre-commit: ruff not on PATH, skipping lint. Activate .venv-test.\n' >&2
+    exit 0
+  fi
+  # shellcheck disable=SC2086
+  ruff check $py || fail "ruff check failed. Fix, or 'git commit --no-verify' to bypass."
+  # shellcheck disable=SC2086
+  ruff format --check $py || fail "formatting differs. Run: ruff format apps tests db"
+fi
+
+exit 0

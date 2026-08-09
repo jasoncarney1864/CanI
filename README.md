@@ -44,6 +44,22 @@ This installs `cani-shared` plus all four services in editable mode, along with
 `pytest`, `ruff`, and `reportlab` (used to generate a real PDF fixture in the
 integration tests).
 
+Then enable the repo's git hooks (once per clone):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/pre-commit` runs `ruff check` and `ruff format --check` over staged Python and
+blocks accidental commits of `.env` or rendered manifests — the same things CI fails on,
+caught before the commit instead of after the push. Bypass with `git commit --no-verify`.
+
+> **The venv is not relocatable.** Editable installs bake absolute paths into
+> `site-packages`, so a `.venv-test` copied or moved from another directory will keep
+> importing `cani_shared` from the *old* location — you edit one tree and test another,
+> with no error to tell you. If you move or re-clone the repo, delete the venv and
+> rebuild it from scratch rather than carrying it across.
+
 ## Configuration
 
 ```bash
