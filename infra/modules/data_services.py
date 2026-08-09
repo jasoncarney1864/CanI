@@ -1,7 +1,8 @@
 """Data service components per docs/09-data-model-and-storage.md and
 docs/06-azure-landing-zone-design.md §6.2: shared ACR (platform), Postgres Flexible
 Server + Blob Storage (workload). Qdrant is not provisioned here — it runs as a
-StatefulSet inside AKS (see k8s/base/qdrant), per docs/10 §10.9.
+StatefulSet inside AKS. Vectors now live in Qdrant Cloud (managed) — see
+infra/container-apps/main.bicep and docs/09 §9.10 for the snapshot job.
 """
 
 from __future__ import annotations

@@ -89,7 +89,7 @@ def backfill_titles(conn: Connection, settings, limit: int | None = None, dry_ru
         # chunk_text in Postgres just for backfill.
         from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 
-        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
+        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
 
         # Fetch chunks for this document from Qdrant
         with conn.cursor() as cur:

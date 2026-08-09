@@ -9,6 +9,8 @@ param(
     [securestring]$SessionSecret,
     [securestring]$StorageConnectionString,
     [securestring]$EntraClientSecret,
+    [securestring]$QdrantApiKey,
+    [string]$AcrLoginServer = "canishared19088c8d54.azurecr.io",
     [switch]$WhatIf,
     [switch]$SkipValidation
 )
@@ -44,6 +46,11 @@ if (-not $EntraClientSecret) {
     $EntraClientSecret = Read-Host "Enter ENTRA_OIDC_CLIENT_SECRET" -AsSecureString
 }
 
+if (-not $QdrantApiKey) {
+    Write-Host "`n🔑 Qdrant Cloud API key required for deployment" -ForegroundColor Yellow
+    $QdrantApiKey = Read-Host "Enter QDRANT_API_KEY" -AsSecureString
+}
+
 # Check Azure CLI login
 Write-Host "`n🔐 Checking Azure CLI authentication..." -ForegroundColor Yellow
 $account = az account show 2>$null | ConvertFrom-Json
@@ -65,6 +72,36 @@ if ($rgExists -eq "false") {
     Write-Host "✅ Resource group exists" -ForegroundColor Green
 }
 
+# Container images are owned by container-apps-cd-dev.yml, not by this template. Read
+# whatever each app is running right now and pass it straight back in, so an infra deploy
+# is image-neutral. First-time bootstrap (app does not exist yet) falls back to :latest.
+function Get-LiveImage {
+    param([string]$AppName, [string]$Fallback)
+    $img = az containerapp show --name $AppName --resource-group $ResourceGroup `
+        --query "properties.template.containers[0].image" -o tsv 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($img)) {
+        Write-Host "   $AppName not deployed yet - bootstrapping with $Fallback" -ForegroundColor Yellow
+        return $Fallback
+    }
+    Write-Host "   $AppName -> $img" -ForegroundColor Gray
+    return $img
+}
+
+Write-Host "`n📦 Resolving currently-running container images..." -ForegroundColor Yellow
+$hubApiImage          = Get-LiveImage -AppName "hub-api"          -Fallback "$AcrLoginServer/hub-api:latest"
+$docsApiImage         = Get-LiveImage -AppName "docs-api"         -Fallback "$AcrLoginServer/docs-api:latest"
+$webImage             = Get-LiveImage -AppName "web"              -Fallback "$AcrLoginServer/web:latest"
+$ingestionWorkerImage = Get-LiveImage -AppName "ingestion-worker" -Fallback "$AcrLoginServer/ingestion-worker:latest"
+$retrievalWorkerImage = Get-LiveImage -AppName "retrieval-worker" -Fallback "$AcrLoginServer/retrieval-worker:latest"
+
+$imageParams = @(
+    "hubApiImage=$hubApiImage"
+    "docsApiImage=$docsApiImage"
+    "webImage=$webImage"
+    "ingestionWorkerImage=$ingestionWorkerImage"
+    "retrievalWorkerImage=$retrievalWorkerImage"
+)
+
 $bicepFile = Join-Path $PSScriptRoot "main.bicep"
 $parametersFile = Join-Path $PSScriptRoot "main.parameters.json"
 
@@ -80,6 +117,8 @@ if (-not $SkipValidation) {
         --parameters sessionSecret=DummySessionSecret123456789012345678901234567890 `
         --parameters storageConnectionString="DefaultEndpointsProtocol=https;AccountName=dummy;AccountKey=dummykey123;EndpointSuffix=core.windows.net" `
         --parameters entraClientSecret=DummyEntraClientSecret12345678901234567890 `
+        --parameters qdrantApiKey=DummyQdrantApiKey1234567890 `
+        --parameters $imageParams `
         --output json 2>&1
     
     $validationExitCode = $LASTEXITCODE
@@ -117,7 +156,14 @@ if ($WhatIf) {
     az deployment group what-if `
         --resource-group $ResourceGroup `
         --template-file $bicepFile `
-        --parameters $parametersFile
+        --parameters $parametersFile `
+        --parameters postgresPassword=DummyPasswordForValidation123! `
+        --parameters tokenSigningSecret=DummyTokenSigningSecret123456789012345678901234567890 `
+        --parameters sessionSecret=DummySessionSecret123456789012345678901234567890 `
+        --parameters storageConnectionString="DefaultEndpointsProtocol=https;AccountName=dummy;AccountKey=dummykey123;EndpointSuffix=core.windows.net" `
+        --parameters entraClientSecret=DummyEntraClientSecret12345678901234567890 `
+        --parameters qdrantApiKey=DummyQdrantApiKey1234567890 `
+        --parameters $imageParams
     
     Write-Host "`n⚠️  What-If mode enabled - no changes deployed" -ForegroundColor Yellow
     exit 0
@@ -142,6 +188,7 @@ $tokenSigningSecretPlain = ConvertFrom-SecureStringToPlainText $TokenSigningSecr
 $sessionSecretPlain = ConvertFrom-SecureStringToPlainText $SessionSecret
 $storageConnectionStringPlain = ConvertFrom-SecureStringToPlainText $StorageConnectionString
 $entraClientSecretPlain = ConvertFrom-SecureStringToPlainText $EntraClientSecret
+$qdrantApiKeyPlain = ConvertFrom-SecureStringToPlainText $QdrantApiKey
 
 try {
     $deployment = az deployment group create `
@@ -153,6 +200,8 @@ try {
         --parameters sessionSecret=$sessionSecretPlain `
         --parameters storageConnectionString=$storageConnectionStringPlain `
         --parameters entraClientSecret=$entraClientSecretPlain `
+        --parameters qdrantApiKey=$qdrantApiKeyPlain `
+        --parameters $imageParams `
         --name $deploymentName `
         --output json | ConvertFrom-Json
 
@@ -167,6 +216,7 @@ try {
     $sessionSecretPlain = $null
     $storageConnectionStringPlain = $null
     $entraClientSecretPlain = $null
+    $qdrantApiKeyPlain = $null
 }
 
 Write-Host "✅ Deployment completed successfully!" -ForegroundColor Green

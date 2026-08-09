@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     qdrant_url: str = Field(alias="QDRANT_URL")
     qdrant_collection: str = Field(alias="QDRANT_COLLECTION")
+    # Empty for a local/self-hosted Qdrant with no auth; required for Qdrant Cloud.
+    qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
 
     azure_storage_connection_string: str = Field(alias="AZURE_STORAGE_CONNECTION_STRING")
 

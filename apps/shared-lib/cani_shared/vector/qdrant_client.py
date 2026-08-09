@@ -36,8 +36,8 @@ class ScoredChunk:
 
 
 class OwnerScopedQdrant:
-    def __init__(self, url: str, collection: str):
-        self._client = QdrantClient(url=url, timeout=60.0)  # 60s timeout for startup connection
+    def __init__(self, url: str, collection: str, api_key: str | None = None):
+        self._client = QdrantClient(url=url, api_key=api_key or None, timeout=60.0)
         self._collection = collection
 
     def ensure_collection(self, vector_size: int) -> None:

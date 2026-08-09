@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"🔌 Creating Qdrant client for: {settings.qdrant_url}")
     try:
-        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection)
+        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
         logger.info(f"✅ Qdrant client created (collection will be ensured on first use)")
         app.state.qdrant = qdrant
         app.state._qdrant_initialized = False  # Track initialization state

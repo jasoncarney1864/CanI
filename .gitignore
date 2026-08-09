@@ -21,7 +21,9 @@ htmlcov/
 # committed. The dev secrets bootstrap lives OUTSIDE the repo at ~/.cani/ (see
 # runbooks/rotate-dev-secrets.md); rendered-*.yaml are kustomize build artifacts.
 *secrets-bootstrap*.yaml
-k8s/**/rendered-*.yaml
+# Quarantine for files removed in the AKS->Container Apps consolidation. `rm` was
+# unavailable when they were removed; delete this folder, then delete these two lines.
+_to_delete/
 
 # Pulumi
 infra/**/Pulumi.*.yaml
