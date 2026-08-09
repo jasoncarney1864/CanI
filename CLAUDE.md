@@ -56,6 +56,19 @@ before pushing and CI won't surprise you.
 
 On Windows without an activated venv: `.\.venv-test\Scripts\python.exe scripts\run_local_tests.py`.
 
+**Three Python versions are currently in play, and they disagree:**
+
+| Where | Version | Set in |
+|---|---|---|
+| Service containers (what actually ships) | **3.12** | `apps/*/Dockerfile`, `db/Dockerfile` |
+| CI + the documented local baseline | **3.13** | `.github/workflows/ci.yml`, `.python-version`, ruff `target-version` |
+| Package floor | 3.11 | `requires-python` in every `pyproject.toml` |
+
+So CI unit tests run on an interpreter that production never uses. Unresolved — do not
+"fix" it by bumping one number in isolation; changing the container base image needs the
+integration suite to pass against it, and dropping CI to 3.12 needs the ruff target moved
+too. Flag it rather than papering over it.
+
 ## Conventions
 
 - **ruff** with `E, F, I, UP, B`. Line length 110, but `E501` is ignored — so long lines
