@@ -20,19 +20,28 @@ scaffolded is tracked in [docs/implementation-status.md](docs/implementation-sta
 > ARM64 interpreter therefore falls back to source builds that need a full Rust + MSVC
 > toolchain, and `pip install -r requirements-dev.txt` dies partway through, leaving an
 > empty venv. The x64 build runs fine under emulation and has wheels for everything.
-> Install it explicitly:
+> Install it from python.org. **`winget` will not do this** — if an ARM64 build of the
+> same version is already present it matches on package ID, reports "No available
+> upgrade found", and ignores `--architecture x64` entirely.
 >
 > ```powershell
-> winget install --id Python.Python.3.13 -e --architecture x64
-> py --list-paths          # note the x64 3.13 path; the ARM64 one may also be listed
+> cd $env:TEMP
+> curl.exe -L -O https://www.python.org/ftp/python/3.13.15/python-3.13.15-amd64.exe
+> .\python-3.13.15-amd64.exe /passive InstallAllUsers=0 PrependPath=0 Include_launcher=1
 > ```
 >
-> After creating the venv, confirm you got the right interpreter — this must print
-> `AMD64`, not `ARM64`:
+> The x64 build installs to `Python313` and the ARM64 one to `Python313-arm64`, so they
+> coexist. `py --list-paths` will then show a bare `-V:3.13` (x64) next to
+> `-V:3.13-arm64`; build the venv from the bare tag:
 >
 > ```powershell
-> python -c "import platform; print(platform.machine())"
+> py -V:3.13 -m venv .venv-test
+> .\.venv-test\Scripts\Activate.ps1
+> python -c "import platform; print(platform.machine())"   # must print AMD64
 > ```
+>
+> `python scripts/run_local_tests.py` also checks this and refuses to run on an ARM64
+> interpreter, rather than letting the install fail halfway and look like a PATH problem.
 
 ## Setup (clean machine)
 
