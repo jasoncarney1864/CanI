@@ -126,7 +126,9 @@ source builds requiring Rust + MSVC; `cryptography` fails metadata generation an
 whole install aborts, leaving a venv with *nothing* in it — including no `pytest` or
 `ruff`, which makes it look like a PATH problem rather than a failed install. If
 `pip install -r requirements-dev.txt` dies on a `.tar.gz` dependency, check
-`python -c "import platform; print(platform.machine())"` first; it must say `AMD64`.
+`python -c "import sysconfig; print(sysconfig.get_platform())"` first; it must say
+`win-amd64`. Do **not** probe with `platform.machine()` — that returns the host CPU, so a
+correctly emulated x64 interpreter still reports `ARM64` and you will chase a phantom.
 
 Do not select that interpreter with the `py` launcher. `py -V:3.13` **prefix-matches**
 `3.13-arm64`, so with only ARM64 builds registered it silently returns ARM64 instead of

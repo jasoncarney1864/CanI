@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import pathlib
-import platform
 import subprocess
 import sys
+import sysconfig
 
 
 def run_step(cmd: list[str], cwd: pathlib.Path) -> int:
@@ -32,12 +32,19 @@ def preflight(repo_root: pathlib.Path) -> str | None:
     # Windows on ARM: grpcio, grpcio-tools and tiktoken publish no win_arm64 wheels at
     # all, so an ARM64 interpreter falls back to source builds that need Rust + MSVC and
     # abort partway, leaving an incomplete environment.
-    if sys.platform == "win32" and platform.machine() == "ARM64":
-        return (
-            "this venv is ARM64 Python; the dependency set requires x64 on Windows.\n"
-            "  grpcio, grpcio-tools and tiktoken ship no win_arm64 wheels.\n"
-            "  Rebuild .venv-test from an x64 interpreter — see README 'Windows on ARM'."
-        )
+    #
+    # Probe with sysconfig.get_platform(), which reports what the interpreter was *built*
+    # for ('win-amd64' / 'win-arm64') and is the same value pip derives wheel tags from.
+    # platform.machine() is wrong here: it reports the host CPU, so an emulated x64
+    # Python on an ARM64 machine still answers 'ARM64' and would fail a correct setup.
+    if sys.platform == "win32":
+        build_platform = sysconfig.get_platform()
+        if build_platform != "win-amd64":
+            return (
+                f"this venv is {build_platform} Python; x64 (win-amd64) is required.\n"
+                "  grpcio, grpcio-tools and tiktoken ship no win_arm64 wheels.\n"
+                "  Rebuild .venv-test from an x64 interpreter — see README 'Windows on ARM'."
+            )
 
     # An editable install left over from a different checkout resolves imports to the
     # *old* tree, so you edit one copy and test another with nothing to signal it.

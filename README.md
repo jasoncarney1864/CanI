@@ -34,18 +34,25 @@ scaffolded is tracked in [docs/implementation-status.md](docs/implementation-sta
 > .\python-3.13.15-amd64.exe /passive /log "$env:TEMP\py313x64.log" `
 >     TargetDir=C:\Python313-x64 InstallAllUsers=0 PrependPath=0 Include_launcher=0
 > "exit=$LASTEXITCODE"
-> & C:\Python313-x64\python.exe -c "import platform; print(platform.machine())"  # AMD64
 > ```
 >
-> `Include_launcher=0` leaves the existing ARM64-registered `py` launcher alone. If the
-> interpreter doesn't appear, read `$env:TEMP\py313x64.log` — a `/passive` install that
-> hits an existing same-version product can exit silently without installing anything.
+> `Include_launcher=0` leaves the existing ARM64-registered `py` launcher alone. The x64
+> build lands in `Programs\Python\Python313` and the ARM64 one in `Python313-arm64`; both
+> can be installed at once. Note that the two share the WiX provider key `CPython-3.13`,
+> so if one is already present the other's installer silently switches to *Modify*, does
+> nothing, ignores `TargetDir`, and still exits 0 — check `py --list-paths` for a bare
+> `-V:3.13` rather than trusting the exit code.
 >
 > ```powershell
-> & C:\Python313-x64\python.exe -m venv .venv-test
+> & "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe" -m venv .venv-test
 > .\.venv-test\Scripts\Activate.ps1
-> python -c "import platform; print(platform.machine())"   # must print AMD64
+> python -c "import sysconfig; print(sysconfig.get_platform())"   # must print win-amd64
 > ```
+>
+> Verify with `sysconfig.get_platform()`, **not** `platform.machine()`. The latter reports
+> the host CPU, so a correctly emulated x64 interpreter on an ARM64 machine still answers
+> `ARM64`. `sysconfig.get_platform()` reports what the interpreter was built for, and is
+> what pip derives its wheel tags from.
 >
 > `python scripts/run_local_tests.py` also checks this and refuses to run on an ARM64
 > interpreter, rather than letting the install fail halfway and look like a PATH problem.
