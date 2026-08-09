@@ -24,7 +24,11 @@ fi
 
 # 2. Keep the repo root clean. Scratch files belong in /tmp, keepers in scripts/.
 #    (16 root artifacts were cleared in 184df3a; this stops them coming back.)
-root_junk=$(printf '%s\n' "$staged" | grep -E '^[^/]+\.(txt|b64|tar\.gz)$' || true)
+#    requirements*.txt / constraints*.txt are legitimate root .txt files — without the
+#    exclusion this rule blocks a dependency bump, which is a routine commit.
+root_junk=$(printf '%s\n' "$staged" \
+  | grep -E '^[^/]+\.(txt|b64|tar\.gz)$' \
+  | grep -v -E '^(requirements|constraints)[^/]*\.txt$' || true)
 if [ -n "$root_junk" ]; then
   fail "these look like scratch artifacts at repo root:
 $root_junk

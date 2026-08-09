@@ -8,4 +8,10 @@
 pytest>=8.2
 httpx>=0.27
 reportlab>=4.2
-ruff>=0.5
+
+# Pinned exactly, unlike the rest. ruff is a gate, not a library: CI runs both
+# `ruff check` and `ruff format --check`, and every release can add rules or change
+# formatting. Floating it means a ruff release turns main red with no commit of ours —
+# which is precisely what happened between d7f716d and 0.16.2 (F541 plus four files
+# reformatted). Bump this deliberately, with the reformat in its own commit.
+ruff==0.16.2

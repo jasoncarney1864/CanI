@@ -7,9 +7,8 @@ whole — see ``_FakeStreamResponse.content``."""
 
 from __future__ import annotations
 
-import pytest
-
 import cani_shared.backup as backup
+import pytest
 
 
 class _FakeResponse:

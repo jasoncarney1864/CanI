@@ -47,22 +47,23 @@ grounder = build_chat_grounder(settings)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     logger.info("🔌 Connecting to PostgreSQL...")
     get_pool(settings.postgres_dsn)
     logger.info("✅ PostgreSQL connected")
-    
+
     logger.info(f"🔌 Creating Qdrant client for: {settings.qdrant_url}")
     try:
         qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
-        logger.info(f"✅ Qdrant client created (collection will be ensured on first use)")
+        logger.info("✅ Qdrant client created (collection will be ensured on first use)")
         app.state.qdrant = qdrant
         app.state._qdrant_initialized = False  # Track initialization state
     except Exception as e:
         logger.error(f"❌ Failed to create Qdrant client: {type(e).__name__}: {str(e)}")
         raise
-    
+
     logger.info("🚀 Retrieval worker startup complete!")
     yield
 
@@ -75,8 +76,9 @@ instrument_fastapi(app)
 def ensure_qdrant_ready():
     """Lazy-initialize Qdrant collection on first use to avoid blocking startup."""
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     if not getattr(app.state, "_qdrant_initialized", False):
         logger.info(f"🔄 Ensuring Qdrant collection on first use: {settings.qdrant_collection}")
         try:
@@ -107,7 +109,10 @@ def retrieve(
     # rather than silently searching unscoped, so there is no way to reach this line
     # having queried across owners.
     candidates = qdrant.search(
-        owner_user_id=principal.user_id, query_vector=query_vector, limit=CANDIDATE_POOL_SIZE, spoke=payload.spoke
+        owner_user_id=principal.user_id,
+        query_vector=query_vector,
+        limit=CANDIDATE_POOL_SIZE,
+        spoke=payload.spoke,
     )
 
     # Lightweight rerank (§8.8, §8.15 open question): candidates already come back score
@@ -163,7 +168,10 @@ def retrieve(
     # Add spoke-specific disclaimer
     answer_text = grounded.answer_text
     if payload.spoke == "Legal":
-        answer_text = "⚖️ Legal Disclaimer: This is not legal advice. Consult a qualified attorney for your specific situation.\n\n" + answer_text
+        answer_text = (
+            "⚖️ Legal Disclaimer: This is not legal advice. Consult a qualified attorney for your specific situation.\n\n"
+            + answer_text
+        )
 
     return RetrievalAnswer(
         answer=answer_text,
