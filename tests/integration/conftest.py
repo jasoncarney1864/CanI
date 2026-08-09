@@ -34,6 +34,38 @@ def _ensure_env_file() -> None:
     env_path.write_text(generated, encoding="utf-8")
 
 
+def _docker_daemon_reachable() -> bool:
+    try:
+        subprocess.run(["docker", "info"], capture_output=True, check=True, timeout=60)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+    return True
+
+
+def _require_docker() -> None:
+    """Fail fast, and legibly, when the daemon is down.
+
+    Letting `docker compose up` fail instead buries a one-line cause ("the daemon is not
+    running") under a CalledProcessError traceback through subprocess.run's source —
+    repeated once per test, since this is a session fixture consumed by each of them.
+
+    Locally that's a skip: Docker Desktop not being up is a normal state, and the unit
+    suite that ran just before it is still a useful result. In CI it's a hard failure —
+    silently skipping the integration suite there would mean a green build that never
+    exercised the stack.
+    """
+    if _docker_daemon_reachable():
+        return
+
+    message = (
+        "Docker daemon is not reachable — start Docker Desktop and re-run. "
+        "(To reuse a stack you already have running, set CANI_SKIP_COMPOSE=1.)"
+    )
+    if os.environ.get("CI"):
+        pytest.fail(message, pytrace=False)
+    pytest.skip(message, allow_module_level=True)
+
+
 def _wait_healthy(url: str, timeout: int) -> None:
     deadline = time.time() + timeout
     last_error: Exception | None = None
@@ -56,6 +88,7 @@ def docker_stack():
         yield
         return
 
+    _require_docker()
     _ensure_env_file()
     subprocess.run(["docker", "compose", "up", "-d", "--build"], cwd=REPO_ROOT, check=True)
     try:
