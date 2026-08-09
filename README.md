@@ -9,9 +9,30 @@ scaffolded is tracked in [docs/implementation-status.md](docs/implementation-sta
 
 ## Prerequisites
 
-- Python 3.13 (pinned baseline for reproducible local + CI runs)
+- Python 3.13 (pinned baseline for reproducible local + CI runs). **On Windows on ARM,
+  install the x64 build, not the native ARM64 one** — see the note below.
 - Docker Desktop (or another Docker Engine + Compose v2) — only required for the full
   dev stack and the integration tests, not for unit tests or lint
+
+> **Windows on ARM: use x64 Python.** Three of this project's transitive dependencies
+> have no `win_arm64` wheel on PyPI — `grpcio` and `grpcio-tools` (required by
+> `qdrant-client`) publish none at all, and `cryptography` stops at 46.0.3. A native
+> ARM64 interpreter therefore falls back to source builds that need a full Rust + MSVC
+> toolchain, and `pip install -r requirements-dev.txt` dies partway through, leaving an
+> empty venv. The x64 build runs fine under emulation and has wheels for everything.
+> Install it explicitly:
+>
+> ```powershell
+> winget install --id Python.Python.3.13 -e --architecture x64
+> py --list-paths          # note the x64 3.13 path; the ARM64 one may also be listed
+> ```
+>
+> After creating the venv, confirm you got the right interpreter — this must print
+> `AMD64`, not `ARM64`:
+>
+> ```powershell
+> python -c "import platform; print(platform.machine())"
+> ```
 
 ## Setup (clean machine)
 
