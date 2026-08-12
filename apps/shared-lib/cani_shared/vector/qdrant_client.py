@@ -6,12 +6,14 @@ accepts an empty/missing owner_user_id; it raises before issuing the query.
 
 from __future__ import annotations
 
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
-from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 
 class MissingOwnerFilterError(Exception):
@@ -35,10 +37,60 @@ class ScoredChunk:
     payload: dict
 
 
+def _is_transient(exc: Exception) -> bool:
+    """Transient = worth retrying: network-level failures and server-side 5xx. A 4xx is a
+    contract problem (bad key, missing collection, dimension mismatch surfaced as 400) and
+    retrying it just delays the real error."""
+    if isinstance(exc, ResponseHandlingException):
+        # qdrant-client wraps all httpx transport errors (timeouts, resets, DNS) in this.
+        return True
+    if isinstance(exc, UnexpectedResponse):
+        return exc.status_code >= 500
+    return False
+
+
+def retry_transient[T](
+    fn: Callable[[], T],
+    *,
+    attempts: int = 3,
+    base_delay: float = 0.25,
+    sleep: Callable[[float], None] = time.sleep,
+) -> T:
+    """Run ``fn``, retrying transient Qdrant failures with exponential backoff.
+
+    Exists because of the 2026-08-09 outage (docs/sitreps/2026-08-09-*): one transient
+    Qdrant failure on the retrieval path was a user-visible 500 on every /query, while
+    ingestion had already been hardened against exactly this class of fault (d7f716d).
+    Bounded and short (0.25s/0.5s/1s worst case ≈ 1.75s added latency) because this sits
+    on an interactive request path — it absorbs blips, not outages. Non-transient errors
+    (owner-filter violations, 4xx contract errors) re-raise immediately.
+    """
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - classified immediately below
+            if not _is_transient(exc):
+                raise
+            last = exc
+            if attempt < attempts - 1:
+                sleep(base_delay * (2**attempt))
+    assert last is not None  # attempts >= 1, so we only get here via the except path
+    raise last
+
+
 class OwnerScopedQdrant:
     def __init__(self, url: str, collection: str, api_key: str | None = None):
         self._client = QdrantClient(url=url, api_key=api_key or None, timeout=60.0)
         self._collection = collection
+
+    def ping(self) -> None:
+        """Cheap live check against the cluster — raises if Qdrant is unreachable.
+
+        Used by the retrieval-worker's /readyz. Deliberately NOT cached: during the
+        2026-08-09 outage /healthz answered 200 for two days while Qdrant crash-looped,
+        because nothing on the health path ever touched the dependency."""
+        self._client.get_collections()
 
     def ensure_collection(self, vector_size: int) -> None:
         """Every service (retrieval-worker, ingestion-worker) calls this at startup, so

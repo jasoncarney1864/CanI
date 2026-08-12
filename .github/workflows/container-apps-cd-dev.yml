@@ -247,6 +247,12 @@ jobs:
           
           echo "🔍 Checking retrieval-worker health..."
           curl -f https://$RETRIEVAL_FQDN/healthz || exit 1
+
+          # /readyz exercises Qdrant. /healthz alone greenlit the 2026-08-09 deploy of a
+          # service that could not answer a single query — this is the check that fails
+          # the pipeline when the dependency is dead.
+          echo "🔍 Checking retrieval-worker readiness (Qdrant reachable)..."
+          curl -f https://$RETRIEVAL_FQDN/readyz || exit 1
           
           echo "🔍 Checking web health..."
           curl -f https://$WEB_FQDN/api/health || exit 1

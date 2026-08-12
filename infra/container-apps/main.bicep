@@ -659,14 +659,29 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
           probes: [
             {
+              // /readyz exercises Qdrant on every probe. During the 2026-08-09 outage the
+              // old /healthz readiness answered 200 while Qdrant crash-looped, so traffic
+              // kept routing to a replica that failed every query. Readiness (stop
+              // routing) is the right response to a dead dependency — NOT liveness
+              // (restart), which can't fix Qdrant and would restart-loop the worker.
               type: 'Readiness'
               httpGet: {
-                path: '/healthz'
+                path: '/readyz'
                 port: 8003
                 scheme: 'HTTP'
               }
               initialDelaySeconds: 5
               periodSeconds: 10
+            }
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/healthz'
+                port: 8003
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 15
+              periodSeconds: 30
             }
           ]
         }
