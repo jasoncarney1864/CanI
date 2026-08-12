@@ -132,7 +132,8 @@ jobs:
             --replica-retry-limit 2 \
             --image ${{ env.ACR_LOGIN_SERVER }}/migrate:${{ github.sha }} \
             --registry-server ${{ env.ACR_LOGIN_SERVER }} \
-            --registry-identity system \
+            --mi-user-assigned ${{ vars.MANAGED_IDENTITY_ID }} \
+            --registry-identity ${{ vars.MANAGED_IDENTITY_ID }} \
             --cpu 0.5 --memory 1Gi \
             --secrets postgres-password=keyvaultref:${{ vars.KEY_VAULT_URI }}secrets/POSTGRES-PASSWORD,identityref:${{ vars.MANAGED_IDENTITY_ID }} \
             --env-vars \
