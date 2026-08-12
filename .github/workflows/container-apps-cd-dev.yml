@@ -240,43 +240,40 @@ jobs:
 
       - name: Post-deploy smoke checks
         run: |
-          # Get FQDNs
-          HUB_FQDN=$(az containerapp show --name hub-api --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          DOCS_FQDN=$(az containerapp show --name docs-api --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          RETRIEVAL_FQDN=$(az containerapp show --name retrieval-worker --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          WEB_FQDN=$(az containerapp show --name web --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          
-          # Health checks
-          echo "🔍 Checking hub-api health..."
-          curl -f https://$HUB_FQDN/healthz || exit 1
-          
-          echo "🔍 Checking docs-api health..."
-          curl -f https://$DOCS_FQDN/healthz || exit 1
-          
-          echo "🔍 Checking retrieval-worker health..."
-          curl -f https://$RETRIEVAL_FQDN/healthz || exit 1
+          # hub-api, docs-api and retrieval-worker have INTERNAL ingress. Their FQDNs
+          # resolve publicly to the environment's envoy, but envoy answers 404 for
+          # external hits on internal apps — so curling them from this runner can never
+          # succeed and never could (first exercised 2026-08-11, failed immediately).
+          #
+          # Assert revision health instead. A revision is Healthy only when its
+          # readiness probe passes, and retrieval-worker's readiness probe is /readyz,
+          # which does a live Qdrant call — so "retrieval-worker revision Healthy"
+          # still means "Qdrant reachable with the deployed credentials", which is the
+          # check that would have caught the 2026-08-09 outage at deploy time.
+          for APP in hub-api docs-api retrieval-worker; do
+            echo "🔍 Waiting for $APP latest revision to be Healthy..."
+            DEADLINE=$((SECONDS + 180))
+            while true; do
+              STATE=$(az containerapp revision list \
+                --name $APP \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --query "[?properties.active] | [0].properties.healthState" -o tsv)
+              if [ "$STATE" == "Healthy" ]; then
+                echo "✅ $APP revision Healthy"
+                break
+              fi
+              if [ $SECONDS -ge $DEADLINE ]; then
+                echo "❌ $APP revision not Healthy after 180s (state: ${STATE:-unknown})"
+                exit 1
+              fi
+              echo "   $APP: ${STATE:-unknown}, waiting..."
+              sleep 10
+            done
+          done
 
-          # /readyz exercises Qdrant. /healthz alone greenlit the 2026-08-09 deploy of a
-          # service that could not answer a single query — this is the check that fails
-          # the pipeline when the dependency is dead.
-          echo "🔍 Checking retrieval-worker readiness (Qdrant reachable)..."
-          curl -f https://$RETRIEVAL_FQDN/readyz || exit 1
-          
-          echo "🔍 Checking web health..."
+          # web is the one app with external ingress — a real HTTP check works here.
+          WEB_FQDN=$(az containerapp show --name web --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          echo "🔍 Checking web health (public ingress)..."
           curl -f https://$WEB_FQDN/api/health || exit 1
-          
-          echo "✅ All health checks passed"
-          
-          # Deep auth check (dev-login + whoami)
-          echo "🔍 Testing auth flow..."
-          RESPONSE=$(curl -s -c cookies.txt -X POST https://$HUB_FQDN/auth/dev-login \
-            -H "Content-Type: application/json" \
-            -d '{"idp_subject":"cd-smoke-check"}')
-          
-          if [ $? -eq 0 ]; then
-            curl -f -b cookies.txt https://$HUB_FQDN/auth/whoami || exit 1
-            echo "✅ Auth flow validated"
-          else
-            echo "❌ Auth check failed"
-            exit 1
-          fi
+
+          echo "✅ All smoke checks passed"
