@@ -14,7 +14,6 @@
     "postgresHost": {
       "value": "cani-pg484bf91d.postgres.database.azure.com"
     },
-    "_qdrantUrl_note": "Qdrant Cloud cluster endpoint for the dev environment. The matching API key is NOT here; it lives in the qdrant-api-key Key Vault secret.",
     "qdrantUrl": {
       "value": "https://7290e580-729e-497e-a0db-4add118615de.us-west-2-0.aws.cloud.qdrant.io:6333"
     },
