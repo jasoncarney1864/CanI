@@ -159,25 +159,32 @@ jobs:
           TIMEOUT=180
           ELAPSED=0
           while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Argument shape changed in the containerapp extension: -n/--name is the
+            # JOB, and the execution goes in --job-execution-name. The old
+            # --name=<execution> --job-name=<job> form exits 2 before ever polling.
             STATUS=$(az containerapp job execution show \
-              --name $EXECUTION_NAME \
-              --job-name ${JOB_NAME} \
+              --name ${JOB_NAME} \
+              --job-execution-name $EXECUTION_NAME \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --query properties.status -o tsv)
-            
+
             if [ "$STATUS" == "Succeeded" ]; then
               echo "✅ Migration completed successfully"
-              az containerapp job execution logs show \
-                --name $EXECUTION_NAME \
-                --job-name ${JOB_NAME} \
-                --resource-group ${{ env.RESOURCE_GROUP }}
+              az containerapp job logs show \
+                --name ${JOB_NAME} \
+                --execution $EXECUTION_NAME \
+                --container ${JOB_NAME} \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --format text || true
               break
             elif [ "$STATUS" == "Failed" ]; then
               echo "❌ Migration failed"
-              az containerapp job execution logs show \
-                --name $EXECUTION_NAME \
-                --job-name ${JOB_NAME} \
-                --resource-group ${{ env.RESOURCE_GROUP }}
+              az containerapp job logs show \
+                --name ${JOB_NAME} \
+                --execution $EXECUTION_NAME \
+                --container ${JOB_NAME} \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --format text || true
               exit 1
             fi
             
