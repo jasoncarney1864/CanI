@@ -20,6 +20,22 @@ param acrLoginServer string
 @description('Azure OpenAI endpoint')
 param azureOpenAIEndpoint string = 'https://cani-openai.openai.azure.com/'
 
+@description('''Azure OpenAI API key, for the two apps that build AI providers (ingestion-worker
+embeds; retrieval-worker embeds + grounds). This was dropped in the AKS->Container Apps
+migration and nothing errored: the provider factory silently falls back to
+FakeEmbedder/FakeGrounder when the key is absent (the 2026-08 fake-providers incident,
+and again on 2026-08-12 when re-ingestion built a 32-dim collection out of fake vectors).
+Sourced from the azure-openai-api-key Key Vault secret by deploy-with-secrets.ps1.''')
+@secure()
+param azureOpenAIApiKey string
+
+@description('Azure Document Intelligence (OCR) endpoint. Ingestion-worker only — image and scanned-PDF extraction fails permanently without it.')
+param azureDocumentIntelligenceEndpoint string = 'https://cani-docintel.cognitiveservices.azure.com/'
+
+@description('Azure Document Intelligence API key. Sourced from the azure-documentintelligence-api-key Key Vault secret by deploy-with-secrets.ps1.')
+@secure()
+param azureDocumentIntelligenceApiKey string
+
 @description('PostgreSQL host')
 param postgresHost string
 
@@ -526,6 +542,14 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'qdrant-api-key'
           value: qdrantApiKey
         }
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAIApiKey
+        }
+        {
+          name: 'docintel-api-key'
+          value: azureDocumentIntelligenceApiKey
+        }
       ]
     }
     template: {
@@ -549,8 +573,13 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
+            // Without the API key the factory silently builds FakeEmbedder — see the
+            // param description. Endpoint alone is NOT enough; both are required.
+            { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
+            { name: 'AZURE_DOCUMENTINTELLIGENCE_ENDPOINT', value: azureDocumentIntelligenceEndpoint }
+            { name: 'AZURE_DOCUMENTINTELLIGENCE_API_KEY', secretRef: 'docintel-api-key' }
             { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
             { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
@@ -627,6 +656,10 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'qdrant-api-key'
           value: qdrantApiKey
         }
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAIApiKey
+        }
       ]
     }
     template: {
@@ -650,6 +683,9 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
+            // Without the API key the factory silently builds FakeEmbedder AND
+            // FakeGrounder — queries "work" and return fake answers over fake vectors.
+            { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
             { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
             { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
             { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }

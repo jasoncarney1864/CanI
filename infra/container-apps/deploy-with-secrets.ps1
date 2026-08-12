@@ -48,10 +48,23 @@ try {
     $postgresPassword = az keyvault secret show --vault-name $KeyVaultName --name postgres-password --query value -o tsv
     $qdrantApiKey = az keyvault secret show --vault-name $KeyVaultName --name qdrant-api-key --query value -o tsv
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($qdrantApiKey)) {
-        throw "Key Vault secret 'qdrant-api-key' is missing or empty. Create it first: az keyvault secret set --vault-name $KeyVaultName --name qdrant-api-key --value '<key from Qdrant Cloud>'"
+        throw "Key Vault secret 'qdrant-api-key' is missing or empty. Create it first: az keyvault secret set --vault-name $KeyVaultName --name qdrant-api-key --value '<key from Qdrant Cloud>' --output none"
     }
-    
-    Write-Host "✅ Retrieved all 6 secrets successfully" -ForegroundColor Green
+    # These two were dropped in the AKS->Container Apps migration and nothing errored:
+    # the missing OpenAI key silently swapped in FakeEmbedder/FakeGrounder, and the
+    # missing Document Intelligence key permanently failed every OCR ingestion job
+    # (both discovered 2026-08-12 during the post-corruption re-ingest). Hard-fail here
+    # if absent — a deploy without them produces a system that lies.
+    $azureOpenAIApiKey = az keyvault secret show --vault-name $KeyVaultName --name azure-openai-api-key --query value -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($azureOpenAIApiKey)) {
+        throw "Key Vault secret 'azure-openai-api-key' is missing or empty. Without it the workers run fake AI providers."
+    }
+    $azureDocumentIntelligenceApiKey = az keyvault secret show --vault-name $KeyVaultName --name azure-documentintelligence-api-key --query value -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($azureDocumentIntelligenceApiKey)) {
+        throw "Key Vault secret 'azure-documentintelligence-api-key' is missing or empty. Without it OCR ingestion fails permanently."
+    }
+
+    Write-Host "✅ Retrieved all 8 secrets successfully" -ForegroundColor Green
 } catch {
     Write-Error "Failed to retrieve secrets: $_"
     exit 1
@@ -70,6 +83,8 @@ $secureSessionSecret = ConvertTo-SecureString -String $sessionSecret -AsPlainTex
 $secureStorageConnectionString = ConvertTo-SecureString -String $storageConnectionString -AsPlainText -Force
 $secureEntraClientSecret = ConvertTo-SecureString -String $entraClientSecret -AsPlainText -Force
 $secureQdrantApiKey = ConvertTo-SecureString -String $qdrantApiKey -AsPlainText -Force
+$secureAzureOpenAIApiKey = ConvertTo-SecureString -String $azureOpenAIApiKey -AsPlainText -Force
+$secureAzureDocumentIntelligenceApiKey = ConvertTo-SecureString -String $azureDocumentIntelligenceApiKey -AsPlainText -Force
 
 # Clear plaintext secrets from memory
 $postgresPassword = $null
@@ -78,6 +93,8 @@ $sessionSecret = $null
 $storageConnectionString = $null
 $entraClientSecret = $null
 $qdrantApiKey = $null
+$azureOpenAIApiKey = $null
+$azureDocumentIntelligenceApiKey = $null
 
 Write-Host "🚀 Deploying Container Apps..." -ForegroundColor Cyan
 
@@ -91,6 +108,8 @@ $deployParams = @{
     StorageConnectionString = $secureStorageConnectionString
     EntraClientSecret = $secureEntraClientSecret
     QdrantApiKey = $secureQdrantApiKey
+    AzureOpenAIApiKey = $secureAzureOpenAIApiKey
+    AzureDocumentIntelligenceApiKey = $secureAzureDocumentIntelligenceApiKey
 }
 
 if ($WhatIf) { $deployParams['WhatIf'] = $true }
