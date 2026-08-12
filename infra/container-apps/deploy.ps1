@@ -10,6 +10,8 @@ param(
     [securestring]$StorageConnectionString,
     [securestring]$EntraClientSecret,
     [securestring]$QdrantApiKey,
+    [securestring]$AzureOpenAIApiKey,
+    [securestring]$AzureDocumentIntelligenceApiKey,
     [string]$AcrLoginServer = "canishared19088c8d54.azurecr.io",
     [switch]$WhatIf,
     [switch]$SkipValidation
@@ -49,6 +51,16 @@ if (-not $EntraClientSecret) {
 if (-not $QdrantApiKey) {
     Write-Host "`n🔑 Qdrant Cloud API key required for deployment" -ForegroundColor Yellow
     $QdrantApiKey = Read-Host "Enter QDRANT_API_KEY" -AsSecureString
+}
+
+if (-not $AzureOpenAIApiKey) {
+    Write-Host "`n🔑 Azure OpenAI API key required for deployment (without it the workers silently run fake providers)" -ForegroundColor Yellow
+    $AzureOpenAIApiKey = Read-Host "Enter AZURE_OPENAI_API_KEY" -AsSecureString
+}
+
+if (-not $AzureDocumentIntelligenceApiKey) {
+    Write-Host "`n🔑 Azure Document Intelligence API key required for deployment (OCR fails permanently without it)" -ForegroundColor Yellow
+    $AzureDocumentIntelligenceApiKey = Read-Host "Enter AZURE_DOCUMENTINTELLIGENCE_API_KEY" -AsSecureString
 }
 
 # Check Azure CLI login
@@ -131,6 +143,8 @@ $placeholderParams = @(
     "storageConnectionString=DefaultEndpointsProtocol=https;AccountName=placeholder;AccountKey=$(New-PlaceholderSecret -Length 32);EndpointSuffix=core.windows.net"
     "entraClientSecret=$(New-PlaceholderSecret -Length 40)"
     "qdrantApiKey=$(New-PlaceholderSecret -Length 32)"
+    "azureOpenAIApiKey=$(New-PlaceholderSecret -Length 32)"
+    "azureDocumentIntelligenceApiKey=$(New-PlaceholderSecret -Length 32)"
 )
 
 # Validation
@@ -207,6 +221,8 @@ $sessionSecretPlain = ConvertFrom-SecureStringToPlainText $SessionSecret
 $storageConnectionStringPlain = ConvertFrom-SecureStringToPlainText $StorageConnectionString
 $entraClientSecretPlain = ConvertFrom-SecureStringToPlainText $EntraClientSecret
 $qdrantApiKeyPlain = ConvertFrom-SecureStringToPlainText $QdrantApiKey
+$azureOpenAIApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureOpenAIApiKey
+$azureDocumentIntelligenceApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureDocumentIntelligenceApiKey
 
 try {
     $deployment = az deployment group create `
@@ -219,6 +235,8 @@ try {
         --parameters storageConnectionString=$storageConnectionStringPlain `
         --parameters entraClientSecret=$entraClientSecretPlain `
         --parameters qdrantApiKey=$qdrantApiKeyPlain `
+        --parameters azureOpenAIApiKey=$azureOpenAIApiKeyPlain `
+        --parameters azureDocumentIntelligenceApiKey=$azureDocumentIntelligenceApiKeyPlain `
         --parameters $imageParams `
         --name $deploymentName `
         --output json | ConvertFrom-Json
@@ -235,6 +253,8 @@ try {
     $storageConnectionStringPlain = $null
     $entraClientSecretPlain = $null
     $qdrantApiKeyPlain = $null
+    $azureOpenAIApiKeyPlain = $null
+    $azureDocumentIntelligenceApiKeyPlain = $null
 }
 
 Write-Host "✅ Deployment completed successfully!" -ForegroundColor Green
