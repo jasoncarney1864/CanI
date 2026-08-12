@@ -22,8 +22,8 @@ from cani_shared.middleware import TraceIdMiddleware
 from cani_shared.models import Citation, DocumentChunk, DocumentText, RetrievalAnswer, Verdict
 from cani_shared.providers.factory import build_chat_grounder, build_embedder
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
-from cani_shared.vector.qdrant_client import OwnerScopedQdrant
-from fastapi import Depends, FastAPI
+from cani_shared.vector.qdrant_client import OwnerScopedQdrant, retry_transient
+from fastapi import Depends, FastAPI, Response
 from pydantic import BaseModel
 
 CANDIDATE_POOL_SIZE = 8
@@ -101,19 +101,25 @@ def retrieve(
     principal: RequestPrincipal = Depends(get_principal),
     _: RequestPrincipal = Depends(require_docs_entitlement),
 ) -> RetrievalAnswer:
-    ensure_qdrant_ready()  # Lazy-initialize on first request
     qdrant: OwnerScopedQdrant = app.state.qdrant
     query_vector = embedder.embed_batch([payload.question])[0]
 
     # Owner filter is mandatory and enforced inside OwnerScopedQdrant.search — it raises
     # rather than silently searching unscoped, so there is no way to reach this line
     # having queried across owners.
-    candidates = qdrant.search(
-        owner_user_id=principal.user_id,
-        query_vector=query_vector,
-        limit=CANDIDATE_POOL_SIZE,
-        spoke=payload.spoke,
-    )
+    def _search():
+        ensure_qdrant_ready()  # Lazy-initialize on first request
+        return qdrant.search(
+            owner_user_id=principal.user_id,
+            query_vector=query_vector,
+            limit=CANDIDATE_POOL_SIZE,
+            spoke=payload.spoke,
+        )
+
+    # Retry wraps init + search together: on a transient failure the readiness flag is
+    # still unset, so the retry re-runs the collection check too (2026-08-09 sitrep —
+    # ingestion got this hardening in d7f716d; retrieval never did).
+    candidates = retry_transient(_search)
 
     # Lightweight rerank (§8.8, §8.15 open question): candidates already come back score
     # sorted from Qdrant; truncate to the bounded context window rather than running a
@@ -191,7 +197,9 @@ def document_chunks(
     called by docs-api. Owner-scoped: the Qdrant read filters on the caller's own id and
     re-verifies it, so it cannot assemble another owner's document even if asked."""
     qdrant: OwnerScopedQdrant = app.state.qdrant
-    payloads = qdrant.chunks_for_document(owner_user_id=principal.user_id, document_id=document_id)
+    payloads = retry_transient(
+        lambda: qdrant.chunks_for_document(owner_user_id=principal.user_id, document_id=document_id)
+    )
 
     pool = get_pool(settings.postgres_dsn)
     with pool.connection() as conn:
@@ -218,4 +226,22 @@ def document_chunks(
 
 @app.get("/healthz")
 def healthz() -> dict:
+    """Liveness only: is the process up. Deliberately does NOT touch Qdrant — a dead
+    dependency should fail /readyz (stop routing traffic), not /healthz (restart the
+    container, which cannot fix Qdrant and would just add a restart loop on top)."""
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz(response: Response) -> dict:
+    """Readiness that exercises the dependency. During the 2026-08-09 outage /healthz
+    returned 200 for ~2 days of total query failure because nothing on the health path
+    touched Qdrant; the CD smoke check greenlit a deploy that could not answer a single
+    query. This is the probe that would have caught it."""
+    try:
+        app.state.qdrant.ping()
+    except Exception as exc:  # noqa: BLE001 - any failure here means "not ready"
+        logger.warning("readyz_qdrant_unreachable", error=f"{type(exc).__name__}: {exc}")
+        response.status_code = 503
+        return {"status": "unready", "qdrant": "unreachable"}
+    return {"status": "ready", "qdrant": "ok"}
