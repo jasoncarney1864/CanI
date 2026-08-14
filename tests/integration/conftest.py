@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import secrets
 import subprocess
 import time
@@ -21,17 +22,43 @@ RETRIEVAL_URL = "http://localhost:8003"
 
 STARTUP_TIMEOUT_SECONDS = 240
 
+# Public-law corpus (docs/20 §20.11 phase-2 gate: "enable in dev"). The checked-in
+# .env.example default stays empty (ships dark everywhere until an environment opts in);
+# this only turns it on inside the local/CI .env so retrieval-worker constructs
+# PublicLawQdrant and test_public_law_retrieval.py has something to seed via law_refresh's
+# FakeLawFetcher. CANI_LAW_FETCH_ENABLED stays false — fetching is a separate concern from
+# whether the collection/search path is exercised.
+_LAW_COLLECTION_KEY = "CANI_LAW_QDRANT_COLLECTION"
+_LAW_COLLECTION_LINE_RE = re.compile(rf"^{_LAW_COLLECTION_KEY}=(.*)$", re.MULTILINE)
+
 
 def _ensure_env_file() -> None:
     env_path = REPO_ROOT / ".env"
-    if env_path.exists():
-        return
-    example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-    generated = example.replace(
-        "CANI_TOKEN_SIGNING_SECRET=", f"CANI_TOKEN_SIGNING_SECRET={secrets.token_urlsafe(48)}"
-    )
-    generated = generated.replace("CANI_SESSION_SECRET=", f"CANI_SESSION_SECRET={secrets.token_urlsafe(48)}")
-    env_path.write_text(generated, encoding="utf-8")
+    if not env_path.exists():
+        example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+        generated = example.replace(
+            "CANI_TOKEN_SIGNING_SECRET=", f"CANI_TOKEN_SIGNING_SECRET={secrets.token_urlsafe(48)}"
+        )
+        generated = generated.replace(
+            "CANI_SESSION_SECRET=", f"CANI_SESSION_SECRET={secrets.token_urlsafe(48)}"
+        )
+        env_path.write_text(generated, encoding="utf-8")
+
+    # Whether freshly generated above or already present (e.g. a developer's own .env with
+    # real Azure keys, possibly predating this key's introduction to .env.example entirely),
+    # turn on only a still-blank/missing law-collection value — every other setting,
+    # including real credentials, is left exactly as the developer configured it.
+    content = env_path.read_text(encoding="utf-8")
+    match = _LAW_COLLECTION_LINE_RE.search(content)
+    if match and match.group(1).strip():
+        return  # developer already configured a real value; leave it alone
+    if match:
+        content = _LAW_COLLECTION_LINE_RE.sub(f"{_LAW_COLLECTION_KEY}=cani_law_test", content, count=1)
+    else:
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"{_LAW_COLLECTION_KEY}=cani_law_test\n"
+    env_path.write_text(content, encoding="utf-8")
 
 
 def _docker_daemon_reachable() -> bool:
@@ -97,6 +124,29 @@ def docker_stack():
         yield
     finally:
         subprocess.run(["docker", "compose", "down", "-v"], cwd=REPO_ROOT, check=False)
+
+
+@pytest.fixture(scope="session")
+def law_corpus_seeded(docker_stack):
+    """Runs the public-law refresh job once per session (docs/20 §20.7/§20.10) so the
+    dual-corpus integration test has NRS 116 content to search. Uses the same fake fetcher
+    + fake embedder as unit tests (CANI_LAW_FETCH_ENABLED=false and no Azure OpenAI keys in
+    the generated .env) — deterministic, no network, no live credentials required."""
+    subprocess.run(
+        [
+            "docker",
+            "compose",
+            "run",
+            "--rm",
+            "ingestion-worker",
+            "python",
+            "-m",
+            "ingestion_worker_app.law_refresh",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    yield
 
 
 @pytest.fixture
