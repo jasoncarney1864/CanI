@@ -95,18 +95,28 @@ class ChunkManifest(BaseModel):
 
 
 class Citation(BaseModel):
-    document_id: str
-    document_title: str
-    page_start: int
-    page_end: int
-    section_label: str | None
+    # Discriminator (docs/20-public-law-corpus-design.md §20.8). Defaults to
+    # "user_document" so every payload built before this field existed still validates.
+    source_kind: str = "user_document"
+    # User-document fields. Optional (rather than the original hard-required) because a
+    # law citation carries none of them — a statute has no owning document or page range.
+    document_id: str | None = None
+    document_title: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    section_label: str | None = None
     chunk_id: str
     # Verbatim text of the cited chunk, so the client Document Viewer can render the
     # source passage and spotlight it (docs/13 §5 "Spotlight" layout). Optional: absent
     # when a chunk payload predates snippet capture. This can never contain another
     # owner's content — citations are built only from the caller's own owner-filtered
-    # chunks (see retrieval-worker OwnerScopedQdrant enforcement).
+    # chunks (see retrieval-worker OwnerScopedQdrant enforcement). For a law citation this
+    # snippet IS the verbatim quoted statute text (§20.1 principle 1).
     snippet: str | None = None
+    # Law-corpus fields (absent on user-document citations).
+    citation_ref: str | None = None  # 'NRS 116.31065'
+    source_url: str | None = None
+    law_fetched_at: datetime | None = None  # honesty about currency: "text as of <date>"
 
 
 class Verdict(BaseModel):

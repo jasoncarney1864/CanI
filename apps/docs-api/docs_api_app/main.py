@@ -80,6 +80,11 @@ class UploadResponse(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     spoke: str = "General"
+    # Pass-through to retrieval-worker's RetrieveRequest (docs/20 §20.8). The Phase 3
+    # state picker will populate jurisdictions from the browser; until then None on both
+    # lets retrieval-worker apply its own spoke-based / config-based defaults.
+    include_public_law: bool | None = None
+    jurisdictions: list[str] | None = None
 
 
 @app.post("/documents", response_model=UploadResponse)
@@ -199,7 +204,12 @@ async def query(
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{settings.retrieval_worker_url}/retrieve",
-            json={"question": payload.question, "spoke": payload.spoke},
+            json={
+                "question": payload.question,
+                "spoke": payload.spoke,
+                "include_public_law": payload.include_public_law,
+                "jurisdictions": payload.jurisdictions,
+            },
             headers={"Authorization": f"Bearer {internal_token}"},
         )
     if response.status_code != 200:
