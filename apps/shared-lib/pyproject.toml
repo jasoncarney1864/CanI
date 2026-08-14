@@ -20,6 +20,10 @@ dependencies = [
     "pypdf>=4.2",
     "tiktoken>=0.7",
     "structlog>=24.1",
+    "httpx>=0.27",
+    # Public-law HTML parsing (docs/20 §20.5.1) — pure Python, no native wheels, so no
+    # Windows-on-ARM venv hazard (see CLAUDE.md gotcha on grpcio/cryptography).
+    "beautifulsoup4>=4.12",
     # Telemetry (docs/13). Inactive unless APPLICATIONINSIGHTS_CONNECTION_STRING is set.
     "azure-monitor-opentelemetry>=1.6",
     "opentelemetry-instrumentation-fastapi>=0.48b0",

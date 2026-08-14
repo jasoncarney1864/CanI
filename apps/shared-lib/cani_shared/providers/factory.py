@@ -8,6 +8,8 @@ Azure OpenAI / Document Intelligence path end-to-end.
 from __future__ import annotations
 
 from cani_shared.config import Settings
+from cani_shared.law.fetcher import FakeLawFetcher, LawSourceFetcher
+from cani_shared.law.sources import SOURCE_REGISTRY
 from cani_shared.providers.embedder import AzureOpenAIEmbedder, Embedder, FakeEmbedder
 from cani_shared.providers.extractor import NativeThenOcrExtractor, TextExtractor
 from cani_shared.providers.grounder import AzureOpenAIChatGrounder, ChatGrounder, FakeGrounder
@@ -54,3 +56,20 @@ def build_malware_scanner(settings: Settings) -> MalwareScanner:
     if settings.clamav_configured:
         return ClamAVScanner(host=settings.clamav_host, port=settings.clamav_port)
     return EicarSignatureScanner()
+
+
+def build_law_fetchers(settings: Settings) -> dict[str, LawSourceFetcher]:
+    """Real HTTP fetchers when external fetching is enabled; deterministic fakes otherwise,
+    so CI and unit tests never touch government websites.
+
+    Unlike every other builder in this module, real-vs-fake here is NOT inferred from
+    config presence — there's no credential to check for (NRS is an unauthenticated public
+    page), so an inference-based check would have nothing to fail on and would default to
+    fake even in prod. That is exactly the shape of the fakes-in-prod incident (CLAUDE.md):
+    nothing errors, so nothing gets noticed. `law_fetch_enabled` exists specifically to be
+    an explicit switch someone has to flip on purpose, and the refresh job logs
+    fetcher_kind=real|fake per run so a silent "still fake" state is visible in logs too.
+    """
+    if settings.law_fetch_enabled:
+        return {key: factory() for key, factory in SOURCE_REGISTRY.items()}
+    return {key: FakeLawFetcher(key) for key in SOURCE_REGISTRY}

@@ -134,6 +134,16 @@ class Settings(BaseSettings):
         """False in environments (e.g. CI) where real Azure AI calls should be skipped/faked."""
         return bool(self.azure_openai_endpoint and self.azure_openai_api_key)
 
+    # Public-law corpus (docs/20-public-law-corpus-design.md §20.9). law_fetch_enabled is
+    # deliberately explicit rather than inferred from config presence — there are no
+    # credentials to infer from (NRS is an unauthenticated public page), and the
+    # fakes-in-prod incident (CLAUDE.md) happened precisely because an absent-config check
+    # silently chose "fake" with no flag to catch in review. law_qdrant_collection empty
+    # means the feature ships dark: retrieval-worker never constructs PublicLawQdrant.
+    law_fetch_enabled: bool = Field(default=False, alias="CANI_LAW_FETCH_ENABLED")
+    law_qdrant_collection: str = Field(default="", alias="CANI_LAW_QDRANT_COLLECTION")
+    law_default_jurisdictions: str = Field(default="us-nv", alias="CANI_LAW_DEFAULT_JURISDICTIONS")
+
 
 @lru_cache
 def get_settings() -> Settings:

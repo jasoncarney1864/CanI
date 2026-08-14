@@ -1,10 +1,17 @@
-"""Guards the single chokepoint for tenant isolation.
+"""Guards the chokepoints for Qdrant isolation.
 
-Every Qdrant call must go through ``OwnerScopedQdrant``, which is the only place the
-``owner_id`` payload filter is applied. Similarity search has no notion of ownership: a
-query vector matches its nearest neighbours regardless of who uploaded them, so that
-filter is the entire isolation guarantee. A raw ``QdrantClient`` constructed anywhere
-else bypasses it, and nothing but this test would catch that in review.
+Every user-corpus Qdrant call must go through ``OwnerScopedQdrant``, which is the only
+place the ``owner_id`` payload filter is applied. Similarity search has no notion of
+ownership: a query vector matches its nearest neighbours regardless of who uploaded them,
+so that filter is the entire isolation guarantee for user documents. A raw ``QdrantClient``
+constructed anywhere else bypasses it, and nothing but this test would catch that in review.
+
+``PublicLawQdrant`` (docs/20-public-law-corpus-design.md §20.3) is the one deliberate
+second exception: the public-law collection has no owner concept at all — it's a shared
+corpus, not user content — so there is nothing for it to bypass. It has its own analogous
+fail-closed guarantee (a mandatory jurisdiction filter instead of owner_id), guarded the
+same way by tests/unit/test_public_law_qdrant.py. Any *other* raw QdrantClient usage is
+still exactly the bug this test exists to catch.
 
 This is deliberately a build failure rather than a convention.
 """
@@ -16,7 +23,8 @@ import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WRAPPER = REPO_ROOT / "apps" / "shared-lib" / "cani_shared" / "vector" / "qdrant_client.py"
+_VECTOR_DIR = REPO_ROOT / "apps" / "shared-lib" / "cani_shared" / "vector"
+ALLOWED_WRAPPERS = (_VECTOR_DIR / "qdrant_client.py", _VECTOR_DIR / "public_law_client.py")
 SEARCH_ROOTS = ("apps", "scripts")
 
 # Vendored and generated trees. Walking apps/web/node_modules is both pointless and slow
@@ -72,18 +80,20 @@ def _imports_qdrant_sdk(path: Path) -> bool:
 
 
 def test_only_owner_scoped_wrapper_touches_the_qdrant_sdk() -> None:
-    wrapper = WRAPPER.resolve()
+    allowed = {w.resolve() for w in ALLOWED_WRAPPERS}
     offenders = sorted(
         p.relative_to(REPO_ROOT).as_posix()
         for p in _python_files()
-        if p.resolve() != wrapper and _imports_qdrant_sdk(p)
+        if p.resolve() not in allowed and _imports_qdrant_sdk(p)
     )
     assert offenders == [], (
-        "These modules import the Qdrant SDK directly, bypassing OwnerScopedQdrant and the "
-        "owner_id filter that is the whole of our tenant isolation: " + ", ".join(offenders)
+        "These modules import the Qdrant SDK directly, bypassing OwnerScopedQdrant/"
+        "PublicLawQdrant and the filter that is the whole of our tenant/jurisdiction "
+        "isolation: " + ", ".join(offenders)
     )
 
 
 def test_the_wrapper_itself_is_where_we_think_it_is() -> None:
-    # If the wrapper moves, the test above silently stops guarding anything.
-    assert WRAPPER.is_file(), f"expected the Qdrant wrapper at {WRAPPER}"
+    # If a wrapper moves, the test above silently stops guarding anything.
+    for wrapper in ALLOWED_WRAPPERS:
+        assert wrapper.is_file(), f"expected the Qdrant wrapper at {wrapper}"

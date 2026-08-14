@@ -27,6 +27,8 @@ This document is split into one file per section. Start with [Vision & goals](01
 16. [Roadmap & phasing](16-roadmap-and-phasing.md)
 17. [Sprint 1 execution board](17-sprint-1-execution-board.md)
 18. [Sprint 2 operational readiness board](18-sprint-2-operational-readiness-board.md)
+19. [Sprint 3 reachability board](19-sprint-3-reachability-board.md)
+20. [Public-law corpus design](20-public-law-corpus-design.md)
 
 Appendices:
 - [Appendix A — Glossary](appendix-a-glossary.md)
