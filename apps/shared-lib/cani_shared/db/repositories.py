@@ -26,6 +26,9 @@ from cani_shared.models import (
     DocumentVersion,
     IngestionJob,
     IngestionStage,
+    LawChunkManifest,
+    LawSource,
+    LawSourceVersion,
 )
 
 
@@ -457,6 +460,124 @@ def insert_chunk_manifests(conn: Connection, owner_user_id: str, chunks: list[Ch
                     c.qdrant_point_id,
                 ),
             )
+        conn.commit()
+
+
+# --- Public-law corpus (docs/20-public-law-corpus-design.md §20.4) --------------------
+#
+# Deliberately NOT owner-scoped — this is the first schema in the system that isn't. It's a
+# shared registry and ledger, not user data, so none of these take owner_user_id.
+
+
+def list_enabled_law_sources(conn: Connection) -> list[LawSource]:
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM law_sources WHERE enabled = TRUE ORDER BY source_key")
+        return [LawSource.model_validate(r) for r in cur.fetchall()]
+
+
+def get_latest_law_source_version(conn: Connection, law_source_id: str) -> LawSourceVersion | None:
+    """The refresh job's diff baseline (§20.7 step 2): compare this version's checksum
+    against a fresh fetch to decide whether the source changed at all."""
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM law_source_versions WHERE law_source_id = %s ORDER BY fetched_at DESC LIMIT 1",
+            (law_source_id,),
+        )
+        row = cur.fetchone()
+        return LawSourceVersion.model_validate(row) if row else None
+
+
+def create_law_source_version(
+    conn: Connection,
+    law_source_id: str,
+    *,
+    blob_uri: str,
+    checksum: str,
+    section_count: int | None,
+    status: str,
+    law_source_version_id: str | None = None,
+) -> LawSourceVersion:
+    _row_conn(conn)
+    law_source_version_id = law_source_version_id or str(uuid.uuid4())
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO law_source_versions (law_source_version_id, law_source_id, fetched_at,
+                                              blob_uri, checksum, section_count, status)
+            VALUES (%s, %s, now(), %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (law_source_version_id, law_source_id, blob_uri, checksum, section_count, status),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return LawSourceVersion.model_validate(row)
+
+
+def update_law_source_version_status(conn: Connection, law_source_version_id: str, status: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE law_source_versions SET status = %s WHERE law_source_version_id = %s",
+            (status, law_source_version_id),
+        )
+        conn.commit()
+
+
+def get_latest_law_chunk_manifests(conn: Connection, law_source_id: str) -> list[LawChunkManifest]:
+    """Current manifest rows for a source — the diff baseline for the next refresh
+    (§20.7 step 5). Rows are wholesale-replaced by replace_law_chunk_manifests on every
+    refresh, so 'latest' here is simply every row currently on file for this source."""
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM law_chunk_manifests WHERE law_source_id = %s ORDER BY chunk_index",
+            (law_source_id,),
+        )
+        return [LawChunkManifest.model_validate(r) for r in cur.fetchall()]
+
+
+def replace_law_chunk_manifests(conn: Connection, law_source_id: str, chunks: list[LawChunkManifest]) -> None:
+    """Wholesale replace: delete every existing manifest row for this source and insert the
+    caller's complete current-state list (§20.7 step 6). The caller is responsible for
+    carrying forward unchanged rows (same chunk_id/qdrant_point_id) rather than minting new
+    ones — this function doesn't diff, it just makes Postgres match what was passed."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM law_chunk_manifests WHERE law_source_id = %s", (law_source_id,))
+        for c in chunks:
+            cur.execute(
+                """
+                INSERT INTO law_chunk_manifests (chunk_id, law_source_version_id, law_source_id, citation,
+                                                  heading, source_url, chunk_index, token_count,
+                                                  content_sha256, embedding_version, qdrant_point_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    c.chunk_id,
+                    c.law_source_version_id,
+                    c.law_source_id,
+                    c.citation,
+                    c.heading,
+                    c.source_url,
+                    c.chunk_index,
+                    c.token_count,
+                    c.content_sha256,
+                    c.embedding_version,
+                    c.qdrant_point_id,
+                ),
+            )
+        conn.commit()
+
+
+def touch_law_source_checked(conn: Connection, law_source_id: str) -> None:
+    """Stamped even when a fetch produced no change, so 'is the refresh job alive' is
+    observable from SQL (§20.4) rather than inferable only from version-row timestamps."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE law_sources SET last_checked_at = now() WHERE law_source_id = %s",
+            (law_source_id,),
+        )
         conn.commit()
 
 

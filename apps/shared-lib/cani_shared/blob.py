@@ -16,8 +16,16 @@ from azure.storage.blob import BlobServiceClient
 RAW_DOCUMENTS_CONTAINER = "raw-documents"
 EXTRACTED_TEXT_CONTAINER = "extracted-text"
 INGESTION_ARTIFACTS_CONTAINER = "ingestion-artifacts"
+# Raw law-source snapshots (docs/20-public-law-corpus-design.md §20.4), path
+# {source_key}/{law_source_version_id}/raw.{ext}. Not owner-scoped — shared corpus.
+PUBLIC_LAW_SNAPSHOTS_CONTAINER = "public-law-snapshots"
 
-_ALL_CONTAINERS = (RAW_DOCUMENTS_CONTAINER, EXTRACTED_TEXT_CONTAINER, INGESTION_ARTIFACTS_CONTAINER)
+_ALL_CONTAINERS = (
+    RAW_DOCUMENTS_CONTAINER,
+    EXTRACTED_TEXT_CONTAINER,
+    INGESTION_ARTIFACTS_CONTAINER,
+    PUBLIC_LAW_SNAPSHOTS_CONTAINER,
+)
 
 
 class BlobStore:

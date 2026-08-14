@@ -149,3 +149,56 @@ class DocumentText(BaseModel):
     document_id: str
     title: str
     chunks: list[DocumentChunk]
+
+
+class LawSourceKind(StrEnum):
+    STATE_STATUTE = "state_statute"
+    COUNTY_CODE = "county_code"
+    FEDERAL_STATUTE = "federal_statute"
+    FEDERAL_REGULATION = "federal_regulation"
+
+
+class LawSource(BaseModel):
+    """Registry row for a fetchable public-law source (docs/20 §20.4). Deliberately not
+    owner-scoped — this is a shared registry, not user data."""
+
+    law_source_id: str
+    source_key: str
+    display_name: str
+    source_kind: LawSourceKind
+    jurisdiction: str
+    citation_prefix: str
+    fetch_url: str
+    license_note: str
+    enabled: bool
+    last_checked_at: datetime | None = None
+    created_at: datetime
+
+
+class LawSourceVersion(BaseModel):
+    """One successful fetch snapshot of a LawSource (docs/20 §20.4)."""
+
+    law_source_version_id: str
+    law_source_id: str
+    fetched_at: datetime
+    blob_uri: str
+    checksum: str
+    section_count: int | None = None
+    status: str
+
+
+class LawChunkManifest(BaseModel):
+    """Law-corpus analogue of ChunkManifest (docs/20 §20.4) — the Postgres ledger of what is
+    currently in the public-law Qdrant collection, keyed by citation rather than page range."""
+
+    chunk_id: str
+    law_source_version_id: str
+    law_source_id: str
+    citation: str
+    heading: str | None = None
+    source_url: str
+    chunk_index: int
+    token_count: int
+    content_sha256: str
+    embedding_version: str
+    qdrant_point_id: str
