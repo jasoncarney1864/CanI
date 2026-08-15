@@ -58,3 +58,26 @@ def test_azure_ai_providers_not_configured_without_keys():
 def test_azure_ai_providers_configured_with_keys():
     settings = _settings(AZURE_OPENAI_ENDPOINT="https://example.openai.azure.com", AZURE_OPENAI_API_KEY="key")
     assert settings.azure_ai_providers_configured is True
+
+
+def test_liveavatar_not_configured_by_default():
+    settings = _settings()
+    assert settings.liveavatar_configured is False
+
+
+def test_liveavatar_not_configured_with_only_api_key():
+    settings = _settings(LIVEAVATAR_API_KEY="fake-key-not-real")
+    assert settings.liveavatar_configured is False
+
+
+def test_liveavatar_not_configured_with_only_avatar_id():
+    settings = _settings(LIVEAVATAR_AVATAR_ID="3c90c3cc-0d44-4b50-8888-8dd25736052a")
+    assert settings.liveavatar_configured is False
+
+
+def test_liveavatar_configured_with_key_and_avatar_id():
+    settings = _settings(
+        LIVEAVATAR_API_KEY="fake-key-not-real",
+        LIVEAVATAR_AVATAR_ID="3c90c3cc-0d44-4b50-8888-8dd25736052a",
+    )
+    assert settings.liveavatar_configured is True
