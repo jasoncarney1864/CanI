@@ -52,6 +52,21 @@ class Settings(BaseSettings):
 
     retrieval_worker_url: str = Field(default="http://retrieval-worker:8003", alias="RETRIEVAL_WORKER_URL")
 
+    # LiveAvatar (HeyGen) streaming avatar — voices RAG answers on the website via
+    # WebRTC, Lite integration mode (bring-your-own-LLM, we only mint session tokens).
+    # Free tier: 10 credits, 2 min/session, 1 concurrency, watermarked. avatar_id is
+    # required by LiveAvatar's own session-token API — there's no sane default to ship,
+    # pick one from the LiveAvatar dashboard (app.liveavatar.com/developers). Both unset
+    # -> docs-api's /avatar/session-token endpoint returns 503 rather than crashing: no
+    # fake fallback here, unlike the other providers, because a placeholder session token
+    # can't open a real WebRTC session so failing loud is the only useful behavior.
+    liveavatar_api_key: str = Field(default="", alias="LIVEAVATAR_API_KEY")
+    liveavatar_avatar_id: str = Field(default="", alias="LIVEAVATAR_AVATAR_ID")
+
+    @property
+    def liveavatar_configured(self) -> bool:
+        return bool(self.liveavatar_api_key and self.liveavatar_avatar_id)
+
     # Malware scanning (docs/08 §8.11). When clamav_host is set, ingestion scans each file
     # against that clamd daemon before extraction; unset, dev/CI fall back to the
     # EICAR-only scanner (see cani_shared.providers.scanner). Never leaves a document

@@ -35,6 +35,7 @@ from cani_shared.telemetry import configure_telemetry, instrument_fastapi
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
+from docs_api_app.liveavatar import LiveAvatarError, create_session_token
 from docs_api_app.uploads import UploadValidationError, validate_upload
 
 configure_logging("docs-api")
@@ -75,6 +76,10 @@ class UploadResponse(BaseModel):
     document_id: str
     document_version_id: str
     status: str
+
+
+class AvatarSessionTokenResponse(BaseModel):
+    session_token: str
 
 
 class QueryRequest(BaseModel):
@@ -247,6 +252,31 @@ async def get_document_text(
         logger.error("document_text_upstream_error", status_code=response.status_code)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "retrieval service error")
     return DocumentText.model_validate(response.json())
+
+
+@app.post("/avatar/session-token", response_model=AvatarSessionTokenResponse)
+async def create_avatar_session_token(
+    principal: RequestPrincipal = Depends(get_principal),
+    _: RequestPrincipal = Depends(require_docs_entitlement),
+) -> AvatarSessionTokenResponse:
+    """Mints a short-lived LiveAvatar (HeyGen) session token server-side so
+    LIVEAVATAR_API_KEY never reaches the browser. The frontend uses the returned token to
+    open the WebRTC avatar session directly with LiveAvatar — that embed wiring doesn't
+    exist yet, this endpoint only covers the token exchange."""
+    if not settings.liveavatar_configured:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "avatar voicing is not configured on this deployment"
+        )
+    try:
+        token = await create_session_token(
+            api_key=settings.liveavatar_api_key, avatar_id=settings.liveavatar_avatar_id
+        )
+    except LiveAvatarError as exc:
+        logger.error(
+            "liveavatar_session_token_failed", error=str(exc), user_id_hash=hash_user_id(principal.user_id)
+        )
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "avatar service error") from exc
+    return AvatarSessionTokenResponse(session_token=token)
 
 
 @app.get("/healthz")
