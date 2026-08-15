@@ -40,7 +40,16 @@ function getRecognitionCtor(): RecognitionCtor | undefined {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
-export function useVoiceConversation({ onUtterance }: { onUtterance: (text: string) => void }) {
+export function useVoiceConversation({
+  onUtterance,
+  avatarSpeak,
+}: {
+  onUtterance: (text: string) => void;
+  /** When provided (a LiveAvatar session is connected), speaking routes through the
+   * avatar's own lip-synced voice instead of Azure/browser TTS, resolving once the
+   * avatar finishes. Omit (or pass undefined) to keep the existing audio-only path. */
+  avatarSpeak?: (text: string) => Promise<void>;
+}) {
   const [state, setState] = useState<VoiceState>("off");
   const [transcript, setTranscript] = useState("");
   // A user-visible reason the last voice attempt couldn't run (mic blocked/busy, no speech
@@ -183,9 +192,20 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
     (text: string) => {
       if (!activeRef.current) return;
 
-      // Try Azure Speech first, fall back to browser speechSynthesis if unavailable
       setState("speaking");
 
+      if (avatarSpeak) {
+        avatarSpeak(text)
+          .catch((error) => {
+            console.error("Avatar speak failed:", error);
+          })
+          .finally(() => {
+            if (activeRef.current) listen();
+          });
+        return;
+      }
+
+      // Try Azure Speech first, fall back to browser speechSynthesis if unavailable
       // Attempt to use Azure AI Speech neural TTS with 6 second timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -240,7 +260,7 @@ export function useVoiceConversation({ onUtterance }: { onUtterance: (text: stri
           speakWithBrowser(text);
         });
     },
-    [listen, speakWithBrowser],
+    [listen, speakWithBrowser, avatarSpeak],
   );
 
   // Teardown on unmount.
