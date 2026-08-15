@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SPOKES, type SpokeKey } from "@/lib/spokes";
 import type { Principal } from "@/lib/backendAuth";
 import type { DocumentText, RetrievalAnswer } from "@/lib/types";
 import { getDisplayName } from "@/lib/displayName";
+import { DEFAULT_JURISDICTION, getStoredJurisdiction, setStoredJurisdiction } from "@/lib/jurisdictions";
 import { LeftRail, type NavView } from "./LeftRail";
 import { ConversationPane } from "./ConversationPane";
 import { DocumentViewer } from "./DocumentViewer";
@@ -36,6 +37,17 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
   const [docLoading, setDocLoading] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [highlightChunkIds, setHighlightChunkIds] = useState<Set<string>>(new Set());
+  // Public-law jurisdiction (docs/20 §20.8 Q2): session-level, client-side only. Starts at
+  // the default so server and first client render match, then syncs from localStorage
+  // once mounted — avoids a hydration mismatch for what's currently a one-state picker.
+  const [jurisdiction, setJurisdiction] = useState<string>(DEFAULT_JURISDICTION);
+  useEffect(() => {
+    setJurisdiction(getStoredJurisdiction());
+  }, []);
+  function handleJurisdictionChange(slug: string) {
+    setJurisdiction(slug);
+    setStoredJurisdiction(slug);
+  }
   const spoke = SPOKES[spokeKey];
 
   // Returns the answer so the voice loop can speak it aloud (null on failure).
@@ -53,7 +65,16 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question, spoke: spokeMap[spoke.key] }),
+        body: JSON.stringify({
+          question,
+          spoke: spokeMap[spoke.key],
+          // Public-law dual-corpus retrieval (docs/20 §20.8): explicit rather than relying
+          // on the backend's spoke-based default, and the selected state is sent on every
+          // query per Q2 — retrieval-worker only actually uses it when include_public_law
+          // resolves true.
+          include_public_law: spoke.key === "legal",
+          jurisdictions: [jurisdiction],
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -111,6 +132,8 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
         user={user}
         activeView={view}
         onNavigate={setView}
+        jurisdiction={jurisdiction}
+        onJurisdictionChange={handleJurisdictionChange}
       />
 
       <div className="main">

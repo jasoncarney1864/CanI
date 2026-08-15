@@ -4,6 +4,7 @@ import type { Spoke, SpokeKey } from "@/lib/spokes";
 import type { Principal } from "@/lib/backendAuth";
 import { getDisplayName } from "@/lib/displayName";
 import { SpokeSwitcher } from "./SpokeSwitcher";
+import { JurisdictionPicker } from "./JurisdictionPicker";
 
 /** The primary views the rail switches between. */
 export type NavView = "workspace" | "upload" | "documents";
@@ -16,6 +17,9 @@ interface LeftRailProps {
   user: Principal;
   activeView: NavView;
   onNavigate: (view: NavView) => void;
+  /** Public-law jurisdiction selection (docs/20 §20.8 Q2) — only shown for the Legal spoke. */
+  jurisdiction: string;
+  onJurisdictionChange: (slug: string) => void;
 }
 
 const NAV_ITEMS: { glyph: string; label: string; view: NavView }[] = [
@@ -37,6 +41,8 @@ export function LeftRail({
   user,
   activeView,
   onNavigate,
+  jurisdiction,
+  onJurisdictionChange,
 }: LeftRailProps) {
   const displayName = getDisplayName(user.user_id, user.idp_subject, user.display_name);
   return (
@@ -75,6 +81,9 @@ export function LeftRail({
 
       <div className="rail__footer">
         {!collapsed && <SpokeSwitcher current={spoke.key} onChange={onSpokeChange} />}
+        {!collapsed && spoke.key === "legal" && (
+          <JurisdictionPicker value={jurisdiction} onChange={onJurisdictionChange} />
+        )}
         <div className="rail__profile" title={user.idp_subject}>
           <span className="rail__avatar" aria-hidden>
             {displayName.charAt(0).toUpperCase() || "◎"}

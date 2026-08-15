@@ -5,6 +5,7 @@ import type { RetrievalAnswer } from "@/lib/types";
 import type { Spoke } from "@/lib/spokes";
 import { useVoiceConversation, type VoiceState } from "@/lib/useVoiceConversation";
 import { VerdictBadge } from "./VerdictBadge";
+import { LawCitationCard } from "./LawCitationCard";
 
 interface ConversationPaneProps {
   answer: RetrievalAnswer | null;
@@ -109,22 +110,26 @@ export function ConversationPane({
 
         {!loading &&
           !error &&
-          answer?.citations.map((c) => (
-            <button
-              type="button"
-              className={`citation-card${
-                c.document_id === activeDocumentId ? " citation-card--active" : ""
-              }`}
-              key={c.chunk_id}
-              onClick={() => onSelectCitation(c.document_id)}
-              aria-label={`Open ${c.document_title} with the cited passage spotlighted`}
-            >
-              <span className="citation-card__title">{c.document_title}</span>
-              <span className="citation-card__loc">
-                {c.section_label} &middot; p.{c.page_start}
-              </span>
-            </button>
-          ))}
+          answer?.citations.map((c) =>
+            c.source_kind === "user_document" ? (
+              <button
+                type="button"
+                className={`citation-card${
+                  c.document_id === activeDocumentId ? " citation-card--active" : ""
+                }`}
+                key={c.chunk_id}
+                onClick={() => onSelectCitation(c.document_id)}
+                aria-label={`Open ${c.document_title} with the cited passage spotlighted`}
+              >
+                <span className="citation-card__title">{c.document_title}</span>
+                <span className="citation-card__loc">
+                  {c.section_label} &middot; p.{c.page_start}
+                </span>
+              </button>
+            ) : (
+              <LawCitationCard citation={c} key={c.chunk_id} />
+            ),
+          )}
       </div>
 
       <div className="presence" data-state={voice.state}>
