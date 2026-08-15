@@ -4,8 +4,10 @@ import { useCallback, useRef } from "react";
 import type { RetrievalAnswer } from "@/lib/types";
 import type { Spoke } from "@/lib/spokes";
 import { useVoiceConversation, type VoiceState } from "@/lib/useVoiceConversation";
+import { useLiveAvatar } from "@/lib/useLiveAvatar";
 import { VerdictBadge } from "./VerdictBadge";
 import { LawCitationCard } from "./LawCitationCard";
+import { AvatarStage } from "./AvatarStage";
 
 interface ConversationPaneProps {
   answer: RetrievalAnswer | null;
@@ -62,7 +64,9 @@ export function ConversationPane({
     }
   }, []);
 
-  const voice = useVoiceConversation({ onUtterance: handleUtterance });
+  const avatar = useLiveAvatar();
+  const avatarSpeak = avatar.state === "connected" ? avatar.speak : undefined;
+  const voice = useVoiceConversation({ onUtterance: handleUtterance, avatarSpeak });
   speakRef.current = voice.speak;
 
   const voiceActive = voice.state !== "off" && voice.state !== "unsupported";
@@ -131,6 +135,14 @@ export function ConversationPane({
             ),
           )}
       </div>
+
+      <AvatarStage
+        state={avatar.state}
+        error={avatar.error}
+        isStreamReady={avatar.isStreamReady}
+        attach={avatar.attach}
+        onToggle={avatar.state === "connected" ? avatar.stop : avatar.start}
+      />
 
       <div className="presence" data-state={voice.state}>
         <button
