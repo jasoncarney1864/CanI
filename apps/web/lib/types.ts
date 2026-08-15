@@ -4,17 +4,53 @@
 // apps/shared-lib/cani_shared/models.py so this prototype can be wired to the
 // live docs-api later with minimal churn.
 
-/** Mirrors cani_shared Citation. */
-export interface Citation {
+/** Mirrors cani_shared LawSourceKind plus "user_document" — the Citation discriminator
+ * (docs/20-public-law-corpus-design.md §20.8). */
+export type CitationSourceKind =
+  | "user_document"
+  | "state_statute"
+  | "county_code"
+  | "federal_statute"
+  | "federal_regulation";
+
+interface CitationBase {
+  chunk_id: string;
+  /** Verbatim text of the cited chunk. For a law citation this IS the quoted statute
+   * text (docs/20 §20.1 principle 1); for a document citation it powers the Document
+   * Viewer spotlight. */
+  snippet?: string | null;
+}
+
+/** A citation into the caller's own uploaded document — unchanged from pre-Phase-2. */
+export interface UserDocumentCitation extends CitationBase {
+  source_kind: "user_document";
   document_id: string;
   document_title: string;
   page_start: number;
   page_end: number;
-  section_label: string;
-  chunk_id: string;
-  /** Verbatim text of the cited chunk (from docs-api). Powers the source snippet + spotlight. */
-  snippet?: string | null;
+  section_label: string | null;
+  citation_ref?: null;
+  source_url?: null;
+  law_fetched_at?: null;
 }
+
+/** A citation into the shared public-law corpus (docs/20 §20.8) — no document/page to
+ * open, so the client renders citation_ref + verbatim quote + source link + fetched date
+ * instead of the Document Viewer button. */
+export interface LawCitation extends CitationBase {
+  source_kind: Exclude<CitationSourceKind, "user_document">;
+  document_id?: null;
+  document_title?: null;
+  page_start?: null;
+  page_end?: null;
+  section_label?: null;
+  citation_ref: string;
+  source_url: string;
+  law_fetched_at?: string | null;
+}
+
+/** Mirrors cani_shared Citation. Branch on source_kind — see docs/20 §20.11 Phase 3. */
+export type Citation = UserDocumentCitation | LawCitation;
 
 /** Mirrors cani_shared VerdictKind. */
 export type VerdictKind = "yes" | "yes_with_conditions" | "no" | "insufficient";

@@ -270,6 +270,33 @@ button {
   font-weight: 600;
 }
 
+/* ---- Jurisdiction picker (§20.8 Q2 "select your state") ------------------ */
+
+.jurisdiction-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jurisdiction-picker__label {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.jurisdiction-picker__select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--charcoal);
+  font-family: inherit;
+}
+
 /* ---- Top bar ------------------------------------------------------------- */
 
 .topbar {
@@ -463,6 +490,46 @@ button {
 
 .citation-card__loc {
   font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- Law/statute citation card (docs/20 §20.8, §20.11 Phase 3) ----------- */
+/* Not a button — there's no document to open, so the whole card stays static; only the
+   source link inside is interactive. */
+
+.citation-card--law {
+  cursor: default;
+}
+
+.citation-card--law:hover {
+  background: color-mix(in srgb, var(--brand-accent) 6%, #fff);
+  transform: none;
+}
+
+.citation-card__quote {
+  margin: 4px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  font-family: var(--font-content), Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--charcoal);
+}
+
+.citation-card__link {
+  color: var(--brand-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.citation-card__link:hover {
+  text-decoration: underline;
+}
+
+/* Q3 (decided): a quiet per-citation date stamp is the whole staleness story — no
+   escalating warning colour or icon here, just muted text matching citation-card__loc. */
+.citation-card__asof {
   color: var(--muted);
 }
 
