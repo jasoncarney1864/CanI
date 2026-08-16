@@ -14,6 +14,7 @@ param(
     [securestring]$AzureDocumentIntelligenceApiKey,
     [securestring]$LiveAvatarApiKey,
     [securestring]$LiveAvatarAvatarId,
+    [securestring]$AzureSpeechApiKey,
     [string]$AcrLoginServer = "canishared19088c8d54.azurecr.io",
     [switch]$WhatIf,
     [switch]$SkipValidation
@@ -70,6 +71,11 @@ if (-not $AzureDocumentIntelligenceApiKey) {
 # this doesn't prompt or hard-fail like the required secrets above.
 if (-not $LiveAvatarApiKey) { $LiveAvatarApiKey = ConvertTo-SecureString -String "" -AsPlainText -Force }
 if (-not $LiveAvatarAvatarId) { $LiveAvatarAvatarId = ConvertTo-SecureString -String "" -AsPlainText -Force }
+
+# Same non-fatal treatment as LiveAvatar above — an empty value here reproduces the
+# existing 501-not-configured response (and its browser-TTS fallback for the
+# non-avatar caller) rather than crashing.
+if (-not $AzureSpeechApiKey) { $AzureSpeechApiKey = ConvertTo-SecureString -String "" -AsPlainText -Force }
 
 # Check Azure CLI login
 Write-Host "`n🔐 Checking Azure CLI authentication..." -ForegroundColor Yellow
@@ -233,6 +239,7 @@ $azureOpenAIApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureOpenAIApiKey
 $azureDocumentIntelligenceApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureDocumentIntelligenceApiKey
 $liveAvatarApiKeyPlain = ConvertFrom-SecureStringToPlainText $LiveAvatarApiKey
 $liveAvatarAvatarIdPlain = ConvertFrom-SecureStringToPlainText $LiveAvatarAvatarId
+$azureSpeechApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureSpeechApiKey
 
 try {
     $deployment = az deployment group create `
@@ -249,6 +256,7 @@ try {
         --parameters azureDocumentIntelligenceApiKey=$azureDocumentIntelligenceApiKeyPlain `
         --parameters liveAvatarApiKey=$liveAvatarApiKeyPlain `
         --parameters liveAvatarAvatarId=$liveAvatarAvatarIdPlain `
+        --parameters azureSpeechApiKey=$azureSpeechApiKeyPlain `
         --parameters $imageParams `
         --name $deploymentName `
         --output json | ConvertFrom-Json
@@ -269,6 +277,7 @@ try {
     $azureDocumentIntelligenceApiKeyPlain = $null
     $liveAvatarApiKeyPlain = $null
     $liveAvatarAvatarIdPlain = $null
+    $azureSpeechApiKeyPlain = $null
 }
 
 Write-Host "✅ Deployment completed successfully!" -ForegroundColor Green

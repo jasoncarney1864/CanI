@@ -85,6 +85,21 @@ param liveAvatarApiKey string = ''
 @secure()
 param liveAvatarAvatarId string = ''
 
+@description('''Azure AI Speech API key. web only — /api/speech uses it for neural TTS
+(both the browser-fallback MP3 path and, since the LiveAvatar Lite-mode fix, the
+raw-24khz-16bit-mono-pcm audio repeatAudio() needs). This was never wired into the IaC
+pipeline at all until 2026-08-16: the key existed on the cani-speech resource but nothing
+had ever captured it into Key Vault/.env/Bicep, so /api/speech had silently 501'd since
+before this app existed — masked by the MP3 caller's browser-TTS fallback, until
+useLiveAvatar.ts's speak() (no fallback available) made the gap visible. Sourced from the
+azure-speech-api-key Key Vault secret by deploy-with-secrets.ps1. Defaults empty so
+existing deploys/validates that don't pass it don't break.''')
+@secure()
+param azureSpeechApiKey string = ''
+
+@description('Azure AI Speech region — matches the cani-speech resource, not secret.')
+param azureSpeechRegion string = 'eastus2'
+
 // Container images are parameters, NOT hardcoded, because container-apps-cd-dev.yml
 // deploys images out-of-band via `az containerapp update --image ...:<git-sha>`. If these
 // were pinned in the template, every infra deploy would silently roll all five apps back
@@ -478,6 +493,12 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
           identity: managedIdentityId
         }
       ]
+      secrets: [
+        {
+          name: 'azure-speech-api-key'
+          value: azureSpeechApiKey
+        }
+      ]
     }
     template: {
       containers: [
@@ -491,6 +512,8 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'HUB_API_URL', value: 'https://${hubApiApp.properties.configuration.ingress.fqdn}' }
             { name: 'DOCS_API_URL', value: 'https://${docsApiApp.properties.configuration.ingress.fqdn}' }
+            { name: 'AZURE_SPEECH_API_KEY', secretRef: 'azure-speech-api-key' }
+            { name: 'AZURE_SPEECH_REGION', value: azureSpeechRegion }
           ]
           probes: [
             {
