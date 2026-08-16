@@ -12,6 +12,8 @@ param(
     [securestring]$QdrantApiKey,
     [securestring]$AzureOpenAIApiKey,
     [securestring]$AzureDocumentIntelligenceApiKey,
+    [securestring]$LiveAvatarApiKey,
+    [securestring]$LiveAvatarAvatarId,
     [string]$AcrLoginServer = "canishared19088c8d54.azurecr.io",
     [switch]$WhatIf,
     [switch]$SkipValidation
@@ -62,6 +64,12 @@ if (-not $AzureDocumentIntelligenceApiKey) {
     Write-Host "`n🔑 Azure Document Intelligence API key required for deployment (OCR fails permanently without it)" -ForegroundColor Yellow
     $AzureDocumentIntelligenceApiKey = Read-Host "Enter AZURE_DOCUMENTINTELLIGENCE_API_KEY" -AsSecureString
 }
+
+# Optional — unlike the two above, an empty value here just reproduces the avatar
+# endpoint's existing 503-not-configured response rather than a silent fake fallback, so
+# this doesn't prompt or hard-fail like the required secrets above.
+if (-not $LiveAvatarApiKey) { $LiveAvatarApiKey = ConvertTo-SecureString -String "" -AsPlainText -Force }
+if (-not $LiveAvatarAvatarId) { $LiveAvatarAvatarId = ConvertTo-SecureString -String "" -AsPlainText -Force }
 
 # Check Azure CLI login
 Write-Host "`n🔐 Checking Azure CLI authentication..." -ForegroundColor Yellow
@@ -223,6 +231,8 @@ $entraClientSecretPlain = ConvertFrom-SecureStringToPlainText $EntraClientSecret
 $qdrantApiKeyPlain = ConvertFrom-SecureStringToPlainText $QdrantApiKey
 $azureOpenAIApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureOpenAIApiKey
 $azureDocumentIntelligenceApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureDocumentIntelligenceApiKey
+$liveAvatarApiKeyPlain = ConvertFrom-SecureStringToPlainText $LiveAvatarApiKey
+$liveAvatarAvatarIdPlain = ConvertFrom-SecureStringToPlainText $LiveAvatarAvatarId
 
 try {
     $deployment = az deployment group create `
@@ -237,6 +247,8 @@ try {
         --parameters qdrantApiKey=$qdrantApiKeyPlain `
         --parameters azureOpenAIApiKey=$azureOpenAIApiKeyPlain `
         --parameters azureDocumentIntelligenceApiKey=$azureDocumentIntelligenceApiKeyPlain `
+        --parameters liveAvatarApiKey=$liveAvatarApiKeyPlain `
+        --parameters liveAvatarAvatarId=$liveAvatarAvatarIdPlain `
         --parameters $imageParams `
         --name $deploymentName `
         --output json | ConvertFrom-Json
@@ -255,6 +267,8 @@ try {
     $qdrantApiKeyPlain = $null
     $azureOpenAIApiKeyPlain = $null
     $azureDocumentIntelligenceApiKeyPlain = $null
+    $liveAvatarApiKeyPlain = $null
+    $liveAvatarAvatarIdPlain = $null
 }
 
 Write-Host "✅ Deployment completed successfully!" -ForegroundColor Green

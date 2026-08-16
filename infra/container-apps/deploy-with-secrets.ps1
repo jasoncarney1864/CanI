@@ -64,7 +64,18 @@ try {
         throw "Key Vault secret 'azure-documentintelligence-api-key' is missing or empty. Without it OCR ingestion fails permanently."
     }
 
-    Write-Host "✅ Retrieved all 8 secrets successfully" -ForegroundColor Green
+    # Unlike the two above, missing LiveAvatar secrets don't degrade silently — docs-api's
+    # /avatar/session-token returns 503 rather than faking a session (see main.bicep's
+    # liveAvatarApiKey param comment) — so this warns instead of hard-failing the deploy.
+    $liveAvatarApiKey = az keyvault secret show --vault-name $KeyVaultName --name liveavatar-api-key --query value -o tsv 2>$null
+    $liveAvatarAvatarId = az keyvault secret show --vault-name $KeyVaultName --name liveavatar-avatar-id --query value -o tsv 2>$null
+    if ([string]::IsNullOrWhiteSpace($liveAvatarApiKey) -or [string]::IsNullOrWhiteSpace($liveAvatarAvatarId)) {
+        Write-Host "⚠️  LiveAvatar Key Vault secret(s) missing or empty — the avatar feature will report 503 (not configured) after this deploy." -ForegroundColor Yellow
+        $liveAvatarApiKey = ""
+        $liveAvatarAvatarId = ""
+    }
+
+    Write-Host "✅ Retrieved secrets successfully" -ForegroundColor Green
 } catch {
     Write-Error "Failed to retrieve secrets: $_"
     exit 1
@@ -85,6 +96,8 @@ $secureEntraClientSecret = ConvertTo-SecureString -String $entraClientSecret -As
 $secureQdrantApiKey = ConvertTo-SecureString -String $qdrantApiKey -AsPlainText -Force
 $secureAzureOpenAIApiKey = ConvertTo-SecureString -String $azureOpenAIApiKey -AsPlainText -Force
 $secureAzureDocumentIntelligenceApiKey = ConvertTo-SecureString -String $azureDocumentIntelligenceApiKey -AsPlainText -Force
+$secureLiveAvatarApiKey = ConvertTo-SecureString -String $liveAvatarApiKey -AsPlainText -Force
+$secureLiveAvatarAvatarId = ConvertTo-SecureString -String $liveAvatarAvatarId -AsPlainText -Force
 
 # Clear plaintext secrets from memory
 $postgresPassword = $null
@@ -95,6 +108,8 @@ $entraClientSecret = $null
 $qdrantApiKey = $null
 $azureOpenAIApiKey = $null
 $azureDocumentIntelligenceApiKey = $null
+$liveAvatarApiKey = $null
+$liveAvatarAvatarId = $null
 
 Write-Host "🚀 Deploying Container Apps..." -ForegroundColor Cyan
 
@@ -110,6 +125,8 @@ $deployParams = @{
     QdrantApiKey = $secureQdrantApiKey
     AzureOpenAIApiKey = $secureAzureOpenAIApiKey
     AzureDocumentIntelligenceApiKey = $secureAzureDocumentIntelligenceApiKey
+    LiveAvatarApiKey = $secureLiveAvatarApiKey
+    LiveAvatarAvatarId = $secureLiveAvatarAvatarId
 }
 
 if ($WhatIf) { $deployParams['WhatIf'] = $true }
