@@ -72,6 +72,19 @@ param qdrantUrl string
 @secure()
 param qdrantApiKey string
 
+@description('''LiveAvatar (HeyGen) API key. docs-api only — mints WebRTC session tokens for
+the talking-avatar feature. Unlike azureOpenAIApiKey, absence does not silently degrade:
+cani_shared.config.liveavatar_configured gates the endpoint and it returns 503 rather than
+faking a session. Sourced from the liveavatar-api-key Key Vault secret by
+deploy-with-secrets.ps1. Defaults empty so existing deploys/validates that don't pass it
+don't break; an empty value reproduces the 503-not-configured state, not a crash.''')
+@secure()
+param liveAvatarApiKey string = ''
+
+@description('LiveAvatar (HeyGen) avatar ID to use for session tokens. Sourced from the liveavatar-avatar-id Key Vault secret by deploy-with-secrets.ps1. Defaults empty for the same reason as liveAvatarApiKey.')
+@secure()
+param liveAvatarAvatarId string = ''
+
 // Container images are parameters, NOT hardcoded, because container-apps-cd-dev.yml
 // deploys images out-of-band via `az containerapp update --image ...:<git-sha>`. If these
 // were pinned in the template, every infra deploy would silently roll all five apps back
@@ -355,6 +368,14 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'qdrant-api-key'
           value: qdrantApiKey
         }
+        {
+          name: 'liveavatar-api-key'
+          value: liveAvatarApiKey
+        }
+        {
+          name: 'liveavatar-avatar-id'
+          value: liveAvatarAvatarId
+        }
       ]
     }
     template: {
@@ -385,6 +406,8 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
             { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
             { name: 'RETRIEVAL_WORKER_URL', value: 'https://retrieval-worker.internal.${containerAppEnv.properties.defaultDomain}' }
+            { name: 'LIVEAVATAR_API_KEY', secretRef: 'liveavatar-api-key' }
+            { name: 'LIVEAVATAR_AVATAR_ID', secretRef: 'liveavatar-avatar-id' }
           ]
           probes: [
             {
