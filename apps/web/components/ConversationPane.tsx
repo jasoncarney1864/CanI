@@ -140,8 +140,10 @@ export function ConversationPane({
         state={avatar.state}
         error={avatar.error}
         isStreamReady={avatar.isStreamReady}
+        isSpeaking={avatar.isSpeaking}
         attach={avatar.attach}
         onToggle={avatar.state === "connected" ? avatar.stop : avatar.start}
+        onInterrupt={avatar.interrupt}
       />
 
       <div className="presence" data-state={voice.state}>

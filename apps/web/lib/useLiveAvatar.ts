@@ -11,24 +11,37 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveAvatarSession as LiveAvatarSessionType } from "@heygen/liveavatar-web-sdk";
+import { estimatePcm24kDurationMs } from "./pcmAudio";
 
 export type AvatarState = "inactive" | "connecting" | "connected" | "error";
 
 type LiveAvatarModule = typeof import("@heygen/liveavatar-web-sdk");
 
+// AVATAR_SPEAK_ENDED isn't a documented-reliable event for repeatAudio()-fed speech (see
+// speak()'s comment) — this bounds how long a speak() call waits for it before giving up
+// on its own, sized off the audio's real duration rather than a blind guess.
+const SPEAK_TIMEOUT_SAFETY_MARGIN_MS = 1500;
+const SPEAK_TIMEOUT_MIN_MS = 3000;
+
 export function useLiveAvatar() {
   const [state, setState] = useState<AvatarState>("inactive");
   const [isStreamReady, setIsStreamReady] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef<LiveAvatarSessionType | null>(null);
   const moduleRef = useRef<LiveAvatarModule | null>(null);
   const activeRef = useRef(false);
+  // The currently in-flight speak() call's settle function, if any — lets interrupt()
+  // unstick it immediately instead of waiting on (or trusting) a server event.
+  const pendingSpeakSettleRef = useRef<(() => void) | null>(null);
 
   const stop = useCallback(async () => {
     activeRef.current = false;
     const session = sessionRef.current;
     sessionRef.current = null;
     setIsStreamReady(false);
+    setIsSpeaking(false);
+    pendingSpeakSettleRef.current = null;
     setState("inactive");
     if (session) {
       try {
@@ -67,8 +80,15 @@ export function useLiveAvatar() {
         activeRef.current = false;
         sessionRef.current = null;
         setIsStreamReady(false);
+        setIsSpeaking(false);
+        pendingSpeakSettleRef.current = null;
         setState("inactive");
       });
+      // Ambient "is the avatar currently talking" state, independent of any specific
+      // speak() call's own completion tracking below — drives AvatarStage's interrupt
+      // button, which should only show up while there's actually something to interrupt.
+      session.on(mod.AgentEventsEnum.AVATAR_SPEAK_STARTED, () => setIsSpeaking(true));
+      session.on(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, () => setIsSpeaking(false));
 
       await session.start();
       setState("connected");
@@ -86,7 +106,8 @@ export function useLiveAvatar() {
   }, []);
 
   /** Make the avatar speak pre-generated text (Lite mode: we already have the answer,
-   * LiveAvatar only lip-syncs it), resolving once it finishes speaking.
+   * LiveAvatar only lip-syncs it), resolving once it finishes speaking (or once the
+   * timeout safety net below gives up waiting).
    *
    * repeat()/message() (hand LiveAvatar text, let its own server-side TTS speak it) only
    * work in FULL-mode sessions — the SDK throws "Not permitted in LITE mode" for them,
@@ -95,7 +116,15 @@ export function useLiveAvatar() {
    * synthesize the audio ourselves via /api/speech (Azure Speech, requesting its
    * raw-24khz-16bit-mono-pcm format) and hand LiveAvatar the finished audio through
    * repeatAudio(), which has no such mode restriction. Confirmed against HeyGen's own
-   * demo app (heygen-com/live-avatar-js-sdk, useAvatarActions.ts) — same pattern there. */
+   * demo app (heygen-com/live-avatar-js-sdk, useAvatarActions.ts) — same pattern there.
+   *
+   * repeatAudio() itself is synchronous/fire-and-forget (its type signature returns
+   * `string`, not a Promise) and HeyGen's own demo never waits for AVATAR_SPEAK_ENDED
+   * after calling it either — there's no documented guarantee that event reliably fires
+   * for audio-fed speech the way it plausibly does for server-side text-to-speech in FULL
+   * mode. Without a fallback, a single missed event would hang this promise forever, and
+   * with it useVoiceConversation's whole listen->speak->listen loop (its .finally(listen)
+   * never runs). The setTimeout below is that fallback. */
   const speak = useCallback(
     (text: string): Promise<void> => {
       const session = sessionRef.current;
@@ -103,17 +132,21 @@ export function useLiveAvatar() {
       if (!session || !mod || state !== "connected") return Promise.resolve();
 
       return new Promise((resolve) => {
-        const onEnded = () => {
-          session.off(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, onEnded);
-          resolve();
-        };
-        session.on(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, onEnded);
+        let settled = false;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-        const finishWithError = (e: unknown) => {
-          console.error("LiveAvatar repeatAudio() failed:", e);
+        const settle = () => {
+          if (settled) return;
+          settled = true;
           session.off(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, onEnded);
+          if (timeoutId !== null) clearTimeout(timeoutId);
+          if (pendingSpeakSettleRef.current === settle) pendingSpeakSettleRef.current = null;
           resolve();
         };
+
+        const onEnded = () => settle();
+        session.on(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, onEnded);
+        pendingSpeakSettleRef.current = settle;
 
         fetch("/api/speech", {
           method: "POST",
@@ -126,12 +159,42 @@ export function useLiveAvatar() {
           })
           .then(({ audio }) => {
             session.repeatAudio(audio);
+            const timeoutMs = Math.max(
+              estimatePcm24kDurationMs(audio) + SPEAK_TIMEOUT_SAFETY_MARGIN_MS,
+              SPEAK_TIMEOUT_MIN_MS,
+            );
+            timeoutId = setTimeout(settle, timeoutMs);
           })
-          .catch(finishWithError);
+          .catch((e) => {
+            console.error("LiveAvatar repeatAudio() failed:", e);
+            settle();
+          });
       });
     },
     [state],
   );
+
+  /** Stop the avatar's current speech immediately without ending the session — distinct
+   * from stop(), which tears the whole WebRTC connection down. session.interrupt() sends
+   * `agent.interrupt`, one of the few LiveAvatarSession commands NOT blocked in LITE mode
+   * (checked the SDK's own command-gating switch: only AVATAR_SPEAK_TEXT/
+   * AVATAR_SPEAK_RESPONSE throw "Not permitted in LITE mode" — AVATAR_INTERRUPT isn't
+   * among them), and HeyGen's own demo exposes an "Interrupt" button in every session mode
+   * including LITE, so this is supported, documented-by-example behavior, not a workaround.
+   * Force-resolves any in-flight speak() immediately rather than waiting on whatever
+   * (possibly-absent) event follows an interrupt server-side — same reasoning as the
+   * timeout fallback in speak() itself. */
+  const interrupt = useCallback(() => {
+    const session = sessionRef.current;
+    if (!session) return;
+    try {
+      session.interrupt();
+    } catch (e) {
+      console.error("LiveAvatar interrupt() failed:", e);
+    }
+    setIsSpeaking(false);
+    pendingSpeakSettleRef.current?.();
+  }, []);
 
   // Teardown on unmount — never leave a session running past the 1-concurrency limit.
   useEffect(
@@ -141,5 +204,5 @@ export function useLiveAvatar() {
     [stop],
   );
 
-  return { state, isStreamReady, error, start, stop, attach, speak };
+  return { state, isStreamReady, isSpeaking, error, start, stop, attach, speak, interrupt };
 }

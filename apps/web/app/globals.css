@@ -761,6 +761,23 @@ button {
   color: var(--muted);
 }
 
+/* Interrupts current speech only (keeps the session + mic alive) — distinct from
+   .avatar-stage__toggle, which ends the whole session. Only rendered while mid-speech. */
+.avatar-stage__interrupt {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  backdrop-filter: blur(2px);
+}
+
 .avatar-stage__error {
   margin: 0;
   font-size: 12px;
