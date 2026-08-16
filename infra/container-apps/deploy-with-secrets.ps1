@@ -75,6 +75,14 @@ try {
         $liveAvatarAvatarId = ""
     }
 
+    # Same non-fatal treatment — an empty value here reproduces /api/speech's existing
+    # 501-not-configured response rather than hard-failing the deploy.
+    $azureSpeechApiKey = az keyvault secret show --vault-name $KeyVaultName --name azure-speech-api-key --query value -o tsv 2>$null
+    if ([string]::IsNullOrWhiteSpace($azureSpeechApiKey)) {
+        Write-Host "⚠️  azure-speech-api-key Key Vault secret missing or empty — /api/speech (and LiveAvatar's speak()) will report 501/fail after this deploy." -ForegroundColor Yellow
+        $azureSpeechApiKey = ""
+    }
+
     Write-Host "✅ Retrieved secrets successfully" -ForegroundColor Green
 } catch {
     Write-Error "Failed to retrieve secrets: $_"
@@ -98,6 +106,7 @@ $secureAzureOpenAIApiKey = ConvertTo-SecureString -String $azureOpenAIApiKey -As
 $secureAzureDocumentIntelligenceApiKey = ConvertTo-SecureString -String $azureDocumentIntelligenceApiKey -AsPlainText -Force
 $secureLiveAvatarApiKey = ConvertTo-SecureString -String $liveAvatarApiKey -AsPlainText -Force
 $secureLiveAvatarAvatarId = ConvertTo-SecureString -String $liveAvatarAvatarId -AsPlainText -Force
+$secureAzureSpeechApiKey = ConvertTo-SecureString -String $azureSpeechApiKey -AsPlainText -Force
 
 # Clear plaintext secrets from memory
 $postgresPassword = $null
@@ -110,6 +119,7 @@ $azureOpenAIApiKey = $null
 $azureDocumentIntelligenceApiKey = $null
 $liveAvatarApiKey = $null
 $liveAvatarAvatarId = $null
+$azureSpeechApiKey = $null
 
 Write-Host "🚀 Deploying Container Apps..." -ForegroundColor Cyan
 
@@ -127,6 +137,7 @@ $deployParams = @{
     AzureDocumentIntelligenceApiKey = $secureAzureDocumentIntelligenceApiKey
     LiveAvatarApiKey = $secureLiveAvatarApiKey
     LiveAvatarAvatarId = $secureLiveAvatarAvatarId
+    AzureSpeechApiKey = $secureAzureSpeechApiKey
 }
 
 if ($WhatIf) { $deployParams['WhatIf'] = $true }
