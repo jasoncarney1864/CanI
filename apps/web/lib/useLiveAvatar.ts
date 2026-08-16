@@ -86,7 +86,16 @@ export function useLiveAvatar() {
   }, []);
 
   /** Make the avatar speak pre-generated text (Lite mode: we already have the answer,
-   * LiveAvatar only voices + lip-syncs it), resolving once it finishes speaking. */
+   * LiveAvatar only lip-syncs it), resolving once it finishes speaking.
+   *
+   * repeat()/message() (hand LiveAvatar text, let its own server-side TTS speak it) only
+   * work in FULL-mode sessions — the SDK throws "Not permitted in LITE mode" for them,
+   * confirmed in its own source. docs-api always mints LITE-mode tokens (liveavatar.py),
+   * so LITE's bring-your-own-LLM model turns out to also mean bring-your-own-TTS: we
+   * synthesize the audio ourselves via /api/speech (Azure Speech, requesting its
+   * raw-24khz-16bit-mono-pcm format) and hand LiveAvatar the finished audio through
+   * repeatAudio(), which has no such mode restriction. Confirmed against HeyGen's own
+   * demo app (heygen-com/live-avatar-js-sdk, useAvatarActions.ts) — same pattern there. */
   const speak = useCallback(
     (text: string): Promise<void> => {
       const session = sessionRef.current;
@@ -99,13 +108,26 @@ export function useLiveAvatar() {
           resolve();
         };
         session.on(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, onEnded);
-        try {
-          session.repeat(text);
-        } catch (e) {
-          console.error("LiveAvatar repeat() failed:", e);
+
+        const finishWithError = (e: unknown) => {
+          console.error("LiveAvatar repeatAudio() failed:", e);
           session.off(mod.AgentEventsEnum.AVATAR_SPEAK_ENDED, onEnded);
           resolve();
-        }
+        };
+
+        fetch("/api/speech", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, format: "pcm24k" }),
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error(`speech synthesis failed (${res.status})`);
+            return res.json() as Promise<{ audio: string }>;
+          })
+          .then(({ audio }) => {
+            session.repeatAudio(audio);
+          })
+          .catch(finishWithError);
       });
     },
     [state],
