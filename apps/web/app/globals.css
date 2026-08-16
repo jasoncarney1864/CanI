@@ -728,14 +728,27 @@ button {
   aspect-ratio: 1;
   border-radius: 16px;
   overflow: hidden;
-  background: var(--viewer-gray);
   border: 1px solid var(--line);
+  /* No background color — the canvas below is chroma-keyed transparent (lib/chromaKey.ts),
+     so whatever section this sits in shows through instead of a hardcoded fill. */
 }
 
-.avatar-stage__video {
+/* SDK's live attach target. Kept in the DOM (not display:none) so the browser keeps
+   decoding frames for the canvas below to read, but fully hidden and non-interactive —
+   audio still plays normally from here; only the video track is redirected to canvas. */
+.avatar-stage__video-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.avatar-stage__canvas {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  display: block;
 }
 
 .avatar-stage__status {
