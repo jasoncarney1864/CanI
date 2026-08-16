@@ -9,8 +9,14 @@ interface AvatarStageProps {
   state: AvatarState;
   error: string | null;
   isStreamReady: boolean;
+  /** Whether the avatar is currently mid-speech — drives the "Stop talking" button,
+   * which should only appear while there's actually something to interrupt. */
+  isSpeaking: boolean;
   attach: (element: HTMLMediaElement) => void;
   onToggle: () => void;
+  /** Interrupt current speech only — keeps the session (and mic/listening) alive.
+   * Distinct from onToggle, which ends the whole session. */
+  onInterrupt: () => void;
 }
 
 // Must match .avatar-stage__frame's width/height in globals.css — canvas resolution is
@@ -31,7 +37,15 @@ const AVATAR_TILE_SIZE_PX = 160;
  * surrounding page section's own background is shows through naturally instead of
  * hardcoding a matching color here.
  */
-export function AvatarStage({ state, error, isStreamReady, attach, onToggle }: AvatarStageProps) {
+export function AvatarStage({
+  state,
+  error,
+  isStreamReady,
+  isSpeaking,
+  attach,
+  onToggle,
+  onInterrupt,
+}: AvatarStageProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
@@ -106,6 +120,11 @@ export function AvatarStage({ state, error, isStreamReady, attach, onToggle }: A
             aria-label="LiveAvatar talking avatar"
           />
           {!isStreamReady && <p className="avatar-stage__status">Connecting…</p>}
+          {isStreamReady && isSpeaking && (
+            <button type="button" className="avatar-stage__interrupt" onClick={onInterrupt}>
+              Stop talking
+            </button>
+          )}
         </div>
       )}
 
