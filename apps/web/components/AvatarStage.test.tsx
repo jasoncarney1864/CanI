@@ -40,7 +40,7 @@ describe("AvatarStage", () => {
     expect(screen.getByText("Connecting…")).toBeInTheDocument(); // stream not ready yet
   });
 
-  it("calls attach once the stream is ready", () => {
+  it("calls attach once the stream is ready, targeting the (hidden) video element", () => {
     const attach = vi.fn();
     render(
       <AvatarStage state="connected" error={null} isStreamReady={true} attach={attach} onToggle={vi.fn()} />,
@@ -48,6 +48,41 @@ describe("AvatarStage", () => {
 
     expect(attach).toHaveBeenCalledTimes(1);
     expect(attach.mock.calls[0][0]).toBeInstanceOf(HTMLVideoElement);
+  });
+
+  it("renders a chroma-keyed canvas as the visible surface, not the raw video, once connected", () => {
+    // jsdom has no real canvas support (getContext("2d") logs a noisy "not implemented"
+    // warning and returns null) — stub it so this test's intent (DOM structure) isn't
+    // drowned out by that; the component's handling of a null context is covered below.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+
+    render(
+      <AvatarStage state="connected" error={null} isStreamReady={true} attach={vi.fn()} onToggle={vi.fn()} />,
+    );
+
+    // The canvas — not the video — now carries the accessible label, since it's what's
+    // actually rendered to the user; the video is the SDK's off-screen attach target.
+    const canvas = screen.getByLabelText("LiveAvatar talking avatar");
+    expect(canvas.tagName).toBe("CANVAS");
+    expect(canvas).toHaveAttribute("role", "img");
+
+    const video = document.querySelector("video");
+    expect(video).not.toBeNull();
+    expect(video).toHaveAttribute("aria-hidden", "true");
+    expect(video).not.toHaveAttribute("aria-label");
+
+    vi.restoreAllMocks();
+  });
+
+  it("does not throw when the canvas 2D context is unavailable (jsdom's actual behavior)", () => {
+    // Unlike the test above, this one deliberately exercises the *real* jsdom
+    // getContext("2d") -> null path (no stub) to prove the component's defensive bail-out
+    // actually works against the environment's real behavior, not just an assumed mock.
+    expect(() =>
+      render(
+        <AvatarStage state="connected" error={null} isStreamReady={true} attach={vi.fn()} onToggle={vi.fn()} />,
+      ),
+    ).not.toThrow();
   });
 
   it("surfaces an error message without blocking the toggle", () => {
