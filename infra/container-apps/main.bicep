@@ -629,6 +629,12 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
             { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
+            // Public-law corpus refresh job (docs/20 §20.9, Sprint 4). Real fetching is an
+            // explicit opt-in, never inferred (CLAUDE.md fakes-in-prod incident class) — see
+            // build_law_fetchers's docstring.
+            { name: 'CANI_LAW_QDRANT_COLLECTION', value: 'cani_law_${environmentName}_v1' }
+            { name: 'CANI_LAW_FETCH_ENABLED', value: 'true' }
+            { name: 'CANI_LAW_DEFAULT_JURISDICTIONS', value: 'us-nv' }
           ]
         }
       ]
@@ -738,6 +744,11 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'QDRANT_URL', value: qdrantUrl }
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
             { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
+            // Public-law corpus (docs/20 §20.9, Sprint 4): empty collection name means the
+            // feature ships dark — retrieve() never constructs a PublicLawQdrant or searches
+            // a second corpus. Setting this is what turns dual-source retrieval on.
+            { name: 'CANI_LAW_QDRANT_COLLECTION', value: 'cani_law_${environmentName}_v1' }
+            { name: 'CANI_LAW_DEFAULT_JURISDICTIONS', value: 'us-nv' }
           ]
           probes: [
             {
