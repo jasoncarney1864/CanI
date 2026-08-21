@@ -234,7 +234,16 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
 
         {view === "upload" && (
           <div className="panel">
-            <UploadView onGoToDocuments={() => setView("documents")} />
+            {/* key forces a remount on spoke change, so a stale "General" selection can't
+                survive switching tabs while already on Upload (docs/21 follow-up: the
+                dropdown used to always default to General regardless of active spoke, and
+                since choosing/dropping a file uploads immediately with no confirm step,
+                that silently misfiled uploads). */}
+            <UploadView
+              key={spoke.key}
+              initialSpoke={SPOKE_TO_BACKEND[spoke.key]}
+              onGoToDocuments={() => setView("documents")}
+            />
           </div>
         )}
 
