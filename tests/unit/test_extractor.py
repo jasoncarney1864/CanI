@@ -63,3 +63,41 @@ def test_digital_pdf_extracts_natively_without_ocr():
     assert result.pages
     avg_chars = sum(len(p.text) for p in result.pages) / len(result.pages)
     assert avg_chars >= MIN_CHARS_PER_PAGE_FOR_NATIVE
+
+
+# --- markdown branch (docs/21 §3.4: generated documents) -------------------------------
+
+
+def test_markdown_extracts_without_ocr_and_strips_front_matter():
+    extractor = NativeThenOcrExtractor(di_endpoint="", di_api_key="")
+    raw = (
+        b"---\n"
+        b'title: "Can I sublet my apartment?"\n'
+        b"generated_at: 2026-08-20T00:00:00Z\n"
+        b"---\n"
+        b"# Can I sublet my apartment?\n\n## Answer\n\nYes, with conditions.\n"
+    )
+
+    result = extractor.extract(raw, "text/markdown")
+
+    assert result.method == "native-text"
+    assert len(result.pages) == 1
+    assert "generated_at" not in result.pages[0].text
+    assert "title:" not in result.pages[0].text
+    assert result.pages[0].text.startswith("# Can I sublet my apartment?")
+
+
+def test_markdown_without_front_matter_is_unchanged():
+    extractor = NativeThenOcrExtractor(di_endpoint="", di_api_key="")
+    raw = b"# Just a heading\n\nNo front matter here.\n"
+
+    result = extractor.extract(raw, "text/markdown")
+
+    assert result.pages[0].text == raw.decode("utf-8")
+
+
+def test_plain_text_uses_the_same_branch_as_markdown():
+    extractor = NativeThenOcrExtractor(di_endpoint="", di_api_key="")
+    result = extractor.extract(b"---\nfoo: bar\n---\nplain body", "text/plain")
+    assert result.method == "native-text"
+    assert result.pages[0].text == "plain body"

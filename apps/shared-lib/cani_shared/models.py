@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -55,6 +56,25 @@ class Document(BaseModel):
     created_at: datetime
     updated_at: datetime
     spoke: DocumentSpoke = DocumentSpoke.GENERAL
+    origin: str = "uploaded"
+    # Tombstone timestamp (docs/21 §1.4/§4). None everywhere except the one delete-flow
+    # lookup that deliberately bypasses the `deleted_at IS NULL` filter every other query
+    # applies — see get_document_for_delete.
+    deleted_at: datetime | None = None
+    # Provenance for origin="generated" documents (docs/21 §3.2); always None for uploads.
+    # Deliberately excluded from GET /documents' list envelope via response_model_exclude
+    # (docs/21 §3.2 "keeps pages lean") — present only on the single-document GET.
+    generated_from: dict[str, Any] | None = None
+
+
+class DocumentListResponse(BaseModel):
+    """Envelope for GET /documents (docs/21 §1.2) — replaces the old bare array so the
+    client can page without a separate count query."""
+
+    items: list[Document]
+    total: int
+    limit: int
+    offset: int
 
 
 class DocumentVersion(BaseModel):
@@ -67,6 +87,9 @@ class DocumentVersion(BaseModel):
     page_count: int | None = None
     classification_label: str | None = None
     classification_confidence: float | None = None
+    # Added by migration 0006 for "latest version" ordering (docs/21 §2.2). Defaulted so
+    # any DocumentVersion constructed in code before the column existed still validates.
+    created_at: datetime | None = None
 
 
 class IngestionJob(BaseModel):
@@ -78,6 +101,20 @@ class IngestionJob(BaseModel):
     attempt_count: int
     error_code: str | None = None
     error_detail: str | None = None
+
+
+class DeletionJob(BaseModel):
+    """Async tombstone-cleanup queue row (docs/09 §9.9, docs/21 §1.7). Mirrors the
+    ingestion job queue's SKIP LOCKED claim pattern, but as a second, independent queue."""
+
+    deletion_job_id: str
+    document_id: str
+    owner_user_id: str
+    status: str
+    attempt_count: int
+    error_detail: str | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
 
 
 class ChunkManifest(BaseModel):

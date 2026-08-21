@@ -9,6 +9,10 @@ import { VerdictBadge } from "./VerdictBadge";
 import { LawCitationCard } from "./LawCitationCard";
 import { AvatarStage } from "./AvatarStage";
 
+/** "Save as document" lifecycle (docs/21 §3.6) — lives in AppShell (it must survive past
+ * this component re-rendering when a new question resets other per-turn state). */
+export type SaveAsDocumentState = "idle" | "saving" | "saved" | "error";
+
 interface ConversationPaneProps {
   answer: RetrievalAnswer | null;
   spoke: Spoke;
@@ -20,6 +24,12 @@ interface ConversationPaneProps {
   activeDocumentId: string | null;
   /** Open a cited document in the viewer with its cited passages spotlighted. */
   onSelectCitation: (documentId: string) => void;
+  /** Persist the current answer as a document (docs/21 §3). */
+  onSaveAsDocument: () => void;
+  saveState: SaveAsDocumentState;
+  saveError: string | null;
+  /** Navigate to the Documents page — used by the post-save "view in Documents" link. */
+  onGoToDocuments: () => void;
 }
 
 const STATUS_COPY: Record<VoiceState, { title: string; hint: string }> = {
@@ -48,6 +58,10 @@ export function ConversationPane({
   onAsk,
   activeDocumentId,
   onSelectCitation,
+  onSaveAsDocument,
+  saveState,
+  saveError,
+  onGoToDocuments,
 }: ConversationPaneProps) {
   // Stable indirection so the voice hook's callback always sees fresh handlers.
   const askRef = useRef(onAsk);
@@ -134,6 +148,33 @@ export function ConversationPane({
               <LawCitationCard citation={c} key={c.chunk_id} />
             ),
           )}
+
+        {!loading && !error && answer && (
+          <div className="conversation__save">
+            {saveState === "saved" ? (
+              <p className="conversation__save-success">
+                Saved —{" "}
+                <button type="button" className="conversation__save-link" onClick={onGoToDocuments}>
+                  view in Documents
+                </button>
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="conversation__save-btn"
+                onClick={onSaveAsDocument}
+                disabled={saveState === "saving"}
+              >
+                {saveState === "saving" ? "Saving…" : "Save as document"}
+              </button>
+            )}
+            {saveState === "error" && saveError && (
+              <p className="conversation__save-error" role="alert">
+                {saveError}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <AvatarStage

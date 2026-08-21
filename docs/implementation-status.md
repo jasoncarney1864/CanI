@@ -11,6 +11,54 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-08-20 update (docs/21 — Documents page management + generated documents)
+
+Full implementation of `21-documents-page-download-and-generated-docs-spec.md`'s five
+phases, built in this order with the local gate (`ruff check`, `ruff format --check`,
+`pytest tests/unit`) green after each one. **Not yet run in this pass:
+`pytest tests/integration` against docker-compose** — the environment this work was done
+in has no Docker — so treat the integration suites below as written-and-reviewed, not
+verified-passing. Run `python scripts/run_local_tests.py` (or just the integration half)
+before merging.
+
+- **Phase 0/1 — schema + list API + Documents page toolbar.** Migration
+  `0006_documents_management.sql` (`documents.origin`/`deleted_at`/`generated_from`,
+  `document_versions.created_at`, `deletion_jobs` table). `list_documents` rewritten with
+  spoke/status/origin/title-search/sort/pagination, envelope response
+  (`DocumentListResponse`). Web-proxy spoke-forwarding bug fixed (uploads under
+  Legal/Health/Finance were silently landing in General — root cause of "filtering looks
+  broken").
+- **Phase 2 — delete.** Tombstone-then-async-cleanup per docs/09 §9.9:
+  `DELETE /documents/{id}` (202, idempotent), `deletion_jobs` queue claimed by the same
+  ingestion-worker loop (single-worker invariant documented at the race-guard site),
+  `OwnerScopedQdrant.delete_document_points`, `BlobStore.delete_prefix`. **Hard gate
+  cleared live**: `cani6ada34dffd` (the actual `canido-dev` workload storage account,
+  confirmed via its resource-group in the `az` output) has blob versioning and both
+  soft-delete retention policies enabled at 7 days, matching `data_services.py`'s
+  intended hardening — checked directly against the account, not inferred from IaC source.
+- **Phase 3 — original-document download.** `GET /documents/{id}/original` streams the
+  already-durably-stored original (no backfill needed — every upload has always written
+  its blob before ingestion) with RFC 5987 filename headers; hidden in the UI for
+  `failed` docs (malware-blocked originals aren't one click away). `BlobStore.download`
+  now fails fast on a missing blob instead of retrying a 404 three times.
+- **Phase 4 — AI-generated documents.** `POST /documents/generated` persists the current
+  grounded answer as a real `.md` document (front matter + body) that flows through the
+  ordinary ingestion pipeline — chunked, embedded, indexed, downloadable — via a new
+  extractor branch for `text/markdown`/`text/plain` that strips the front matter before
+  it's ever searched. `origin`/`generated_from` threaded through the model, DB, and
+  Qdrant payload (payload-index creation now also runs on the already-exists collection
+  path, so a live collection picks up the new field without a rebuild). Web: "Save as
+  document" in the conversation footer, origin badge on the Documents page.
+- **Verified this pass:** 234/234 `pytest tests/unit`, `ruff check`/`ruff format --check`
+  clean, and every touched/added vitest file passes (`ConversationPane`, `exportAnswer`,
+  `DocumentsView`, `documentsQuery`, and the four new/changed `app/api/documents/**`
+  proxy routes) — run individually due to this sandbox's slow mounted-filesystem vitest
+  startup, not as a single `vitest run`.
+- **Not verified this pass:** `tests/integration/test_document_deletion.py`,
+  `test_document_listing.py`, `test_document_download.py`, `test_document_generated.py`
+  against the real compose stack (no Docker available); `next build`/`next lint` (not
+  part of this repo's CI gate today, so not run either, though nothing here changes that).
+
 ## 2026-08-04 update (Sprint 3 complete — public reachability)
 
 Sprint 3 (tracked in `19-sprint-3-reachability-board.md`) closed 2026-08-04. CanI is a

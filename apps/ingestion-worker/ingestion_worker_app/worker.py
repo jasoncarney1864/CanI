@@ -11,12 +11,13 @@ import time
 from cani_shared.blob import BlobStore
 from cani_shared.config import get_settings
 from cani_shared.db.pool import get_pool
-from cani_shared.db.repositories import claim_next_ingestion_job
+from cani_shared.db.repositories import claim_next_deletion_job, claim_next_ingestion_job
 from cani_shared.logging import configure_logging, get_logger
 from cani_shared.providers.factory import build_embedder, build_extractor, build_malware_scanner
 from cani_shared.telemetry import configure_telemetry
 from cani_shared.vector.qdrant_client import OwnerScopedQdrant
 
+from ingestion_worker_app.deletion import handle_deletion_failure, process_deletion
 from ingestion_worker_app.pipeline import handle_job_failure, process_job
 
 POLL_INTERVAL_SECONDS = 3
@@ -57,30 +58,44 @@ def run_forever() -> None:
     while True:
         with pool.connection() as conn:
             job = claim_next_ingestion_job(conn)
-            if job is None:
+            if job is not None:
+                try:
+                    # Lazy init: ensure collection exists before processing first job. Kept
+                    # inside the same try/except as process_job — a transient Qdrant hiccup
+                    # here must not crash the whole worker process (it previously did,
+                    # causing a restart storm instead of a simple per-job retry).
+                    ensure_qdrant_ready(qdrant, embedder.vector_size)
+                    process_job(
+                        conn,
+                        job,
+                        blob_store=blob_store,
+                        scanner=scanner,
+                        extractor=extractor,
+                        embedder=embedder,
+                        qdrant=qdrant,
+                    )
+                except Exception as exc:  # noqa: BLE001 - top-level job loop must never crash the worker
+                    handle_job_failure(conn, job, exc)
+                    # Exponential backoff before this job becomes reclaimable again (§8.10)
+                    # — without a delay here, a persistently-failing job gets hammered in a
+                    # tight loop instead of spacing out retries.
+                    time.sleep(min(2**job.attempt_count, 30))
+                continue
+
+            # Second queue, same loop, same connection cycle — this is the invariant the
+            # single-worker guard in deletion.process_deletion depends on (docs/21 §1.7):
+            # an ingestion job for a document can never be mid-claim while we're claiming
+            # a deletion job for it, because this one process alternates between the two
+            # queues rather than draining them concurrently.
+            deletion_job = claim_next_deletion_job(conn)
+            if deletion_job is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
             try:
-                # Lazy init: ensure collection exists before processing first job. Kept
-                # inside the same try/except as process_job — a transient Qdrant hiccup
-                # here must not crash the whole worker process (it previously did,
-                # causing a restart storm instead of a simple per-job retry).
-                ensure_qdrant_ready(qdrant, embedder.vector_size)
-                process_job(
-                    conn,
-                    job,
-                    blob_store=blob_store,
-                    scanner=scanner,
-                    extractor=extractor,
-                    embedder=embedder,
-                    qdrant=qdrant,
-                )
+                process_deletion(conn, deletion_job, blob_store=blob_store, qdrant=qdrant)
             except Exception as exc:  # noqa: BLE001 - top-level job loop must never crash the worker
-                handle_job_failure(conn, job, exc)
-                # Exponential backoff before this job becomes reclaimable again (§8.10) —
-                # without a delay here, a persistently-failing job gets hammered in a tight
-                # loop instead of spacing out retries.
-                time.sleep(min(2**job.attempt_count, 30))
+                handle_deletion_failure(conn, deletion_job, exc)
+                time.sleep(min(2**deletion_job.attempt_count, 30))
 
 
 if __name__ == "__main__":

@@ -101,7 +101,7 @@ def test_zip_upload_unpacks_and_indexes_all_entries(docker_stack, hub_client, do
     archive_status = _poll_until_terminal(docs_client, archive_id, headers)
     assert archive_status == "unpacked", f"expected archive to reach 'unpacked', got '{archive_status}'"
 
-    documents = docs_client.get("/documents", headers=headers).json()
+    documents = docs_client.get("/documents", headers=headers).json()["items"]
     by_title = {d["title"]: d for d in documents}
     assert "lease.pdf" in by_title and "hoa-rules.pdf" in by_title, (
         f"expected fanned-out entry documents, got titles: {sorted(by_title)}"

@@ -123,8 +123,16 @@ def process_job(
     # we don't waste tokens if this document turns out to be blank. Title generation
     # failures are non-fatal — we fall back to "Untitled Document" rather than blocking
     # the entire ingestion job (the document is still searchable, just poorly named).
+    #
+    # Guarded to origin == "uploaded" (docs/21 §3.4): a generated document already arrives
+    # with a real, user-chosen (or user-derived) title — running the LLM title pass on it
+    # would silently overwrite that with something unrelated to what the user asked to save.
     settings = get_settings()
-    if settings.azure_ai_providers_configured and settings.azure_openai_chat_deployment:
+    if (
+        document.origin == "uploaded"
+        and settings.azure_ai_providers_configured
+        and settings.azure_openai_chat_deployment
+    ):
         full_text = "\n".join(p.text for p in extraction.pages)
         title = generate_title(
             full_text,
@@ -171,6 +179,11 @@ def process_job(
                 "taxonomy_tags": [],
                 "embedding_version": embedder.embedding_version,
                 "spoke": document.spoke,
+                # docs/21 §3.4: not filtered on in v1 retrieval — exists so a later change
+                # can exclude/down-weight generated docs with a one-line must_not filter
+                # if the echo-chamber effect (answers citing prior answers) proves
+                # annoying in practice.
+                "origin": document.origin,
             },
         )
         manifests.append(
