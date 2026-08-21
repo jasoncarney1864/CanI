@@ -25,6 +25,11 @@ const STATUS_LABEL: Record<DocumentStatus, string> = {
   failed: "Failed",
 };
 
+// The four backend DocumentSpoke values (cani_shared.models.DocumentSpoke) — matches what
+// UploadView's category picker sends and what doc.spoke already renders as, so the move
+// control's options and the row's existing spoke tag never disagree.
+const SPOKE_OPTIONS = ["General", "Legal", "Health", "Finance"] as const;
+
 const STATUS_OPTIONS: DocumentStatus[] = [
   "queued",
   "unpacking",
@@ -84,6 +89,7 @@ export function DocumentsView({ spoke }: DocumentsViewProps) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [moving, setMoving] = useState<Set<string>>(new Set());
   // A poll's GET can be in flight when the user clicks delete; if it resolves after our
   // own optimistic removal + reload, it would otherwise re-add the just-deleted row until
   // the next 3s tick corrects it. Tracked in a ref (not state) so load() can read the
@@ -127,6 +133,38 @@ export function DocumentsView({ spoke }: DocumentsViewProps) {
       setError(e instanceof Error ? e.message : "Couldn't load documents.");
     }
   }, [spoke, effectiveQ, statusFilter, sort, order, page]);
+
+  const handleMoveSpoke = useCallback(
+    async (doc: DocumentMeta, spoke: string) => {
+      if (spoke === doc.spoke) return;
+      setRowError(null);
+      setMoving((prev) => new Set(prev).add(doc.document_id));
+      try {
+        const res = await fetch(`/api/documents/${doc.document_id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ spoke }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error((body as { error?: string })?.error ?? `Couldn't move '${doc.title}' (${res.status}).`);
+        }
+        // If the current view is filtered to one spoke, the moved doc no longer belongs
+        // here — a full reload (rather than patching it in place) lets the server-side
+        // filter decide whether it stays visible.
+        await load();
+      } catch (e) {
+        setRowError({ id: doc.document_id, message: e instanceof Error ? e.message : "Move failed." });
+      } finally {
+        setMoving((prev) => {
+          const next = new Set(prev);
+          next.delete(doc.document_id);
+          return next;
+        });
+      }
+    },
+    [load],
+  );
 
   const handleDelete = useCallback(
     async (doc: DocumentMeta) => {
@@ -252,7 +290,19 @@ export function DocumentsView({ spoke }: DocumentsViewProps) {
               <div className="doc-row__info">
                 <span className="doc-row__title">{doc.title}</span>
                 {doc.origin === "generated" && <span className="doc-badge doc-badge--origin">AI</span>}
-                <span className="doc-row__spoke">{doc.spoke}</span>
+                <select
+                  className="doc-row__spoke-select"
+                  value={doc.spoke}
+                  disabled={moving.has(doc.document_id)}
+                  onChange={(e) => void handleMoveSpoke(doc, e.target.value)}
+                  aria-label={`Move ${doc.title} to a different spoke`}
+                >
+                  {SPOKE_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
                 {rowError?.id === doc.document_id && (
                   <span className="doc-row__error" role="alert">
                     {rowError.message}

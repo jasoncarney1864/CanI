@@ -37,6 +37,7 @@ from cani_shared.db.repositories import (
     list_documents,
     record_audit_event,
     tombstone_document,
+    update_document_spoke,
 )
 from cani_shared.logging import configure_logging, get_logger, hash_user_id
 from cani_shared.middleware import RateLimitMiddleware, TraceIdMiddleware
@@ -49,6 +50,7 @@ from cani_shared.models import (
     RetrievalAnswer,
 )
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
+from cani_shared.vector.qdrant_client import OwnerScopedQdrant, retry_transient
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel
 
@@ -82,6 +84,13 @@ async def lifespan(app: FastAPI):
     blob_store = BlobStore(settings.azure_storage_connection_string)
     blob_store.ensure_containers()
     app.state.blob_store = blob_store
+    # Only used by PATCH /documents/{id} to propagate a spoke change onto already-indexed
+    # points (docs/21 follow-up). No ensure_collection() call here — docs-api never
+    # upserts vectors, and the collection is guaranteed to already exist by the time any
+    # document does, since ingestion-worker's ensure_collection runs before it upserts.
+    app.state.qdrant = OwnerScopedQdrant(
+        settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key
+    )
     yield
 
 
@@ -141,6 +150,10 @@ class GeneratedDocumentRequest(BaseModel):
     spoke: str = "General"
     markdown: str
     provenance: Provenance
+
+
+class UpdateDocumentSpokeRequest(BaseModel):
+    spoke: str
 
 
 @app.post("/documents", response_model=UploadResponse)
@@ -394,6 +407,62 @@ def get_my_document(
         # Same response whether the doc belongs to someone else or doesn't exist at all —
         # never leak cross-owner existence via a differentiated error (§9.8).
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+    return document
+
+
+@app.patch("/documents/{document_id}", response_model=Document)
+def update_my_document_spoke(
+    document_id: str,
+    payload: UpdateDocumentSpokeRequest,
+    principal: RequestPrincipal = Depends(get_principal),
+    _: RequestPrincipal = Depends(require_docs_entitlement),
+) -> Document:
+    """Moves a document between spokes (docs/21 follow-up — the Documents page had no way
+    to fix a mis-filed upload). Updates the Postgres row synchronously — the source of
+    truth for the Documents page and for any in-flight ingestion job, which re-reads
+    document.spoke fresh right before it upserts a chunk — then propagates the same value
+    onto every already-indexed Qdrant point's payload, since retrieval filters spoke
+    there, not in Postgres. The Qdrant call is retried on transient failure but, if it
+    still fails, the Postgres row has already committed: the Documents page will show the
+    new spoke immediately even if retrieval briefly lags behind. Safe to just retry the
+    PATCH — both halves are idempotent."""
+    try:
+        spoke_enum = DocumentSpoke(payload.spoke)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid spoke: {payload.spoke}") from e
+
+    pool = get_pool(settings.postgres_dsn)
+    with pool.connection() as conn:
+        document = get_document(conn, principal.user_id, document_id)
+        if document is None:
+            # Same 404 whether it's not owned, never existed, or is tombstoned — no
+            # cross-owner existence leak (§9.8).
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+        changed = document.spoke != spoke_enum
+        if changed:
+            update_document_spoke(conn, principal.user_id, document_id, spoke_enum)
+            record_audit_event(
+                conn,
+                event_type="document_spoke_changed",
+                actor_user_id=principal.user_id,
+                detail={"document_id": document_id, "from_spoke": document.spoke, "to_spoke": spoke_enum},
+            )
+            document = get_document(conn, principal.user_id, document_id)
+            assert document is not None  # just updated it inside this same connection
+
+    if changed:
+        qdrant: OwnerScopedQdrant = app.state.qdrant
+        retry_transient(
+            lambda: qdrant.set_document_spoke(
+                owner_user_id=principal.user_id, document_id=document_id, spoke=spoke_enum
+            )
+        )
+        logger.info(
+            "document_spoke_changed",
+            document_id=document_id,
+            spoke=spoke_enum,
+            user_id_hash=hash_user_id(principal.user_id),
+        )
     return document
 
 

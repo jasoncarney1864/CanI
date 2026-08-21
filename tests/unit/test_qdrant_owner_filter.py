@@ -36,6 +36,33 @@ def test_chunks_for_document_without_document_raises(qdrant):
         qdrant.chunks_for_document(owner_user_id="owner-1", document_id="")
 
 
+def test_set_document_spoke_without_owner_raises(qdrant):
+    with pytest.raises(MissingOwnerFilterError):
+        qdrant.set_document_spoke(owner_user_id="", document_id="doc-1", spoke="Legal")
+
+
+def test_set_document_spoke_without_document_raises(qdrant):
+    with pytest.raises(MissingOwnerFilterError):
+        qdrant.set_document_spoke(owner_user_id="owner-1", document_id="", spoke="Legal")
+
+
+def test_set_document_spoke_filters_by_owner_and_document(qdrant, monkeypatch):
+    captured = {}
+
+    def fake_set_payload(*, collection_name, payload, points):
+        captured["collection_name"] = collection_name
+        captured["payload"] = payload
+        captured["points"] = points
+
+    monkeypatch.setattr(qdrant._client, "set_payload", fake_set_payload)
+
+    qdrant.set_document_spoke(owner_user_id="owner-1", document_id="doc-1", spoke="Legal")
+
+    assert captured["payload"] == {"spoke": "Legal"}
+    conditions = {c.key: c.match.value for c in captured["points"].must}
+    assert conditions == {"owner_user_id": "owner-1", "document_id": "doc-1"}
+
+
 def test_delete_document_points_without_owner_raises(qdrant):
     with pytest.raises(MissingOwnerFilterError):
         qdrant.delete_document_points(owner_user_id="", document_id="doc-1")

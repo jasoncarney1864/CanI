@@ -1244,6 +1244,20 @@ button {
   white-space: nowrap;
 }
 
+.doc-row__spoke-select {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+
+.doc-row__spoke-select:disabled {
+  opacity: 0.6;
+}
+
 .doc-badge--ready {
   background: color-mix(in srgb, #1e7d4f 12%, #fff);
   color: #1e7d4f;
