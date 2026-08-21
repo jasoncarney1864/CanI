@@ -48,6 +48,8 @@ def test_fetch_enabled_returns_real_fetchers():
 
     assert set(fetchers) == set(SOURCE_REGISTRY)
     assert isinstance(fetchers["nrs-116"], NrsChapterFetcher)
+    assert isinstance(fetchers["nrs-162a"], NrsChapterFetcher)
+    assert fetchers["nrs-162a"].chapter == "162A"
 
 
 def test_fake_fetchers_are_deterministic_and_touch_no_network():
