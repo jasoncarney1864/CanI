@@ -96,7 +96,9 @@ def test_generated_document_downloads_as_markdown(docker_stack, hub_client, docs
 
     download_response = docs_client.get(f"/documents/{document_id}/original", headers=headers)
     assert download_response.status_code == 200
-    assert download_response.headers["content-type"] == "text/markdown"
+    # Starlette appends "; charset=utf-8" to text/* media types automatically — assert the
+    # media type itself, not exact header equality.
+    assert download_response.headers["content-type"].startswith("text/markdown")
     assert ".md" in download_response.headers["content-disposition"]
     body_text = download_response.content.decode("utf-8")
     assert body_text.startswith("---\n")
