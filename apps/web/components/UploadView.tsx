@@ -6,6 +6,15 @@ import { ACCEPT_ATTR, formatBytes, validateFile } from "@/lib/uploads";
 interface UploadViewProps {
   /** Jump to the Documents view (e.g. after a successful upload) to watch ingestion. */
   onGoToDocuments: () => void;
+  /**
+   * Backend spoke value ("General" | "Legal" | "Health" | "Finance") to preselect in the
+   * category dropdown. Without this the picker always defaulted to "General" regardless of
+   * which spoke tab the user was on, and since choosing/dropping a file uploads immediately
+   * (no confirm step), a user who dropped a file before touching the dropdown silently
+   * uploaded into the wrong spoke. Defaulting to the active tab removes that footgun; the
+   * dropdown remains editable for the deliberate cross-spoke-upload case.
+   */
+  initialSpoke?: string;
 }
 
 type UploadState =
@@ -19,10 +28,10 @@ type UploadState =
  * /api/documents proxy. Client-side type/size validation mirrors docs-api; the server
  * remains the source of truth. On success, points the user at Documents to watch ingestion.
  */
-export function UploadView({ onGoToDocuments }: UploadViewProps) {
+export function UploadView({ onGoToDocuments, initialSpoke = "General" }: UploadViewProps) {
   const [state, setState] = useState<UploadState>({ kind: "idle" });
   const [dragging, setDragging] = useState(false);
-  const [spoke, setSpoke] = useState<string>("General");
+  const [spoke, setSpoke] = useState<string>(initialSpoke);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function upload(file: File) {
