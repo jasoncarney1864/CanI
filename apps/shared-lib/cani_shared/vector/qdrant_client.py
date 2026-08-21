@@ -234,6 +234,32 @@ class OwnerScopedQdrant:
         payloads.sort(key=lambda p: p.get("chunk_index", p.get("page_start", 0)))
         return payloads
 
+    def set_document_spoke(self, *, owner_user_id: str, document_id: str, spoke: str) -> None:
+        """Updates the `spoke` payload field on every already-indexed point for a document,
+        without re-embedding (docs/21 follow-up: moving a mis-filed document between
+        spokes from the Documents page). Payload-only set-by-filter is idempotent and safe
+        to call for a document with no indexed points yet — it matches zero points and
+        succeeds as a no-op. process_job re-reads document.spoke fresh from Postgres right
+        before it upserts a chunk (pipeline.py), so an in-flight ingestion job picks up a
+        spoke change on its own without racing this call; this method only needs to catch
+        up points indexed *before* the change."""
+        if not owner_user_id:
+            raise MissingOwnerFilterError("refusing to update vectors without owner_user_id")
+        if not document_id:
+            raise MissingOwnerFilterError("refusing to update vectors without a document_id")
+        self._client.set_payload(
+            collection_name=self._collection,
+            payload={"spoke": spoke},
+            points=qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="owner_user_id", match=qmodels.MatchValue(value=owner_user_id)
+                    ),
+                    qmodels.FieldCondition(key="document_id", match=qmodels.MatchValue(value=document_id)),
+                ]
+            ),
+        )
+
     def delete_document_points(self, *, owner_user_id: str, document_id: str) -> None:
         """Deletion pipeline step (docs/21 §1.5/§1.7 step 2). Delete-by-filter is
         idempotent — deleting zero points (e.g. a document whose ingestion failed before

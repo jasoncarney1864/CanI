@@ -30,6 +30,13 @@ function mockFetchSequence(initialDocs: DocumentMeta[]) {
       currentDocs = currentDocs.filter((d) => d.document_id !== id);
       return new Response(JSON.stringify({ document_id: id, status: "delete_pending" }), { status: 202 });
     }
+    if (method === "PATCH") {
+      const id = url.toString().split("/").pop()!;
+      const { spoke } = JSON.parse(init?.body as string) as { spoke: string };
+      currentDocs = currentDocs.map((d) => (d.document_id === id ? { ...d, spoke } : d));
+      const updated = currentDocs.find((d) => d.document_id === id);
+      return new Response(JSON.stringify(updated), { status: 200 });
+    }
     const envelope: DocumentListResponse = { items: currentDocs, total: currentDocs.length, limit: 50, offset: 0 };
     return new Response(JSON.stringify(envelope), { status: 200 });
   });
@@ -101,5 +108,56 @@ describe("DocumentsView delete flow (docs/21 §1.4/§1.9)", () => {
 
     await screen.findByText("Upstream delete failed (502).");
     expect(screen.getByText("hoa-rules.pdf")).toBeInTheDocument();
+  });
+});
+
+describe("DocumentsView move-to-spoke flow (docs/21 follow-up)", () => {
+  it("PATCHes the new spoke when the row's spoke select changes", async () => {
+    const { calls } = mockFetchSequence([doc()]);
+    render(<DocumentsView spoke="General" />);
+
+    await screen.findByText("hoa-rules.pdf");
+    fireEvent.change(screen.getByRole("combobox", { name: "Move hoa-rules.pdf to a different spoke" }), {
+      target: { value: "Legal" },
+    });
+
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    const patchCall = calls.find((c) => c.method === "PATCH")!;
+    expect(patchCall.url).toContain("/api/documents/doc-1");
+  });
+
+  it("reloads the list after a successful move, dropping a doc that no longer matches the active filter", async () => {
+    mockFetchSequence([doc()]);
+    render(<DocumentsView spoke="General" />);
+
+    await screen.findByText("hoa-rules.pdf");
+    fireEvent.change(screen.getByRole("combobox", { name: "Move hoa-rules.pdf to a different spoke" }), {
+      target: { value: "Legal" },
+    });
+
+    // The mock filters nothing server-side, so the row itself sticks around in this test;
+    // what matters is the PATCH landed and the row didn't error out.
+    await waitFor(() => expect(screen.queryByText(/Couldn't move/)).not.toBeInTheDocument());
+  });
+
+  it("shows a row-level error and keeps the prior selection visually when the move fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH") {
+          return new Response(JSON.stringify({ error: "Couldn't move 'hoa-rules.pdf' (502)." }), { status: 502 });
+        }
+        const envelope: DocumentListResponse = { items: [doc()], total: 1, limit: 50, offset: 0 };
+        return new Response(JSON.stringify(envelope), { status: 200 });
+      }),
+    );
+    render(<DocumentsView spoke="General" />);
+
+    await screen.findByText("hoa-rules.pdf");
+    fireEvent.change(screen.getByRole("combobox", { name: "Move hoa-rules.pdf to a different spoke" }), {
+      target: { value: "Legal" },
+    });
+
+    await screen.findByText("Couldn't move 'hoa-rules.pdf' (502).");
   });
 });

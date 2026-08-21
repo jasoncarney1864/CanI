@@ -705,6 +705,21 @@ def update_document_title(conn: Connection, owner_user_id: str, document_id: str
         conn.commit()
 
 
+def update_document_spoke(conn: Connection, owner_user_id: str, document_id: str, spoke: str) -> None:
+    """Moves a document to a different spoke (docs/21 follow-up — the Documents page had
+    no way to fix a mis-filed upload). This row is what the Documents page reads and what
+    an in-flight ingestion job re-reads before upserting a chunk (pipeline.py), so it's
+    authoritative going forward; callers are also responsible for propagating the same
+    value onto already-indexed Qdrant points via OwnerScopedQdrant.set_document_spoke,
+    since retrieval filters on that payload copy, not this column."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET spoke = %s, updated_at = now() WHERE owner_user_id = %s AND document_id = %s",
+            (spoke, owner_user_id, document_id),
+        )
+        conn.commit()
+
+
 def insert_chunk_manifests(conn: Connection, owner_user_id: str, chunks: list[ChunkManifest]) -> None:
     with conn.cursor() as cur:
         for c in chunks:
