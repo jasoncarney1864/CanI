@@ -96,23 +96,30 @@ class OwnerScopedQdrant:
         """Every service (retrieval-worker, ingestion-worker) calls this at startup, so
         the check-then-create here is inherently racy across processes — Qdrant itself is
         the source of truth for "already exists", not our preceding GET, so a 409 from
-        create_collection is treated as success rather than a fatal error."""
+        create_collection is treated as success rather than a fatal error.
+
+        Payload-index creation (docs/21 §3.4) runs on EVERY call, not just the
+        just-created path — otherwise a field added after the collection already exists
+        in production (e.g. "origin") never gets indexed there, since ensure_collection
+        would never take the create-collection branch again. Each create_payload_index
+        call is individually 409-tolerant, so re-running it against a live collection with
+        the index already present is a safe no-op."""
         existing = [c.name for c in self._client.get_collections().collections]
         if self._collection in existing:
             self._assert_vector_size(vector_size)
-            return
-        try:
-            self._client.create_collection(
-                collection_name=self._collection,
-                vectors_config=qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE),
-            )
-        except UnexpectedResponse as exc:
-            if exc.status_code == 409:
-                self._assert_vector_size(vector_size)
-                return
-            raise
+        else:
+            try:
+                self._client.create_collection(
+                    collection_name=self._collection,
+                    vectors_config=qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE),
+                )
+            except UnexpectedResponse as exc:
+                if exc.status_code == 409:
+                    self._assert_vector_size(vector_size)
+                else:
+                    raise
 
-        for field_name in ("owner_user_id", "document_id", "taxonomy_tags", "spoke"):
+        for field_name in ("owner_user_id", "document_id", "taxonomy_tags", "spoke", "origin"):
             try:
                 self._client.create_payload_index(
                     collection_name=self._collection,
@@ -226,3 +233,28 @@ class OwnerScopedQdrant:
         # before chunk_index was added to the payload.
         payloads.sort(key=lambda p: p.get("chunk_index", p.get("page_start", 0)))
         return payloads
+
+    def delete_document_points(self, *, owner_user_id: str, document_id: str) -> None:
+        """Deletion pipeline step (docs/21 §1.5/§1.7 step 2). Delete-by-filter is
+        idempotent — deleting zero points (e.g. a document whose ingestion failed before
+        any chunk was indexed) succeeds, which is what makes a crash-and-reclaim of the
+        deletion job safe."""
+        if not owner_user_id:
+            raise MissingOwnerFilterError("refusing to delete vectors without owner_user_id")
+        if not document_id:
+            raise MissingOwnerFilterError("refusing to delete vectors without a document_id")
+        self._client.delete(
+            collection_name=self._collection,
+            points_selector=qmodels.FilterSelector(
+                filter=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="owner_user_id", match=qmodels.MatchValue(value=owner_user_id)
+                        ),
+                        qmodels.FieldCondition(
+                            key="document_id", match=qmodels.MatchValue(value=document_id)
+                        ),
+                    ]
+                )
+            ),
+        )

@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
 RAW_DOCUMENTS_CONTAINER = "raw-documents"
@@ -77,7 +78,12 @@ class BlobStore:
     def download(self, blob_uri: str, *, max_attempts: int = 3) -> bytes:
         """Retries transient network failures with backoff per §8.10 — this is the
         ingestion pipeline's blob read, so a flaky connection here should not
-        dead-letter a job that would have succeeded on a second attempt."""
+        dead-letter a job that would have succeeded on a second attempt.
+
+        ResourceNotFoundError is re-raised immediately, not retried (docs/21 §2.2 step 3):
+        a missing blob (e.g. one deleted out-of-band, or a stale blob_uri) will never
+        succeed on a later attempt, so retrying it would just cost the download
+        endpoint 3x the latency before returning the same 404."""
         container, _, path = blob_uri.partition("/")
 
         last_error: Exception | None = None
@@ -85,9 +91,26 @@ class BlobStore:
             try:
                 client = self._client.get_blob_client(container=container, blob=path)
                 return client.download_blob().readall()
+            except ResourceNotFoundError:
+                raise
             except Exception as exc:  # noqa: BLE001 - retried below; re-raised after final attempt
                 last_error = exc
                 if attempt == max_attempts:
                     break
                 time.sleep(0.5 * attempt)
         raise last_error
+
+    def delete_prefix(self, *, container: str, prefix: str) -> int:
+        """Delete every blob under prefix; returns the count deleted. Missing blobs are
+        not errors — the deletion pipeline (docs/21 §1.6/§1.7 step 3) must be safe to
+        re-run on a crash-and-reclaim retry, so a blob already gone from a prior partial
+        attempt is success, not failure."""
+        container_client = self._client.get_container_client(container)
+        deleted = 0
+        for blob in container_client.list_blobs(name_starts_with=prefix):
+            try:
+                container_client.delete_blob(blob.name)
+                deleted += 1
+            except ResourceNotFoundError:
+                pass
+        return deleted

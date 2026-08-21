@@ -455,6 +455,56 @@ button {
   border-radius: 4px;
 }
 
+.conversation__save {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.conversation__save-btn {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.conversation__save-btn:hover:not(:disabled) {
+  color: var(--brand-accent);
+  border-color: var(--brand-accent);
+}
+
+.conversation__save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.conversation__save-success {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.conversation__save-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brand-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.conversation__save-error {
+  margin: 0;
+  font-size: 12px;
+  color: #8a1c1c;
+}
+
 .citation-card {
   display: flex;
   flex-direction: column;
@@ -1222,4 +1272,140 @@ button {
   to {
     transform: rotate(360deg);
   }
+}
+
+.docsview__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.docsview__search,
+.docsview__select {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--charcoal);
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
+.docsview__search {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+
+.docsview__select {
+  flex: none;
+}
+
+.doc-badge--origin {
+  background: color-mix(in srgb, var(--brand-accent) 14%, #fff);
+  color: var(--brand-accent);
+}
+
+.docsview__pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 16px 0 0;
+}
+
+.docsview__pager-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--charcoal);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.docsview__pager-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.docsview__pager-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- Documents view: delete (docs/21 §1.4/§1.9) --------------------------- */
+
+.doc-row {
+  flex-wrap: wrap;
+}
+
+.doc-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.doc-row__error {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #8a1c1c;
+}
+
+.doc-row__delete,
+.doc-row__download {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.doc-row__delete:hover {
+  color: #8a1c1c;
+  border-color: #8a1c1c;
+}
+
+.doc-row__download:hover {
+  color: var(--charcoal);
+  border-color: var(--charcoal);
+}
+
+.doc-row__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.doc-row__confirm-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--charcoal);
+}
+
+.doc-row__confirm-btn {
+  flex: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--charcoal);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.doc-row__confirm-btn--danger {
+  border-color: #8a1c1c;
+  background: #8a1c1c;
+  color: #fff;
+}
+
+.doc-row__confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

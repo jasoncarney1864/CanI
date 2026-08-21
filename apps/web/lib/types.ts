@@ -91,6 +91,15 @@ export interface DocumentMeta {
   created_at: string;
   updated_at: string;
   spoke: string;
+  origin: "uploaded" | "generated";
+}
+
+/** Mirrors cani_shared DocumentListResponse (GET /documents envelope, docs/21 §1.2). */
+export interface DocumentListResponse {
+  items: DocumentMeta[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 // --- Document Viewer source text (GET /documents/{id}/text) -------------------

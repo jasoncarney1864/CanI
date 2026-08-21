@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from cani_shared.models import Citation
+from cani_shared.models import Citation, Document, DocumentListResponse
 
 
 def test_citation_legacy_payload_still_validates():
@@ -46,3 +46,35 @@ def test_citation_serializes_law_citation_round_trip():
     payload = citation.model_dump()
     restored = Citation.model_validate(payload)
     assert restored == citation
+
+
+def _sample_document(**overrides) -> dict:
+    base = dict(
+        document_id="doc-1",
+        owner_user_id="owner-1",
+        title="hoa-rules.pdf",
+        source_type="application/pdf",
+        current_status="indexed",
+        checksum="abc123",
+        created_at=datetime(2026, 8, 14, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+    base.update(overrides)
+    return base
+
+
+def test_document_origin_defaults_to_uploaded_for_pre_docs21_rows():
+    # Old callers/rows predate the origin column (docs/21 §4) — must keep validating.
+    document = Document(**_sample_document())
+    assert document.origin == "uploaded"
+
+
+def test_document_accepts_generated_origin():
+    document = Document(**_sample_document(origin="generated"))
+    assert document.origin == "generated"
+
+
+def test_document_list_response_shape():
+    envelope = DocumentListResponse(items=[Document(**_sample_document())], total=1, limit=50, offset=0)
+    assert envelope.total == 1
+    assert envelope.items[0].document_id == "doc-1"

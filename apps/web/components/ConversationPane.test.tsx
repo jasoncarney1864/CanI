@@ -34,6 +34,10 @@ function renderPane(answer: RetrievalAnswer | null, overrides: Partial<Parameter
       onAsk={vi.fn().mockResolvedValue(null)}
       activeDocumentId={null}
       onSelectCitation={vi.fn()}
+      onSaveAsDocument={vi.fn()}
+      saveState="idle"
+      saveError={null}
+      onGoToDocuments={vi.fn()}
       {...overrides}
     />,
   );
@@ -116,5 +120,53 @@ describe("ConversationPane citation rendering (docs/20 §20.11 Phase 3)", () => 
     });
 
     expect(container.querySelector(".verdict-badge")).toHaveTextContent("YES, WITH CONDITIONS");
+  });
+});
+
+describe("ConversationPane 'Save as document' (docs/21 §3.6)", () => {
+  const answer: RetrievalAnswer = {
+    answer: "Yes, with board approval.",
+    citations: [],
+    insufficient_evidence: false,
+    verdict: null,
+  };
+
+  it("does not render the save control when there is no answer yet", () => {
+    renderPane(null);
+    expect(screen.queryByRole("button", { name: "Save as document" })).not.toBeInTheDocument();
+  });
+
+  it("renders a 'Save as document' button once an answer is present, wired to onSaveAsDocument", () => {
+    const onSaveAsDocument = vi.fn();
+    renderPane(answer, { onSaveAsDocument });
+
+    const button = screen.getByRole("button", { name: "Save as document" });
+    fireEvent.click(button);
+    expect(onSaveAsDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the button and shows 'Saving…' while saveState is 'saving'", () => {
+    renderPane(answer, { saveState: "saving" });
+
+    const button = screen.getByRole("button", { name: "Saving…" });
+    expect(button).toBeDisabled();
+  });
+
+  it("shows a 'Saved — view in Documents' link when saveState is 'saved', wired to onGoToDocuments", () => {
+    const onGoToDocuments = vi.fn();
+    renderPane(answer, { saveState: "saved", onGoToDocuments });
+
+    expect(screen.queryByRole("button", { name: "Save as document" })).not.toBeInTheDocument();
+    const link = screen.getByRole("button", { name: "view in Documents" });
+    fireEvent.click(link);
+    expect(onGoToDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the save error inline when saveState is 'error'", () => {
+    renderPane(answer, { saveState: "error", saveError: "Couldn't save (500)." });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't save (500).");
+    // The button is still present so the user can retry.
+    expect(screen.getByRole("button", { name: "Save as document" })).toBeInTheDocument();
   });
 });
