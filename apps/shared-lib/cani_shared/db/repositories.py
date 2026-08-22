@@ -950,23 +950,46 @@ def confirm_legal_draft_fields(
         return LegalDraft.model_validate(row) if row else None
 
 
-def finalize_legal_draft(
-    conn: Connection, owner_user_id: str, legal_draft_id: str, document_id: str
+def claim_legal_draft_for_finalize(
+    conn: Connection, owner_user_id: str, legal_draft_id: str
 ) -> LegalDraft | None:
-    """Only transitions a draft still in 'draft' status — a draft that's already
-    'finalized' has document_id set, which is the finalize-idempotency check the caller
-    uses (docs/22 Task 5): re-running this against an already-finalized draft is a no-op
-    (no row matches the WHERE, so the caller's pre-check against the existing document_id
-    is what actually returns success, not a second write here)."""
+    """First half of finalize (Task 5's idempotency requirement). Every repository write
+    in this module commits its own transaction individually — there is no multi-call
+    transaction spanning create_document/create_document_version/create_ingestion_job for
+    a FOR UPDATE lock to survive across — so the claim has to be its own atomic statement,
+    done *before* any of that work starts, not a check the caller does first and trusts.
+
+    draft->finalized here (not a separate 'finalizing' status: the schema doesn't have
+    one) is the actual mutex: only one concurrent finalize call can flip status away from
+    'draft', so only one caller ever gets a non-None row back and proceeds to render the
+    PDF and create the document. The loser calls get_legal_draft afterward to read
+    document_id off the winner's row — see set_legal_draft_document_id."""
     _row_conn(conn)
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE legal_drafts
-            SET status = 'finalized', document_id = %s, updated_at = now()
+            SET status = 'finalized', updated_at = now()
             WHERE owner_user_id = %s AND legal_draft_id = %s AND status = 'draft'
             RETURNING *
             """,
+            (owner_user_id, legal_draft_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return LegalDraft.model_validate(row) if row else None
+
+
+def set_legal_draft_document_id(
+    conn: Connection, owner_user_id: str, legal_draft_id: str, document_id: str
+) -> LegalDraft | None:
+    """Second half of finalize — called once, only by the caller that won
+    claim_legal_draft_for_finalize, after the document/blob/ingestion job actually exist."""
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE legal_drafts SET document_id = %s, updated_at = now() "
+            "WHERE owner_user_id = %s AND legal_draft_id = %s RETURNING *",
             (document_id, owner_user_id, legal_draft_id),
         )
         row = cur.fetchone()

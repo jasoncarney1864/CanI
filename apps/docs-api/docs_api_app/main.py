@@ -61,6 +61,7 @@ from docs_api_app.generated_documents import (
     derive_title,
     validate_generated_document_request,
 )
+from docs_api_app.legal import build_legal_router
 from docs_api_app.liveavatar import LiveAvatarError, create_session_token
 from docs_api_app.uploads import UploadValidationError, validate_upload
 
@@ -105,6 +106,15 @@ if settings.rate_limit_enabled:
         capacity=settings.rate_limit_requests,
         window_seconds=settings.rate_limit_window_seconds,
     )
+# Own module/router (docs_api_app.legal), not folded into this file — built by a factory
+# so it can reuse get_principal/require_docs_entitlement without a circular import.
+app.include_router(
+    build_legal_router(
+        settings=settings, get_principal=get_principal, require_docs_entitlement=require_docs_entitlement
+    ),
+    prefix="/legal",
+    tags=["legal"],
+)
 
 
 class UploadResponse(BaseModel):
