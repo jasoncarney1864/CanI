@@ -7,7 +7,7 @@ import { SpokeSwitcher } from "./SpokeSwitcher";
 import { JurisdictionPicker } from "./JurisdictionPicker";
 
 /** The primary views the rail switches between. */
-export type NavView = "workspace" | "upload" | "documents";
+export type NavView = "workspace" | "upload" | "documents" | "draft";
 
 interface LeftRailProps {
   spoke: Spoke;
@@ -28,6 +28,14 @@ const NAV_ITEMS: { glyph: string; label: string; view: NavView }[] = [
   { glyph: "\u2751", label: "Documents", view: "documents" },
 ];
 
+// Legal-drafting assistant (Sprint 4) \u2014 only makes sense inside the Legal spoke, so it's
+// appended to the base nav rather than always shown.
+const DRAFT_NAV_ITEM: { glyph: string; label: string; view: NavView } = {
+  glyph: "\u270E",
+  label: "Draft",
+  view: "draft",
+};
+
 /**
  * Collapsible structural menu (§5): full-width at 25%, collapsing to an
  * icon-only rail. Hosts the domain icon, primary nav, spoke switcher, and the
@@ -45,6 +53,7 @@ export function LeftRail({
   onJurisdictionChange,
 }: LeftRailProps) {
   const displayName = getDisplayName(user.user_id, user.idp_subject, user.display_name);
+  const navItems = spoke.key === "legal" ? [...NAV_ITEMS, DRAFT_NAV_ITEM] : NAV_ITEMS;
   return (
     <nav className={`rail${collapsed ? " rail--collapsed" : ""}`} aria-label="Primary">
       <button
@@ -61,7 +70,7 @@ export function LeftRail({
       </button>
 
       <ul className="rail__nav">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <li key={item.label}>
             <button
               type="button"
