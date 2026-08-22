@@ -12,6 +12,7 @@ import { ConversationPane, type SaveAsDocumentState } from "./ConversationPane";
 import { DocumentViewer } from "./DocumentViewer";
 import { UploadView } from "./UploadView";
 import { DocumentsView } from "./DocumentsView";
+import { LegalDraftingView } from "./LegalDraftingView";
 
 interface AppShellProps {
   initialSpoke?: SpokeKey;
@@ -180,7 +181,12 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
         spoke={spoke}
         collapsed={collapsed}
         onToggle={() => setCollapsed((v) => !v)}
-        onSpokeChange={setSpokeKey}
+        onSpokeChange={(key) => {
+          // "Draft" only exists in the Legal spoke — leaving it drops back to Workspace
+          // rather than stranding the view on a nav item that's about to disappear.
+          if (key !== "legal" && view === "draft") setView("workspace");
+          setSpokeKey(key);
+        }}
         user={user}
         activeView={view}
         onNavigate={setView}
@@ -250,6 +256,12 @@ export function AppShell({ initialSpoke = "legal", user }: AppShellProps) {
         {view === "documents" && (
           <div className="panel">
             <DocumentsView spoke={spoke.key === "hub" ? "General" : spoke.label} />
+          </div>
+        )}
+
+        {view === "draft" && (
+          <div className="panel">
+            <LegalDraftingView />
           </div>
         )}
       </div>

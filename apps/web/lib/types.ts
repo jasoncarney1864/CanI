@@ -131,3 +131,81 @@ export interface DocumentText {
 export interface AvatarSessionToken {
   session_token: string;
 }
+
+// --- Legal drafting assistant (Sprint 4) ---------------------------------------------
+// Mirrors docs_api_app.legal's request/response models.
+
+/** One field definition inside a LegalTemplateDetail's field_schema, keyed by field key. */
+export interface LegalFieldSpec {
+  type: "text" | "textarea" | "date" | "select" | "multiselect";
+  label: string;
+  required: boolean;
+  help?: string;
+  /** Present for "select"/"multiselect" fields. */
+  options?: string[];
+}
+
+/** Mirrors LegalTemplateSummary (GET /legal/templates list item). */
+export interface LegalTemplateSummary {
+  slug: string;
+  version: number;
+  title: string;
+  category: string;
+  jurisdiction_note: string;
+  disclaimer_text: string;
+}
+
+/** Mirrors LegalTemplateDetail (GET /legal/templates/{slug}). */
+export interface LegalTemplateDetail extends LegalTemplateSummary {
+  field_schema: Record<string, LegalFieldSpec>;
+}
+
+/** Mirrors LegalDraft. */
+export interface LegalDraft {
+  legal_draft_id: string;
+  owner_user_id: string;
+  legal_template_id: string;
+  template_version: number;
+  status: "draft" | "finalized" | "archived";
+  field_values_json: Record<string, string>;
+  document_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Mirrors legal.py's CitationDTO — a trimmed-down Citation for field-proposal sourcing. */
+export interface LegalCitationDTO {
+  source_kind: string;
+  document_id?: string | null;
+  document_title?: string | null;
+  citation_ref?: string | null;
+  snippet?: string | null;
+}
+
+/** Mirrors FieldProposal — a proposed value for one field, labeled by where it came from. */
+export interface LegalFieldProposal {
+  field_key: string;
+  value: string;
+  source: "user_document" | "state_statute" | "mixed";
+  citations: LegalCitationDTO[];
+}
+
+/** Mirrors ConverseResponse (POST /legal/drafts/{id}/converse). Nothing here is saved —
+ * only POST .../fields/confirm writes to field_values_json. */
+export interface LegalConverseResponse {
+  reply: string;
+  proposals: LegalFieldProposal[];
+}
+
+/** Mirrors DraftPreviewResponse (GET /legal/drafts/{id}/preview). */
+export interface LegalDraftPreview {
+  body: string;
+  disclaimer_text: string;
+  missing_required_fields: string[];
+}
+
+/** Mirrors FinalizeResponse (POST /legal/drafts/{id}/finalize). */
+export interface LegalFinalizeResponse {
+  document_id: string | null;
+  status: "finalized" | "finalize_pending";
+}
