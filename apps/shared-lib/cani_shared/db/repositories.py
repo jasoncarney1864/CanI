@@ -30,6 +30,8 @@ from cani_shared.models import (
     LawChunkManifest,
     LawSource,
     LawSourceVersion,
+    LegalDraft,
+    LegalTemplate,
 )
 
 
@@ -863,6 +865,127 @@ def touch_law_source_checked(conn: Connection, law_source_id: str) -> None:
             (law_source_id,),
         )
         conn.commit()
+
+
+# --- Legal drafting (Sprint 4) ---------------------------------------------------------
+#
+# legal_templates is a shared catalog (like law_sources, not owner-scoped). legal_drafts
+# is owner-scoped like every other user-data table.
+
+
+def list_active_legal_templates(conn: Connection) -> list[LegalTemplate]:
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM legal_templates WHERE is_active = TRUE ORDER BY title")
+        return [LegalTemplate.model_validate(r) for r in cur.fetchall()]
+
+
+def get_active_legal_template(conn: Connection, slug: str) -> LegalTemplate | None:
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM legal_templates WHERE slug = %s AND is_active = TRUE", (slug,))
+        row = cur.fetchone()
+        return LegalTemplate.model_validate(row) if row else None
+
+
+def get_legal_template(conn: Connection, legal_template_id: str) -> LegalTemplate | None:
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM legal_templates WHERE legal_template_id = %s", (legal_template_id,))
+        row = cur.fetchone()
+        return LegalTemplate.model_validate(row) if row else None
+
+
+def create_legal_draft(
+    conn: Connection, owner_user_id: str, *, legal_template_id: str, template_version: int
+) -> LegalDraft:
+    _row_conn(conn)
+    legal_draft_id = str(uuid.uuid4())
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO legal_drafts (legal_draft_id, owner_user_id, legal_template_id, template_version,
+                                       status, field_values_json, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, 'draft', '{}'::jsonb, now(), now())
+            RETURNING *
+            """,
+            (legal_draft_id, owner_user_id, legal_template_id, template_version),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return LegalDraft.model_validate(row)
+
+
+def get_legal_draft(conn: Connection, owner_user_id: str, legal_draft_id: str) -> LegalDraft | None:
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM legal_drafts WHERE owner_user_id = %s AND legal_draft_id = %s",
+            (owner_user_id, legal_draft_id),
+        )
+        row = cur.fetchone()
+        return LegalDraft.model_validate(row) if row else None
+
+
+def confirm_legal_draft_fields(
+    conn: Connection, owner_user_id: str, legal_draft_id: str, fields: dict[str, Any]
+) -> LegalDraft | None:
+    """The only write path to field_values_json (Task 4: /converse never persists a
+    proposal, only /fields/confirm does). Merges via jsonb `||` rather than read-modify-
+    write in Python, so two confirm calls for different fields can't race and clobber each
+    other's write."""
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE legal_drafts
+            SET field_values_json = field_values_json || %s::jsonb, updated_at = now()
+            WHERE owner_user_id = %s AND legal_draft_id = %s AND status = 'draft'
+            RETURNING *
+            """,
+            (json.dumps(fields), owner_user_id, legal_draft_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return LegalDraft.model_validate(row) if row else None
+
+
+def finalize_legal_draft(
+    conn: Connection, owner_user_id: str, legal_draft_id: str, document_id: str
+) -> LegalDraft | None:
+    """Only transitions a draft still in 'draft' status — a draft that's already
+    'finalized' has document_id set, which is the finalize-idempotency check the caller
+    uses (docs/22 Task 5): re-running this against an already-finalized draft is a no-op
+    (no row matches the WHERE, so the caller's pre-check against the existing document_id
+    is what actually returns success, not a second write here)."""
+    _row_conn(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE legal_drafts
+            SET status = 'finalized', document_id = %s, updated_at = now()
+            WHERE owner_user_id = %s AND legal_draft_id = %s AND status = 'draft'
+            RETURNING *
+            """,
+            (document_id, owner_user_id, legal_draft_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return LegalDraft.model_validate(row) if row else None
+
+
+def delete_legal_draft(conn: Connection, owner_user_id: str, legal_draft_id: str) -> bool:
+    """Only deletes a draft still in 'draft' status. A finalized draft's document lives on
+    the ordinary Documents page — delete that via DELETE /documents/{id} instead; this
+    call intentionally can't touch a document that already exists."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM legal_drafts WHERE owner_user_id = %s AND legal_draft_id = %s AND status = 'draft'",
+            (owner_user_id, legal_draft_id),
+        )
+        deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
 
 
 def record_query_audit(

@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class IngestionStage(StrEnum):
@@ -249,3 +249,48 @@ class LawChunkManifest(BaseModel):
     content_sha256: str
     embedding_version: str
     qdrant_point_id: str
+
+
+class LegalDraftStatus(StrEnum):
+    DRAFT = "draft"
+    FINALIZED = "finalized"
+    ARCHIVED = "archived"
+
+
+class LegalTemplate(BaseModel):
+    """A versioned, seeded drafting template (Sprint 4). Not owner-scoped — shared
+    catalog, same as LawSource."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    legal_template_id: str
+    slug: str
+    version: int
+    title: str
+    category: str
+    jurisdiction_note: str
+    # Field defs (type/label/required/help, keyed by field key). Aliased to the
+    # `schema_json` column name — the bare attribute name collides with BaseModel.schema,
+    # pydantic v1's deprecated schema-dump method, which still exists in v2 and triggers a
+    # shadow warning if a field is declared with that exact name.
+    field_schema: dict[str, Any] = Field(alias="schema_json")
+    body_template: str
+    disclaimer_text: str
+    is_active: bool
+    created_at: datetime
+
+
+class LegalDraft(BaseModel):
+    """A user's in-progress or finalized answers against one LegalTemplate version.
+    field_values_json holds only confirmed values (flat field key -> value) — proposals
+    surfaced mid-conversation are never persisted here until /fields/confirm is called."""
+
+    legal_draft_id: str
+    owner_user_id: str
+    legal_template_id: str
+    template_version: int
+    status: LegalDraftStatus = LegalDraftStatus.DRAFT
+    field_values_json: dict[str, Any] = {}
+    document_id: str | None = None  # set once, on finalize
+    created_at: datetime
+    updated_at: datetime
