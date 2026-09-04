@@ -5,6 +5,9 @@
     "environmentName": {
       "value": "dev"
     },
+    "customDomainCertificateName": {
+      "value": "mc-cani-env-dev-app-canido-co-0719"
+    },
     "acrName": {
       "value": "canishared19088c8d54"
     },

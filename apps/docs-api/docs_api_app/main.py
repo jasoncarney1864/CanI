@@ -62,7 +62,6 @@ from docs_api_app.generated_documents import (
     validate_generated_document_request,
 )
 from docs_api_app.legal import build_legal_router
-from docs_api_app.liveavatar import LiveAvatarError, create_session_token
 from docs_api_app.uploads import UploadValidationError, validate_upload
 
 GENERATED_SOURCE_TYPE = "text/markdown"
@@ -105,6 +104,7 @@ if settings.rate_limit_enabled:
         RateLimitMiddleware,
         capacity=settings.rate_limit_requests,
         window_seconds=settings.rate_limit_window_seconds,
+        trusted_proxy_hosts=settings.trusted_proxy_host_list,
     )
 # Own module/router (docs_api_app.legal), not folded into this file — built by a factory
 # so it can reuse get_principal/require_docs_entitlement without a circular import.
@@ -126,10 +126,6 @@ class UploadResponse(BaseModel):
 class DeleteResponse(BaseModel):
     document_id: str
     status: str
-
-
-class AvatarSessionTokenResponse(BaseModel):
-    session_token: str
 
 
 class QueryRequest(BaseModel):
@@ -621,31 +617,6 @@ def get_document_original(
         media_type=document.source_type,
         headers={"Content-Disposition": disposition},
     )
-
-
-@app.post("/avatar/session-token", response_model=AvatarSessionTokenResponse)
-async def create_avatar_session_token(
-    principal: RequestPrincipal = Depends(get_principal),
-    _: RequestPrincipal = Depends(require_docs_entitlement),
-) -> AvatarSessionTokenResponse:
-    """Mints a short-lived LiveAvatar (HeyGen) session token server-side so
-    LIVEAVATAR_API_KEY never reaches the browser. The frontend uses the returned token to
-    open the WebRTC avatar session directly with LiveAvatar — that embed wiring doesn't
-    exist yet, this endpoint only covers the token exchange."""
-    if not settings.liveavatar_configured:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "avatar voicing is not configured on this deployment"
-        )
-    try:
-        token = await create_session_token(
-            api_key=settings.liveavatar_api_key, avatar_id=settings.liveavatar_avatar_id
-        )
-    except LiveAvatarError as exc:
-        logger.error(
-            "liveavatar_session_token_failed", error=str(exc), user_id_hash=hash_user_id(principal.user_id)
-        )
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "avatar service error") from exc
-    return AvatarSessionTokenResponse(session_token=token)
 
 
 @app.get("/healthz")

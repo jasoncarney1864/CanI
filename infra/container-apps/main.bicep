@@ -72,28 +72,10 @@ param qdrantUrl string
 @secure()
 param qdrantApiKey string
 
-@description('''LiveAvatar (HeyGen) API key. docs-api only — mints WebRTC session tokens for
-the talking-avatar feature. Unlike azureOpenAIApiKey, absence does not silently degrade:
-cani_shared.config.liveavatar_configured gates the endpoint and it returns 503 rather than
-faking a session. Sourced from the liveavatar-api-key Key Vault secret by
-deploy-with-secrets.ps1. Defaults empty so existing deploys/validates that don't pass it
-don't break; an empty value reproduces the 503-not-configured state, not a crash.''')
-@secure()
-param liveAvatarApiKey string = ''
-
-@description('LiveAvatar (HeyGen) avatar ID to use for session tokens. Sourced from the liveavatar-avatar-id Key Vault secret by deploy-with-secrets.ps1. Defaults empty for the same reason as liveAvatarApiKey.')
-@secure()
-param liveAvatarAvatarId string = ''
-
 @description('''Azure AI Speech API key. web only — /api/speech uses it for neural TTS
-(both the browser-fallback MP3 path and, since the LiveAvatar Lite-mode fix, the
-raw-24khz-16bit-mono-pcm audio repeatAudio() needs). This was never wired into the IaC
-pipeline at all until 2026-08-16: the key existed on the cani-speech resource but nothing
-had ever captured it into Key Vault/.env/Bicep, so /api/speech had silently 501'd since
-before this app existed — masked by the MP3 caller's browser-TTS fallback, until
-useLiveAvatar.ts's speak() (no fallback available) made the gap visible. Sourced from the
-azure-speech-api-key Key Vault secret by deploy-with-secrets.ps1. Defaults empty so
-existing deploys/validates that don't pass it don't break.''')
+for the browser's MP3 playback path. Sourced from the azure-speech-api-key Key Vault secret
+by deploy-with-secrets.ps1. Defaults empty so existing deploys and validations that do not
+pass it do not break; the browser falls back to speechSynthesis.''')
 @secure()
 param azureSpeechApiKey string = ''
 
@@ -131,6 +113,9 @@ param entraOidcClientId string
 
 @description('Public custom domain the web app is served on (used for the OIDC redirect_uri, NOT the Container Apps auto-generated FQDN)')
 param customDomain string = 'app.canido.co'
+
+@description('Name of the existing Container Apps managed certificate bound to the public web custom domain')
+param customDomainCertificateName string
 
 @description('Key Vault name for secrets')
 param keyVaultName string
@@ -207,6 +192,11 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
       internal: false
     }
   }
+}
+
+resource customDomainCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' existing = {
+  parent: containerAppEnv
+  name: customDomainCertificateName
 }
 
 // Hub API Container App
@@ -383,14 +373,6 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'qdrant-api-key'
           value: qdrantApiKey
         }
-        {
-          name: 'liveavatar-api-key'
-          value: liveAvatarApiKey
-        }
-        {
-          name: 'liveavatar-avatar-id'
-          value: liveAvatarAvatarId
-        }
       ]
     }
     template: {
@@ -421,8 +403,6 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
             { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
             { name: 'RETRIEVAL_WORKER_URL', value: 'https://retrieval-worker.internal.${containerAppEnv.properties.defaultDomain}' }
-            { name: 'LIVEAVATAR_API_KEY', secretRef: 'liveavatar-api-key' }
-            { name: 'LIVEAVATAR_AVATAR_ID', secretRef: 'liveavatar-avatar-id' }
           ]
           probes: [
             {
@@ -485,7 +465,13 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 3000
         transport: 'http'
         allowInsecure: false
-        // Custom domain removed for initial deployment - add back later with certificate
+        customDomains: [
+          {
+            name: customDomain
+            bindingType: 'SniEnabled'
+            certificateId: customDomainCertificate.id
+          }
+        ]
       }
       registries: [
         {

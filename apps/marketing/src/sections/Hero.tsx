@@ -11,8 +11,8 @@ export function Hero() {
           back to the exact passage it came from.
         </p>
         <div className="hero-actions">
-          <a className="button button--primary" href="#demo-request">
-            Request a Demo
+          <a className="button button--primary" href="https://app.canido.co/auth/login">
+            Get started free
           </a>
           <a className="button button--secondary" href="#what-we-do">
             See how it works

@@ -4,6 +4,7 @@ per-client rate limiting."""
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -74,11 +75,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Health probes are exempt — throttling them would flap readiness under load.
     """
 
-    def __init__(self, app, *, capacity: int, window_seconds: float, exclude_paths=("/healthz",)):
+    def __init__(
+        self,
+        app,
+        *,
+        capacity: int,
+        window_seconds: float,
+        exclude_paths=("/healthz",),
+        trusted_proxy_hosts: Iterable[str] = (),
+    ):
         super().__init__(app)
         self._capacity = float(capacity)
         self._refill_per_sec = capacity / window_seconds
         self._exclude = set(exclude_paths)
+        self._trusted_proxy_hosts = frozenset(trusted_proxy_hosts)
         self._retry_after = max(1, round(1 / self._refill_per_sec))
         # key -> [tokens, last_refill_monotonic]
         self._buckets: dict[str, list[float]] = {}
@@ -86,14 +96,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # buckets — an idle client re-creates its bucket harmlessly on next request.
         self._max_buckets = 10_000
 
-    @staticmethod
-    def _client_key(request: Request) -> str:
-        # Behind an ingress/proxy the real client is the leftmost X-Forwarded-For hop;
-        # direct connections fall back to the socket peer.
+    def _client_key(self, request: Request) -> str:
+        # A caller can forge X-Forwarded-For unless it arrived through a proxy we
+        # explicitly trust. Trusted proxies append the originating address, making the
+        # rightmost value the one associated with this request.
+        peer = request.client.host if request.client else "unknown"
         forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
+        if forwarded and peer in self._trusted_proxy_hosts:
+            return forwarded.rsplit(",", maxsplit=1)[-1].strip()
+        return peer
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path in self._exclude:

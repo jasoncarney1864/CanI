@@ -43,18 +43,24 @@ def test_list_documents_envelope_filter_sort_and_pagination(docker_stack, hub_cl
     assert {"items", "total", "limit", "offset"} <= envelope.keys()
     assert envelope["limit"] == 50
     assert envelope["offset"] == 0
-    all_titles = {d["title"] for d in envelope["items"]}
-    assert {"alpha-lease.pdf", "beta-hoa-rules.pdf", "gamma-notes.pdf"} <= all_titles
+    by_id = {d["document_id"]: d for d in envelope["items"]}
+    assert set(document_ids.values()) <= by_id.keys()
     assert envelope["total"] >= 3
     assert all(d["origin"] == "uploaded" for d in envelope["items"])
+
+    # With real Azure AI settings, ingestion replaces raw filenames with generated,
+    # human-readable titles. With CI's fake/unconfigured providers it preserves the
+    # filenames. Capture the post-ingestion values so the list contract is tested in
+    # both supported modes rather than treating filenames as permanent titles.
+    current_titles = {source: by_id[document_id]["title"] for source, document_id in document_ids.items()}
 
     # spoke filter: proves the upload's spoke was actually persisted and is filterable —
     # the round trip the web-proxy bug (§1.8) used to break before reaching docs-api.
     legal_response = docs_client.get("/documents", params={"spoke": "Legal"}, headers=headers)
     assert legal_response.status_code == 200
-    legal_titles = {d["title"] for d in legal_response.json()["items"]}
-    assert "beta-hoa-rules.pdf" in legal_titles
-    assert "alpha-lease.pdf" not in legal_titles
+    legal_ids = {d["document_id"] for d in legal_response.json()["items"]}
+    assert document_ids["beta-hoa-rules.pdf"] in legal_ids
+    assert document_ids["alpha-lease.pdf"] not in legal_ids
 
     # status filter.
     status_response = docs_client.get("/documents", params={"status": "indexed"}, headers=headers)
@@ -63,39 +69,39 @@ def test_list_documents_envelope_filter_sort_and_pagination(docker_stack, hub_cl
 
     failed_response = docs_client.get("/documents", params={"status": "failed"}, headers=headers)
     assert failed_response.status_code == 200
-    failed_titles = {d["title"] for d in failed_response.json()["items"]}
-    assert not ({"alpha-lease.pdf", "beta-hoa-rules.pdf", "gamma-notes.pdf"} & failed_titles)
+    failed_ids = {d["document_id"] for d in failed_response.json()["items"]}
+    assert not (set(document_ids.values()) & failed_ids)
 
     # q filter: case-insensitive substring on title.
-    q_response = docs_client.get("/documents", params={"q": "HOA"}, headers=headers)
+    beta_title = current_titles["beta-hoa-rules.pdf"]
+    q_response = docs_client.get("/documents", params={"q": beta_title.swapcase()}, headers=headers)
     assert q_response.status_code == 200
-    assert {d["title"] for d in q_response.json()["items"]} == {"beta-hoa-rules.pdf"}
+    assert document_ids["beta-hoa-rules.pdf"] in {d["document_id"] for d in q_response.json()["items"]}
 
-    # sort=title asc, scoped with q="pdf" (matches all three of this test's uploads and
-    # nothing from another test, since documents are owner-scoped per login) so ordering
-    # assertions aren't perturbed by unrelated rows.
+    # This login owns exactly these three rows, so sort and pagination can compare against
+    # the titles actually persisted by the configured provider mode.
     sorted_response = docs_client.get(
         "/documents",
-        params={"q": "pdf", "sort": "title", "order": "asc", "limit": 200},
+        params={"sort": "title", "order": "asc", "limit": 200},
         headers=headers,
     )
     assert sorted_response.status_code == 200
     ordered_titles = [d["title"] for d in sorted_response.json()["items"]]
-    assert ordered_titles == ["alpha-lease.pdf", "beta-hoa-rules.pdf", "gamma-notes.pdf"]
+    assert ordered_titles == sorted(current_titles.values(), key=str.casefold)
 
     # pagination: limit=1 walks the same sorted set one row at a time.
     page0 = docs_client.get(
         "/documents",
-        params={"q": "pdf", "sort": "title", "order": "asc", "limit": 1, "offset": 0},
+        params={"sort": "title", "order": "asc", "limit": 1, "offset": 0},
         headers=headers,
     )
     page1 = docs_client.get(
         "/documents",
-        params={"q": "pdf", "sort": "title", "order": "asc", "limit": 1, "offset": 1},
+        params={"sort": "title", "order": "asc", "limit": 1, "offset": 1},
         headers=headers,
     )
-    assert page0.json()["items"][0]["title"] == "alpha-lease.pdf"
-    assert page1.json()["items"][0]["title"] == "beta-hoa-rules.pdf"
+    assert page0.json()["items"][0]["title"] == ordered_titles[0]
+    assert page1.json()["items"][0]["title"] == ordered_titles[1]
     assert page0.json()["total"] == page1.json()["total"] == 3
 
 

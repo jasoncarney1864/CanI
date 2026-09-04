@@ -1,6 +1,6 @@
 # 21 — Documents page management, original download, and AI-generated documents
 
-**Status:** Approved spec, ready for implementation
+**Status:** Implemented 2026-08-20 (`3a4a896` plus follow-ups through `0658c7e`)
 **Date:** 2026-08-18
 **Author:** Architecture pass (Claude Fable 5); implementation target: Sonnet 5
 **Scope confirmation:** Problem 3 confirmed with Jason as option (b) — the AI exports the

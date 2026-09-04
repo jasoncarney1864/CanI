@@ -69,6 +69,7 @@ if settings.rate_limit_enabled:
         RateLimitMiddleware,
         capacity=settings.rate_limit_requests,
         window_seconds=settings.rate_limit_window_seconds,
+        trusted_proxy_hosts=settings.trusted_proxy_host_list,
     )
 
 

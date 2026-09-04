@@ -52,21 +52,6 @@ class Settings(BaseSettings):
 
     retrieval_worker_url: str = Field(default="http://retrieval-worker:8003", alias="RETRIEVAL_WORKER_URL")
 
-    # LiveAvatar (HeyGen) streaming avatar — voices RAG answers on the website via
-    # WebRTC, Lite integration mode (bring-your-own-LLM, we only mint session tokens).
-    # Free tier: 10 credits, 2 min/session, 1 concurrency, watermarked. avatar_id is
-    # required by LiveAvatar's own session-token API — there's no sane default to ship,
-    # pick one from the LiveAvatar dashboard (app.liveavatar.com/developers). Both unset
-    # -> docs-api's /avatar/session-token endpoint returns 503 rather than crashing: no
-    # fake fallback here, unlike the other providers, because a placeholder session token
-    # can't open a real WebRTC session so failing loud is the only useful behavior.
-    liveavatar_api_key: str = Field(default="", alias="LIVEAVATAR_API_KEY")
-    liveavatar_avatar_id: str = Field(default="", alias="LIVEAVATAR_AVATAR_ID")
-
-    @property
-    def liveavatar_configured(self) -> bool:
-        return bool(self.liveavatar_api_key and self.liveavatar_avatar_id)
-
     # Malware scanning (docs/08 §8.11). When clamav_host is set, ingestion scans each file
     # against that clamd daemon before extraction; unset, dev/CI fall back to the
     # EICAR-only scanner (see cani_shared.providers.scanner). Never leaves a document
@@ -83,6 +68,14 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
     rate_limit_requests: int = Field(default=60, alias="RATE_LIMIT_REQUESTS")
     rate_limit_window_seconds: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
+    # Comma-separated proxy source hosts permitted to supply X-Forwarded-For. Leave
+    # empty unless the ingress's source address is known; trusting this header from an
+    # arbitrary direct client lets that client bypass the rate limiter.
+    trusted_proxy_hosts: str = Field(default="", alias="TRUSTED_PROXY_HOSTS")
+
+    @property
+    def trusted_proxy_host_list(self) -> tuple[str, ...]:
+        return tuple(host.strip() for host in self.trusted_proxy_hosts.split(",") if host.strip())
 
     # Application Insights (docs/13 §13.7). Optional everywhere: when unset,
     # cani_shared.telemetry.configure_telemetry is a no-op, so local compose runs and

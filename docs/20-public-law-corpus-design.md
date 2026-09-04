@@ -1,7 +1,8 @@
 # 20. Public-Law Corpus Design (CanI Docs / Legal spoke)
 
-**Status:** Design accepted — open questions resolved by Jason 2026-08-13 (§20.12); not implemented
-**Last updated:** 2026-08-13
+**Status:** Phases 1–3 implemented 2026-08-14/15 (`893e534`, `0953060`, `46418bc`);
+phases 4–5 remain demand-driven and Washoe County remains on hold per §20.12
+**Last updated:** 2026-08-22
 **Depends on:** docs/08 (RAG pipeline), docs/09 (data model), docs/14 (security)
 
 ## 20.1 What this adds and what it must never do

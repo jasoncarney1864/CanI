@@ -1,6 +1,6 @@
 """Brings up the full docker-compose dev stack once per test session and tears it down
-afterward. This is the closest thing to a real "dev deployment" available without a live
-AKS cluster — the same compose file docker-compose.yml used for local development.
+afterward. This is the closest local/CI analogue of the Container Apps deployment — the
+same compose file docker-compose.yml used for local development.
 """
 
 from __future__ import annotations

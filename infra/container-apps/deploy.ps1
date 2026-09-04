@@ -12,8 +12,6 @@ param(
     [securestring]$QdrantApiKey,
     [securestring]$AzureOpenAIApiKey,
     [securestring]$AzureDocumentIntelligenceApiKey,
-    [securestring]$LiveAvatarApiKey,
-    [securestring]$LiveAvatarAvatarId,
     [securestring]$AzureSpeechApiKey,
     [string]$AcrLoginServer = "canishared19088c8d54.azurecr.io",
     [switch]$WhatIf,
@@ -66,15 +64,7 @@ if (-not $AzureDocumentIntelligenceApiKey) {
     $AzureDocumentIntelligenceApiKey = Read-Host "Enter AZURE_DOCUMENTINTELLIGENCE_API_KEY" -AsSecureString
 }
 
-# Optional — unlike the two above, an empty value here just reproduces the avatar
-# endpoint's existing 503-not-configured response rather than a silent fake fallback, so
-# this doesn't prompt or hard-fail like the required secrets above.
-if (-not $LiveAvatarApiKey) { $LiveAvatarApiKey = ConvertTo-SecureString -String "" -AsPlainText -Force }
-if (-not $LiveAvatarAvatarId) { $LiveAvatarAvatarId = ConvertTo-SecureString -String "" -AsPlainText -Force }
-
-# Same non-fatal treatment as LiveAvatar above — an empty value here reproduces the
-# existing 501-not-configured response (and its browser-TTS fallback for the
-# non-avatar caller) rather than crashing.
+# Optional: an empty value causes /api/speech to use the browser-TTS fallback.
 if (-not $AzureSpeechApiKey) { $AzureSpeechApiKey = ConvertTo-SecureString -String "" -AsPlainText -Force }
 
 # Check Azure CLI login
@@ -237,8 +227,6 @@ $entraClientSecretPlain = ConvertFrom-SecureStringToPlainText $EntraClientSecret
 $qdrantApiKeyPlain = ConvertFrom-SecureStringToPlainText $QdrantApiKey
 $azureOpenAIApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureOpenAIApiKey
 $azureDocumentIntelligenceApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureDocumentIntelligenceApiKey
-$liveAvatarApiKeyPlain = ConvertFrom-SecureStringToPlainText $LiveAvatarApiKey
-$liveAvatarAvatarIdPlain = ConvertFrom-SecureStringToPlainText $LiveAvatarAvatarId
 $azureSpeechApiKeyPlain = ConvertFrom-SecureStringToPlainText $AzureSpeechApiKey
 
 try {
@@ -254,8 +242,6 @@ try {
         --parameters qdrantApiKey=$qdrantApiKeyPlain `
         --parameters azureOpenAIApiKey=$azureOpenAIApiKeyPlain `
         --parameters azureDocumentIntelligenceApiKey=$azureDocumentIntelligenceApiKeyPlain `
-        --parameters liveAvatarApiKey=$liveAvatarApiKeyPlain `
-        --parameters liveAvatarAvatarId=$liveAvatarAvatarIdPlain `
         --parameters azureSpeechApiKey=$azureSpeechApiKeyPlain `
         --parameters $imageParams `
         --name $deploymentName `
@@ -275,8 +261,6 @@ try {
     $qdrantApiKeyPlain = $null
     $azureOpenAIApiKeyPlain = $null
     $azureDocumentIntelligenceApiKeyPlain = $null
-    $liveAvatarApiKeyPlain = $null
-    $liveAvatarAvatarIdPlain = $null
     $azureSpeechApiKeyPlain = $null
 }
 

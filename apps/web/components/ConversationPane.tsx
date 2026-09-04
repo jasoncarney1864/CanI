@@ -4,10 +4,8 @@ import { useCallback, useRef } from "react";
 import type { RetrievalAnswer } from "@/lib/types";
 import type { Spoke } from "@/lib/spokes";
 import { useVoiceConversation, type VoiceState } from "@/lib/useVoiceConversation";
-import { useLiveAvatar } from "@/lib/useLiveAvatar";
 import { VerdictBadge } from "./VerdictBadge";
 import { LawCitationCard } from "./LawCitationCard";
-import { AvatarStage } from "./AvatarStage";
 
 /** "Save as document" lifecycle (docs/21 §3.6) — lives in AppShell (it must survive past
  * this component re-rendering when a new question resets other per-turn state). */
@@ -78,9 +76,7 @@ export function ConversationPane({
     }
   }, []);
 
-  const avatar = useLiveAvatar();
-  const avatarSpeak = avatar.state === "connected" ? avatar.speak : undefined;
-  const voice = useVoiceConversation({ onUtterance: handleUtterance, avatarSpeak });
+  const voice = useVoiceConversation({ onUtterance: handleUtterance });
   speakRef.current = voice.speak;
 
   const voiceActive = voice.state !== "off" && voice.state !== "unsupported";
@@ -176,16 +172,6 @@ export function ConversationPane({
           </div>
         )}
       </div>
-
-      <AvatarStage
-        state={avatar.state}
-        error={avatar.error}
-        isStreamReady={avatar.isStreamReady}
-        isSpeaking={avatar.isSpeaking}
-        attach={avatar.attach}
-        onToggle={avatar.state === "connected" ? avatar.stop : avatar.start}
-        onInterrupt={avatar.interrupt}
-      />
 
       <div className="presence" data-state={voice.state}>
         <button

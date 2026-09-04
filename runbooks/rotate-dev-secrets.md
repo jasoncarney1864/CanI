@@ -1,5 +1,35 @@
 # Runbook: dev secrets — where they live and how to rotate them
 
+> **Current deployment warning (2026-08-22):** CanI now runs on Azure Container Apps.
+> The AKS/CSI procedure below is retained only as incident history and must not be run
+> against the current environment. Current Container Apps revisions receive Key Vault
+> values through `infra/container-apps/deploy-with-secrets.ps1`; no live value is rotated
+> merely by changing repository files.
+
+## Current Container Apps procedure
+
+1. Identify the secret's consumers in `infra/container-apps/main.bicep` and whether the
+   upstream service supports overlap (two simultaneously valid keys/credentials). Prefer
+   overlap; signing/session rotations intentionally invalidate outstanding sessions.
+2. Generate or obtain the candidate value without printing it. Validate it directly
+   against the upstream service before writing Key Vault whenever the provider permits
+   that (the storage incident below is why this is mandatory).
+3. Write the candidate to Key Vault only in an approved maintenance window. Do not use a
+   repository commit, CI preview, or local test as evidence that a live secret changed.
+4. Run `pwsh infra/container-apps/deploy-with-secrets.ps1 -WhatIf`, review every non-secure
+   change, then run the real deployment only after explicit approval. The script retrieves
+   the complete secret set, hard-fails on missing Qdrant/OpenAI/Document Intelligence
+   values, and restores private Key Vault access in `finally` if it temporarily opened it.
+5. Verify revision health and exercise a fresh incognito sign-in → upload → query → cited
+   answer. For storage/Qdrant/provider rotations, also verify the specific dependency's
+   readiness and logs. Revoke the old overlapping credential only after this passes.
+
+The current dev vault defaults in that script are `cani-platform-kv2e5cf1f6` in resource
+group `cani-platform-core-canido-dev-eastus2-rged7032c2`. Treat names below this point as
+historical AKS-era values, not executable defaults.
+
+## Historical AKS/CSI procedure (do not execute)
+
 As of D1 (2026-07-20) the dev cluster sources every runtime secret from **Azure Key Vault**
 via the Secrets Store CSI driver + workload identity. The manual `cani-secrets` script
 (`scripts/apply_dev_secrets.sh`) is **retired** — Key Vault is the source of truth for what

@@ -12,7 +12,12 @@ from starlette.testclient import TestClient
 
 def _app(*, capacity: int, window_seconds: float) -> FastAPI:
     app = FastAPI()
-    app.add_middleware(RateLimitMiddleware, capacity=capacity, window_seconds=window_seconds)
+    app.add_middleware(
+        RateLimitMiddleware,
+        capacity=capacity,
+        window_seconds=window_seconds,
+        trusted_proxy_hosts=("testclient",),
+    )
 
     @app.get("/ping")
     def ping():
@@ -66,3 +71,16 @@ def test_clients_are_isolated():
     # ...client B is unaffected.
     assert _get(client, "/ping", ip="198.51.100.2").status_code == 200
     assert _get(client, "/ping", ip="198.51.100.2").status_code == 200
+
+
+def test_untrusted_peer_cannot_spoof_forwarded_address():
+    app = FastAPI()
+    app.add_middleware(RateLimitMiddleware, capacity=1, window_seconds=60)
+
+    @app.get("/ping")
+    def ping():
+        return {"ok": True}
+
+    client = TestClient(app)
+    assert _get(client, "/ping", ip="198.51.100.1").status_code == 200
+    assert _get(client, "/ping", ip="198.51.100.2").status_code == 429

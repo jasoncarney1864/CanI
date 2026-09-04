@@ -123,15 +123,6 @@ export interface DocumentText {
   chunks: DocumentChunk[];
 }
 
-// --- LiveAvatar (HeyGen) session-token exchange (POST /avatar/session-token) --------
-
-/** Mirrors docs-api's AvatarSessionTokenResponse. Short-lived — the frontend uses it
- * directly with LiveAvatar's own Web SDK to open the WebRTC session; it never reaches
- * this app's server again after the client receives it. */
-export interface AvatarSessionToken {
-  session_token: string;
-}
-
 // --- Legal drafting assistant (Sprint 4) ---------------------------------------------
 // Mirrors docs_api_app.legal's request/response models.
 

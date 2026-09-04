@@ -11,6 +11,30 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-08-22 update (Sprint 4 implementation and verification gaps)
+
+- Public-law corpus phases 1–3 are implemented (`893e534`, `0953060`, `46418bc`) and the
+  Container Apps configuration enables the Nevada corpus. Expansion beyond Nevada is
+  demand-driven; Washoe County remains explicitly on hold.
+- Documents management, original download, generated documents, and move-between-spokes
+  are implemented (`3a4a896` through `0658c7e`).
+- Legal drafting schema/models, PDF rendering, API, and web UI are implemented (`594003a`
+  through `79cbfa9`). The only seeded template, `nv-poa-financial`, remains deliberately
+  inactive: migration `0008_seed_nv_poa_template.sql` says it has not been checked against
+  current NRS Chapter 162A or reviewed by a licensed Nevada attorney. Activation requires
+  that review and a new migration; applied migration 0008 must not be rewritten.
+- The 2026-08-09 Qdrant incident hardening is present in source: Qdrant Cloud configuration,
+  dependency-aware readiness, retrieval retry, single-revision Container Apps mode, and a
+  daily Container Apps snapshot job. The repository still lacks recorded live evidence of
+  the final point-count reconciliation and a post-migration snapshot blob. Until those are
+  captured, describe recovery/backup as implemented but not verified closed.
+- CI now includes the web Vitest suite and production build in addition to Python lint/unit,
+  secret scan, and compose integration.
+- The current secret-rotation entry point is documented for Container Apps at the top of
+  `runbooks/rotate-dev-secrets.md`; its former AKS/CSI commands are explicitly historical.
+  `runbooks/dev-cost-review.md` defines a read-only evidence pass and approval gate rather
+  than resizing from the stale Sprint 3 projection.
+
 ## 2026-08-20 update (docs/21 — Documents page management + generated documents)
 
 Full implementation of `21-documents-page-download-and-generated-docs-spec.md`'s five

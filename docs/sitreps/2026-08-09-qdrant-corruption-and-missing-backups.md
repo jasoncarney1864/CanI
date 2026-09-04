@@ -4,6 +4,13 @@
 **Impact:** every `/query` returns 500. Upload/ingest also affected (same dependency).
 Auth, document listing and the web app are unaffected.
 
+> **Repository follow-up, 2026-08-22:** recovery controls have since landed: Qdrant Cloud
+> configuration, dependency-aware readiness, retrieval retry, single-revision mode, and a
+> scheduled Container Apps snapshot job. Source comments also record a 2026-08-12
+> re-ingestion. This incident is not marked resolved here because the repository contains
+> no captured final Qdrant point count, matching `chunk_manifests` count, or post-migration
+> snapshot blob URI. Record those live values before changing the status.
+
 ## What users saw
 
 `Upstream query failed (500).` on every question. The web app degraded cleanly — the

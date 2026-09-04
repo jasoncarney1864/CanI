@@ -9,7 +9,7 @@ per-store procedures.
 | Store | Mechanism | RTO | RPO |
 | --- | --- | --- | --- |
 | Postgres | Flexible Server point-in-time restore (7-day retention) | Provisioning time of a new server — Azure-typical ~10-30 min for a Burstable B2s (readiness-validated, not executed this drill) | Continuous WAL archiving; restore to any point in the 7-day window, last-restorable-time lag ~5 min |
-| Qdrant | Scheduled snapshot exported to Blob (daily CronJob) | ~1 s to restore a snapshot into a collection (measured); ~13 s to take + upload a fresh snapshot | Snapshot interval = 24 h; take an on-demand snapshot before risky ops to drive RPO toward 0 |
+| Qdrant | IaC-configured snapshot export to Blob (daily Container Apps Job; live artifact must be verified) | ~1 s to restore a snapshot into a collection (measured on AKS); ~13 s to take + upload a fresh snapshot | Intended interval = 24 h; take and verify an on-demand snapshot before risky ops to drive RPO toward 0 |
 | Blob Storage | Versioning + soft delete (7-day) | Immediate (list versions / undelete) | Versioning captures every overwrite (RPO ~0 for overwrites); 7-day recovery window for deletes |
 
 ## 2026-07-17 drill results
@@ -71,15 +71,17 @@ Notes:
 
 ## Qdrant: snapshot and restore
 
-**Backup** is automated: the `qdrant-snapshot` CronJob (`k8s/base/qdrant/snapshot-cronjob.yaml`,
-daily 02:00 UTC) runs `python -m cani_shared.backup`, which snapshots the collection via
+**Backup** is configured for the current Container Apps deployment: the `qdrant-snapshot`
+scheduled job (`infra/container-apps/main.bicep`, daily 02:00 UTC) runs
+`python -m cani_shared.backup`, which snapshots the collection via
 Qdrant's REST API, uploads it to the `qdrant-snapshots` blob container under a
-timestamped path, then deletes the on-disk copy. Run it on demand with:
+timestamped path, then deletes the on-disk copy. The repository does not contain current
+live execution/blob evidence, so run it on demand and inspect both execution and artifact:
 
 ```bash
-kubectl -n docs-platform create job --from=cronjob/qdrant-snapshot qdrant-snap-adhoc
-kubectl -n docs-platform wait --for=condition=complete job/qdrant-snap-adhoc --timeout=300s
-kubectl -n docs-platform logs job/qdrant-snap-adhoc | grep qdrant_snapshot_uploaded  # -> blob_uri
+az containerapp job start -n qdrant-snapshot -g cani-container-apps-dev
+az containerapp job execution list -n qdrant-snapshot -g cani-container-apps-dev -o table
+az storage blob list --account-name cani6ada34dffd -c qdrant-snapshots -o table
 ```
 
 **Restore** downloads a snapshot from Blob and recovers it into a collection. Restore

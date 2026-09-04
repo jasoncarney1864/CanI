@@ -64,22 +64,11 @@ try {
         throw "Key Vault secret 'azure-documentintelligence-api-key' is missing or empty. Without it OCR ingestion fails permanently."
     }
 
-    # Unlike the two above, missing LiveAvatar secrets don't degrade silently — docs-api's
-    # /avatar/session-token returns 503 rather than faking a session (see main.bicep's
-    # liveAvatarApiKey param comment) — so this warns instead of hard-failing the deploy.
-    $liveAvatarApiKey = az keyvault secret show --vault-name $KeyVaultName --name liveavatar-api-key --query value -o tsv 2>$null
-    $liveAvatarAvatarId = az keyvault secret show --vault-name $KeyVaultName --name liveavatar-avatar-id --query value -o tsv 2>$null
-    if ([string]::IsNullOrWhiteSpace($liveAvatarApiKey) -or [string]::IsNullOrWhiteSpace($liveAvatarAvatarId)) {
-        Write-Host "⚠️  LiveAvatar Key Vault secret(s) missing or empty — the avatar feature will report 503 (not configured) after this deploy." -ForegroundColor Yellow
-        $liveAvatarApiKey = ""
-        $liveAvatarAvatarId = ""
-    }
-
     # Same non-fatal treatment — an empty value here reproduces /api/speech's existing
     # 501-not-configured response rather than hard-failing the deploy.
     $azureSpeechApiKey = az keyvault secret show --vault-name $KeyVaultName --name azure-speech-api-key --query value -o tsv 2>$null
     if ([string]::IsNullOrWhiteSpace($azureSpeechApiKey)) {
-        Write-Host "⚠️  azure-speech-api-key Key Vault secret missing or empty — /api/speech (and LiveAvatar's speak()) will report 501/fail after this deploy." -ForegroundColor Yellow
+        Write-Host "⚠️  azure-speech-api-key Key Vault secret missing or empty — /api/speech will report 501 and use browser fallback after this deploy." -ForegroundColor Yellow
         $azureSpeechApiKey = ""
     }
 
@@ -104,8 +93,6 @@ $secureEntraClientSecret = ConvertTo-SecureString -String $entraClientSecret -As
 $secureQdrantApiKey = ConvertTo-SecureString -String $qdrantApiKey -AsPlainText -Force
 $secureAzureOpenAIApiKey = ConvertTo-SecureString -String $azureOpenAIApiKey -AsPlainText -Force
 $secureAzureDocumentIntelligenceApiKey = ConvertTo-SecureString -String $azureDocumentIntelligenceApiKey -AsPlainText -Force
-$secureLiveAvatarApiKey = ConvertTo-SecureString -String $liveAvatarApiKey -AsPlainText -Force
-$secureLiveAvatarAvatarId = ConvertTo-SecureString -String $liveAvatarAvatarId -AsPlainText -Force
 $secureAzureSpeechApiKey = ConvertTo-SecureString -String $azureSpeechApiKey -AsPlainText -Force
 
 # Clear plaintext secrets from memory
@@ -117,8 +104,6 @@ $entraClientSecret = $null
 $qdrantApiKey = $null
 $azureOpenAIApiKey = $null
 $azureDocumentIntelligenceApiKey = $null
-$liveAvatarApiKey = $null
-$liveAvatarAvatarId = $null
 $azureSpeechApiKey = $null
 
 Write-Host "🚀 Deploying Container Apps..." -ForegroundColor Cyan
@@ -135,8 +120,6 @@ $deployParams = @{
     QdrantApiKey = $secureQdrantApiKey
     AzureOpenAIApiKey = $secureAzureOpenAIApiKey
     AzureDocumentIntelligenceApiKey = $secureAzureDocumentIntelligenceApiKey
-    LiveAvatarApiKey = $secureLiveAvatarApiKey
-    LiveAvatarAvatarId = $secureLiveAvatarAvatarId
     AzureSpeechApiKey = $secureAzureSpeechApiKey
 }
 

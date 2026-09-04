@@ -42,13 +42,8 @@ function getRecognitionCtor(): RecognitionCtor | undefined {
 
 export function useVoiceConversation({
   onUtterance,
-  avatarSpeak,
 }: {
   onUtterance: (text: string) => void;
-  /** When provided (a LiveAvatar session is connected), speaking routes through the
-   * avatar's own lip-synced voice instead of Azure/browser TTS, resolving once the
-   * avatar finishes. Omit (or pass undefined) to keep the existing audio-only path. */
-  avatarSpeak?: (text: string) => Promise<void>;
 }) {
   const [state, setState] = useState<VoiceState>("off");
   const [transcript, setTranscript] = useState("");
@@ -194,17 +189,6 @@ export function useVoiceConversation({
 
       setState("speaking");
 
-      if (avatarSpeak) {
-        avatarSpeak(text)
-          .catch((error) => {
-            console.error("Avatar speak failed:", error);
-          })
-          .finally(() => {
-            if (activeRef.current) listen();
-          });
-        return;
-      }
-
       // Try Azure Speech first, fall back to browser speechSynthesis if unavailable
       // Attempt to use Azure AI Speech neural TTS with 6 second timeout
       const controller = new AbortController();
@@ -260,7 +244,7 @@ export function useVoiceConversation({
           speakWithBrowser(text);
         });
     },
-    [listen, speakWithBrowser, avatarSpeak],
+    [listen, speakWithBrowser],
   );
 
   // Teardown on unmount.
