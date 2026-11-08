@@ -50,7 +50,7 @@ from cani_shared.models import (
     RetrievalAnswer,
 )
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
-from cani_shared.vector.qdrant_client import OwnerScopedQdrant, retry_transient
+from cani_shared.vector.store import OwnerScopedVectorStore, retry_transient
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel
 
@@ -85,12 +85,9 @@ async def lifespan(app: FastAPI):
     blob_store.ensure_containers()
     app.state.blob_store = blob_store
     # Only used by PATCH /documents/{id} to propagate a spoke change onto already-indexed
-    # points (docs/21 follow-up). No ensure_collection() call here — docs-api never
-    # upserts vectors, and the collection is guaranteed to already exist by the time any
-    # document does, since ingestion-worker's ensure_collection runs before it upserts.
-    app.state.qdrant = OwnerScopedQdrant(
-        settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key
-    )
+    # vector rows (docs/21 follow-up). No ensure_collection() call here — docs-api never
+    # upserts vectors, and the table is created by migration 0009 before any service starts.
+    app.state.vectors = OwnerScopedVectorStore(get_pool(settings.postgres_dsn))
     yield
 
 
@@ -427,8 +424,8 @@ def update_my_document_spoke(
     to fix a mis-filed upload). Updates the Postgres row synchronously — the source of
     truth for the Documents page and for any in-flight ingestion job, which re-reads
     document.spoke fresh right before it upserts a chunk — then propagates the same value
-    onto every already-indexed Qdrant point's payload, since retrieval filters spoke
-    there, not in Postgres. The Qdrant call is retried on transient failure but, if it
+    onto every already-indexed vector row, since retrieval filters spoke there, not on
+    the documents row. The vector update is retried on transient failure but, if it
     still fails, the Postgres row has already committed: the Documents page will show the
     new spoke immediately even if retrieval briefly lags behind. Safe to just retry the
     PATCH — both halves are idempotent."""
@@ -457,9 +454,9 @@ def update_my_document_spoke(
             assert document is not None  # just updated it inside this same connection
 
     if changed:
-        qdrant: OwnerScopedQdrant = app.state.qdrant
+        vectors: OwnerScopedVectorStore = app.state.vectors
         retry_transient(
-            lambda: qdrant.set_document_spoke(
+            lambda: vectors.set_document_spoke(
                 owner_user_id=principal.user_id, document_id=document_id, spoke=spoke_enum
             )
         )
@@ -546,7 +543,7 @@ async def get_document_text(
 ) -> DocumentText:
     """The document's source text (ordered chunks) for the Document Viewer. Confirms the
     caller owns the document here (404 otherwise, no cross-owner existence leak, §9.8),
-    then proxies to the retrieval-worker — the only tier with Qdrant network access — the
+    then proxies to the retrieval-worker — which owns chunk assembly — the
     same way /query proxies to /retrieve."""
     pool = get_pool(settings.postgres_dsn)
     with pool.connection() as conn:

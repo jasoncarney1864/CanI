@@ -2,7 +2,7 @@
 docker-compose stack. Deletion is a synchronous tombstone + an async cleanup job; what's
 verifiable from the black-box API is the synchronous half (list/get/text exclusion,
 dedupe clearing so a re-upload isn't silently merged into the tombstoned document) plus
-the endpoint's ownership and idempotency contract. The async cleanup itself (Qdrant point
+the endpoint's ownership and idempotency contract. The async cleanup itself (vector row
 removal, blob removal, final row deletes) is covered by
 tests/unit/test_deletion_failure.py and tests/unit/test_blob_delete_prefix.py — there is
 no public endpoint that exposes deletion_jobs completion to poll on.

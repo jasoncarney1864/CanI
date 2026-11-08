@@ -13,7 +13,6 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "psycopg-pool>=3.2",
     "pyjwt>=2.8",
-    "qdrant-client>=1.9,<1.10",  # pinned to match the qdrant/qdrant:v1.9.7 server image in docker-compose.yml
     "azure-storage-blob>=12.19",
     "azure-ai-documentintelligence>=1.0.0b3",
     "openai>=1.30",

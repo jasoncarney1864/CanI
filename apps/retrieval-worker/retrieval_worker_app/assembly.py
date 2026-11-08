@@ -1,6 +1,6 @@
 """Pure dual-corpus context/citation assembly for retrieve() (docs/20-public-law-corpus-design.md
 §20.8). Split out from main.py so this logic is unit-testable without needing full service
-settings (Postgres, Qdrant, secrets) at import time — main.py calls `get_settings()` at
+settings (Postgres, secrets) at import time — main.py calls `get_settings()` at
 module load, which requires a real environment; this module never does.
 """
 
@@ -10,7 +10,7 @@ from datetime import datetime
 
 from cani_shared.models import Citation, Verdict
 from cani_shared.providers.grounder import ContextChunk
-from cani_shared.vector.qdrant_client import ScoredChunk
+from cani_shared.vector.store import ScoredChunk
 
 # Fixed per-corpus budgets, not merged ranking (§20.8): statutory boilerplate reliably
 # out-scores messy scanned CC&Rs on generic legal phrasing, so a merged top-K pool would

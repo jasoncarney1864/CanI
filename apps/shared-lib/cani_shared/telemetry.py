@@ -8,7 +8,7 @@ only thing that turns it on.
 
 What this buys us over the existing structlog output: OpenTelemetry propagates W3C
 traceparent across service boundaries, so a docs-api -> retrieval-worker query shows up in
-App Insights as ONE distributed trace with its Postgres/Qdrant/OpenAI dependency calls
+App Insights as ONE distributed trace with its Postgres/OpenAI dependency calls
 attached — the §13.5 "distributed tracing across hub, docs services, and workers"
 requirement. The structlog JSON stream stays as-is for local dev and Container Insights.
 """

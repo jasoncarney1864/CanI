@@ -41,24 +41,26 @@ def test_process_deletion_raises_retryable_when_ingestion_in_flight(repo):
     job for the same document is still processing — see the long comment in deletion.py
     for why this is only race-free with one worker replica."""
     repo.has_processing_ingestion_job.return_value = True
-    qdrant = MagicMock()
+    vectors = MagicMock()
     blob_store = MagicMock()
 
     with pytest.raises(RetryableDeletionError):
-        process_deletion(MagicMock(), _job(), blob_store=blob_store, qdrant=qdrant)
+        process_deletion(MagicMock(), _job(), blob_store=blob_store, vectors=vectors)
 
-    qdrant.delete_document_points.assert_not_called()
+    vectors.delete_document_points.assert_not_called()
     blob_store.delete_prefix.assert_not_called()
 
 
 def test_process_deletion_happy_path_deletes_vectors_blobs_and_rows(repo):
-    qdrant = MagicMock()
+    vectors = MagicMock()
     blob_store = MagicMock()
     blob_store.delete_prefix.return_value = 1
 
-    process_deletion(MagicMock(), _job(), blob_store=blob_store, qdrant=qdrant)
+    process_deletion(MagicMock(), _job(), blob_store=blob_store, vectors=vectors)
 
-    qdrant.delete_document_points.assert_called_once_with(owner_user_id="owner-1", document_id="doc-1")
+    vectors.delete_document_points.assert_called_once_with(
+        conn=ANY, owner_user_id="owner-1", document_id="doc-1"
+    )
     assert blob_store.delete_prefix.call_count == 3  # raw-documents, extracted-text, ingestion-artifacts
     repo.delete_document_cascade.assert_called_once_with(ANY, "owner-1", "doc-1")
     repo.finish_deletion_job.assert_called_once()
@@ -90,7 +92,7 @@ def test_retryable_failure_at_attempt_cap_dead_letters(repo):
 
 
 def test_non_retryable_failure_dead_letters_immediately(repo):
-    handle_deletion_failure(MagicMock(), _job(attempt_count=1), RuntimeError("qdrant unreachable"))
+    handle_deletion_failure(MagicMock(), _job(attempt_count=1), RuntimeError("database unreachable"))
 
     assert repo.finish_deletion_job.call_args.kwargs["status"] == "failed"
     repo.record_audit_event.assert_called_once()

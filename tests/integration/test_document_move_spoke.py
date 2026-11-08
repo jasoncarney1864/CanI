@@ -39,7 +39,7 @@ def test_move_spoke_updates_document_and_documents_list(docker_stack, hub_client
 
 
 def test_move_spoke_propagates_to_retrieval_not_just_postgres(docker_stack, hub_client, docs_client):
-    # The Documents page reads Postgres, but retrieval filters on the Qdrant payload copy
+    # The Documents page reads the documents row, but retrieval filters on the vector row's copy
     # of spoke — this is the regression the plain Postgres-only version of this feature
     # would have shipped: the row says "moved" while retrieval still can't find it under
     # the new spoke (or still finds it under the old one).
@@ -68,7 +68,7 @@ def test_move_spoke_propagates_to_retrieval_not_just_postgres(docker_stack, hub_
     legal_document_ids = {c["document_id"] for c in legal_query.json()["citations"] if "document_id" in c}
     assert document_id in legal_document_ids, (
         "moved document should be citable once queried under its new spoke — if this "
-        "fails, the Postgres row moved but the Qdrant payload didn't"
+        "fails, the documents row moved but the vector rows didn't"
     )
 
     general_query = docs_client.post(

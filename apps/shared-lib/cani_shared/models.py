@@ -128,7 +128,7 @@ class ChunkManifest(BaseModel):
     chunk_index: int
     token_count: int
     embedding_version: str
-    qdrant_point_id: str
+    point_id: str
 
 
 class Citation(BaseModel):
@@ -147,7 +147,7 @@ class Citation(BaseModel):
     # source passage and spotlight it (docs/13 §5 "Spotlight" layout). Optional: absent
     # when a chunk payload predates snippet capture. This can never contain another
     # owner's content — citations are built only from the caller's own owner-filtered
-    # chunks (see retrieval-worker OwnerScopedQdrant enforcement). For a law citation this
+    # chunks (see retrieval-worker OwnerScopedVectorStore enforcement). For a law citation this
     # snippet IS the verbatim quoted statute text (§20.1 principle 1).
     snippet: str | None = None
     # Law-corpus fields (absent on user-document citations).
@@ -236,7 +236,7 @@ class LawSourceVersion(BaseModel):
 
 class LawChunkManifest(BaseModel):
     """Law-corpus analogue of ChunkManifest (docs/20 §20.4) — the Postgres ledger of what is
-    currently in the public-law Qdrant collection, keyed by citation rather than page range."""
+    currently in the public-law vector table, keyed by citation rather than page range."""
 
     chunk_id: str
     law_source_version_id: str
@@ -248,7 +248,7 @@ class LawChunkManifest(BaseModel):
     token_count: int
     content_sha256: str
     embedding_version: str
-    qdrant_point_id: str
+    point_id: str
 
 
 class LegalDraftStatus(StrEnum):

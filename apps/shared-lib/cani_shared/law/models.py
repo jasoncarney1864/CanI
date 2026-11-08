@@ -1,6 +1,6 @@
 """Fetcher-facing dataclasses for the public-law corpus (docs/20-public-law-corpus-design.md
 §20.5.1). Distinct from cani_shared.models: these describe what a fetcher hands back before
-anything is persisted, not the DB/Qdrant-facing shapes.
+anything is persisted, not the DB-facing shapes.
 """
 
 from __future__ import annotations

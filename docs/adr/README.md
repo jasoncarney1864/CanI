@@ -4,9 +4,10 @@ Architecture Decision Records for the CanI platform. Referenced from [Section 4 
 
 | ADR | Title | Status |
 |---|---|---|
-| [ADR-003](adr-003-vector-store-qdrant.md) | Self-host Qdrant on AKS as the vector store | Accepted |
+| [ADR-003](adr-003-vector-store-qdrant.md) | Self-host Qdrant on AKS as the vector store | Superseded by ADR-008 |
 | [ADR-004](adr-004-hand-built-alz.md) | Hand-build the Azure Landing Zone in Pulumi (no ALZ accelerator) | Accepted |
 | [ADR-007](adr-007-phi-pii-data-posture.md) | PHI/PII-grade handling as the default data posture | Accepted |
+| [ADR-008](adr-008-vector-store-pgvector.md) | Store vectors in Postgres (pgvector), retiring Qdrant | Accepted |
 
 ---
 

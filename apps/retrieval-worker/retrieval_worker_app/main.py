@@ -2,8 +2,8 @@
 
 Query-time flow: verify caller identity/entitlement -> mandatory owner-filtered vector
 search -> lightweight score-based rerank -> grounded answer from top chunks only ->
-citations scoped to the caller's own chunk IDs. Every step fails closed: the Qdrant
-wrapper itself refuses to run without an owner filter (cani_shared.vector.qdrant_client),
+citations scoped to the caller's own chunk IDs. Every step fails closed: the vector store
+wrapper itself refuses to run without an owner filter (cani_shared.vector.store),
 so there is no code path here that can return another user's content even by mistake.
 """
 
@@ -22,8 +22,8 @@ from cani_shared.middleware import TraceIdMiddleware
 from cani_shared.models import DocumentChunk, DocumentText, RetrievalAnswer, Verdict
 from cani_shared.providers.factory import build_chat_grounder, build_embedder
 from cani_shared.telemetry import configure_telemetry, instrument_fastapi
-from cani_shared.vector.public_law_client import PublicLawQdrant
-from cani_shared.vector.qdrant_client import OwnerScopedQdrant, ScoredChunk, retry_transient
+from cani_shared.vector.public_law_store import PublicLawVectorStore
+from cani_shared.vector.store import OwnerScopedVectorStore, ScoredChunk, retry_transient
 from fastapi import Depends, FastAPI, Response
 from pydantic import BaseModel
 
@@ -66,27 +66,22 @@ async def lifespan(app: FastAPI):
     get_pool(settings.postgres_dsn)
     logger.info("✅ PostgreSQL connected")
 
-    logger.info(f"🔌 Creating Qdrant client for: {settings.qdrant_url}")
-    try:
-        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
-        logger.info("✅ Qdrant client created (collection will be ensured on first use)")
-        app.state.qdrant = qdrant
-        app.state._qdrant_initialized = False  # Track initialization state
-    except Exception as e:
-        logger.error(f"❌ Failed to create Qdrant client: {type(e).__name__}: {str(e)}")
-        raise
+    # Vectors live in the same Postgres (pgvector, migration 0009). The dimension tripwire
+    # and HNSW index are ensured lazily on first use rather than here, so startup never
+    # blocks on the database.
+    app.state.vectors = OwnerScopedVectorStore(get_pool(settings.postgres_dsn))
+    app.state._vectors_initialized = False
+    logger.info("✅ Vector store ready (pgvector; table checked on first use)")
 
-    # Public-law corpus (docs/20 §20.9): empty collection name means the feature ships
-    # dark — no PublicLawQdrant is constructed, and retrieve() never searches a second
-    # corpus. No readiness tripwire (Q5, on hold): an empty/unreachable law collection
-    # degrades retrieval to document-only rather than failing startup or the query.
-    app.state.law_qdrant = None
-    app.state._law_qdrant_initialized = False
-    if settings.law_qdrant_collection:
-        logger.info(f"🔌 Creating public-law Qdrant client for collection: {settings.law_qdrant_collection}")
-        app.state.law_qdrant = PublicLawQdrant(
-            settings.qdrant_url, settings.law_qdrant_collection, settings.qdrant_api_key
-        )
+    # Public-law corpus (docs/20 §20.9): disabled means the feature ships dark — no
+    # PublicLawVectorStore is constructed, and retrieve() never searches a second corpus.
+    # No readiness tripwire (Q5, on hold): an empty law table degrades retrieval to
+    # document-only rather than failing startup or the query.
+    app.state.law_vectors = None
+    app.state._law_vectors_initialized = False
+    if settings.law_corpus_enabled:
+        logger.info("🔌 Public-law corpus enabled")
+        app.state.law_vectors = PublicLawVectorStore(get_pool(settings.postgres_dsn))
 
     logger.info("🚀 Retrieval worker startup complete!")
     yield
@@ -97,43 +92,23 @@ app.add_middleware(TraceIdMiddleware)
 instrument_fastapi(app)
 
 
-def ensure_qdrant_ready():
-    """Lazy-initialize Qdrant collection on first use to avoid blocking startup."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    if not getattr(app.state, "_qdrant_initialized", False):
-        logger.info(f"🔄 Ensuring Qdrant collection on first use: {settings.qdrant_collection}")
-        try:
-            app.state.qdrant.ensure_collection(embedder.vector_size)
-            app.state._qdrant_initialized = True
-            logger.info(f"✅ Qdrant collection ready: {settings.qdrant_collection}")
-        except Exception as e:
-            logger.error(f"❌ Failed to ensure Qdrant collection: {type(e).__name__}: {str(e)}")
-            raise
+def ensure_vectors_ready():
+    """Lazy-initialize the vector table (dimension tripwire + index) on first use."""
+    if not getattr(app.state, "_vectors_initialized", False):
+        app.state.vectors.ensure_collection(embedder.vector_size)
+        app.state._vectors_initialized = True
+        logger.info("vector_table_ready", vector_size=embedder.vector_size)
 
 
-def ensure_law_qdrant_ready():
-    """Same lazy-init pattern as ensure_qdrant_ready(), for the public-law collection.
-    No-op when the feature is off (app.state.law_qdrant is None)."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    if app.state.law_qdrant is None:
+def ensure_law_vectors_ready():
+    """Same lazy-init pattern as ensure_vectors_ready(), for the public-law table.
+    No-op when the feature is off (app.state.law_vectors is None)."""
+    if app.state.law_vectors is None:
         return
-    if not getattr(app.state, "_law_qdrant_initialized", False):
-        logger.info(
-            f"🔄 Ensuring public-law Qdrant collection on first use: {settings.law_qdrant_collection}"
-        )
-        try:
-            app.state.law_qdrant.ensure_collection(embedder.vector_size)
-            app.state._law_qdrant_initialized = True
-            logger.info(f"✅ Public-law Qdrant collection ready: {settings.law_qdrant_collection}")
-        except Exception as e:
-            logger.error(f"❌ Failed to ensure public-law Qdrant collection: {type(e).__name__}: {str(e)}")
-            raise
+    if not getattr(app.state, "_law_vectors_initialized", False):
+        app.state.law_vectors.ensure_collection(embedder.vector_size)
+        app.state._law_vectors_initialized = True
+        logger.info("law_vector_table_ready", vector_size=embedder.vector_size)
 
 
 class RetrieveRequest(BaseModel):
@@ -152,15 +127,15 @@ def retrieve(
     principal: RequestPrincipal = Depends(get_principal),
     _: RequestPrincipal = Depends(require_docs_entitlement),
 ) -> RetrievalAnswer:
-    qdrant: OwnerScopedQdrant = app.state.qdrant
+    vectors: OwnerScopedVectorStore = app.state.vectors
     query_vector = embedder.embed_batch([payload.question])[0]
 
-    # Owner filter is mandatory and enforced inside OwnerScopedQdrant.search — it raises
-    # rather than silently searching unscoped, so there is no way to reach this line
-    # having queried across owners.
+    # Owner filter is mandatory and enforced inside OwnerScopedVectorStore.search — it
+    # raises rather than silently searching unscoped, so there is no way to reach this
+    # line having queried across owners.
     def _search_user():
-        ensure_qdrant_ready()  # Lazy-initialize on first request
-        return qdrant.search(
+        ensure_vectors_ready()  # Lazy-initialize on first request
+        return vectors.search(
             owner_user_id=principal.user_id,
             query_vector=query_vector,
             limit=CANDIDATE_POOL_SIZE,
@@ -174,8 +149,8 @@ def retrieve(
     top_user = top_k(candidates, USER_CONTEXT_TOP_K)
 
     # Public-law corpus (docs/20 §20.8): searched only when in play for this request, and
-    # only if the feature is configured at all (app.state.law_qdrant is None otherwise —
-    # the collection name shipped empty, ships-dark default). A law-search failure degrades
+    # only if the feature is configured at all (app.state.law_vectors is None otherwise —
+    # the ships-dark default). A law-search failure degrades
     # to document-only rather than 500ing the query — the user's own document is the
     # primary corpus and its availability must not depend on the secondary one. Likewise an
     # empty law collection just returns no candidates; no readiness tripwire (Q5, on hold).
@@ -183,13 +158,13 @@ def retrieve(
         payload.include_public_law if payload.include_public_law is not None else payload.spoke == "Legal"
     )
     top_law: list[ScoredChunk] = []
-    if include_law and app.state.law_qdrant is not None:
+    if include_law and app.state.law_vectors is not None:
         jurisdictions = payload.jurisdictions or parse_jurisdictions(settings.law_default_jurisdictions)
-        law_qdrant: PublicLawQdrant = app.state.law_qdrant
+        law_vectors: PublicLawVectorStore = app.state.law_vectors
 
         def _search_law():
-            ensure_law_qdrant_ready()
-            return law_qdrant.search(
+            ensure_law_vectors_ready()
+            return law_vectors.search(
                 query_vector=query_vector, jurisdictions=jurisdictions, limit=LAW_CANDIDATE_POOL_SIZE
             )
 
@@ -254,11 +229,11 @@ def document_chunks(
     _: RequestPrincipal = Depends(require_docs_entitlement),
 ) -> DocumentText:
     """A document's source text as its ordered chunks, for the Document Viewer. Internal —
-    called by docs-api. Owner-scoped: the Qdrant read filters on the caller's own id and
+    called by docs-api. Owner-scoped: the vector read filters on the caller's own id and
     re-verifies it, so it cannot assemble another owner's document even if asked."""
-    qdrant: OwnerScopedQdrant = app.state.qdrant
+    vectors: OwnerScopedVectorStore = app.state.vectors
     payloads = retry_transient(
-        lambda: qdrant.chunks_for_document(owner_user_id=principal.user_id, document_id=document_id)
+        lambda: vectors.chunks_for_document(owner_user_id=principal.user_id, document_id=document_id)
     )
 
     pool = get_pool(settings.postgres_dsn)
@@ -286,9 +261,9 @@ def document_chunks(
 
 @app.get("/healthz")
 def healthz() -> dict:
-    """Liveness only: is the process up. Deliberately does NOT touch Qdrant — a dead
+    """Liveness only: is the process up. Deliberately does NOT touch the database — a dead
     dependency should fail /readyz (stop routing traffic), not /healthz (restart the
-    container, which cannot fix Qdrant and would just add a restart loop on top)."""
+    container, which cannot fix the database and would just add a restart loop on top)."""
     return {"status": "ok"}
 
 
@@ -296,12 +271,12 @@ def healthz() -> dict:
 def readyz(response: Response) -> dict:
     """Readiness that exercises the dependency. During the 2026-08-09 outage /healthz
     returned 200 for ~2 days of total query failure because nothing on the health path
-    touched Qdrant; the CD smoke check greenlit a deploy that could not answer a single
+    touched the vector store; the CD smoke check greenlit a deploy that could not answer a single
     query. This is the probe that would have caught it."""
     try:
-        app.state.qdrant.ping()
+        app.state.vectors.ping()
     except Exception as exc:  # noqa: BLE001 - any failure here means "not ready"
-        logger.warning("readyz_qdrant_unreachable", error=f"{type(exc).__name__}: {exc}")
+        logger.warning("readyz_vector_store_unreachable", error=f"{type(exc).__name__}: {exc}")
         response.status_code = 503
-        return {"status": "unready", "qdrant": "unreachable"}
-    return {"status": "ready", "qdrant": "ok"}
+        return {"status": "unready", "vector_store": "unreachable"}
+    return {"status": "ready", "vector_store": "ok"}

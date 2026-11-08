@@ -2,7 +2,8 @@ name: cani-dev
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector ships the `vector` extension migration 0009 needs; same Postgres 16 otherwise.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cani}
       POSTGRES_USER: ${POSTGRES_USER:-cani}
@@ -26,13 +27,6 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
-
-  qdrant:
-    image: qdrant/qdrant:v1.9.7
-    ports:
-      - "6333:6333"
-    volumes:
-      - qdrant-data:/qdrant/storage
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.35.0
@@ -82,8 +76,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      qdrant:
-        condition: service_started
 
   ingestion-worker:
     build:
@@ -95,12 +87,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-      qdrant:
-        condition: service_started
       azurite:
         condition: service_started
 
 volumes:
   pg-data:
-  qdrant-data:
   azurite-data:

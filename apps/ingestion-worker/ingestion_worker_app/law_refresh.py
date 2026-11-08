@@ -2,7 +2,7 @@
 §20.7). Entrypoint: `python -m ingestion_worker_app.law_refresh`.
 
 Lives in ingestion-worker rather than a new package because it shares every dependency
-ingestion already has (blob, embedder, Qdrant, repositories, chunk budget), and a sixth
+ingestion already has (blob, embedder, vector store, repositories, chunk budget), and a sixth
 installable package is overhead a solo-dev monorepo doesn't need. Not woven into the poll
 loop either: this is scheduled batch work (a weekly Container Apps Job in prod), not
 queue-driven per-user work, and mixing them would couple a scraper's failure modes into the
@@ -14,7 +14,7 @@ in place, and removed (repealed) sections get deleted. One source's failure — 
 a markup change, anything — is caught by the per-source loop below and logged as
 `law_source_failed`; it must never block the other sources, and because
 replace_law_chunk_manifests only runs after a source's fetch+embed+upsert all succeed, a
-failed refresh leaves that source's previous good version live in Qdrant. A failed scrape
+failed refresh leaves that source's previous good version live in the vector table. A failed scrape
 degrades to slightly-stale law, never to no law.
 """
 
@@ -43,7 +43,7 @@ from cani_shared.models import LawChunkManifest, LawSource
 from cani_shared.providers.embedder import Embedder
 from cani_shared.providers.factory import build_embedder, build_law_fetchers
 from cani_shared.telemetry import configure_telemetry
-from cani_shared.vector.public_law_client import PublicLawQdrant
+from cani_shared.vector.public_law_store import PublicLawVectorStore
 from psycopg import Connection
 
 configure_logging("ingestion-worker")
@@ -75,7 +75,7 @@ def _manifest(
     content_hash: str,
     embedding_version: str,
 ) -> LawChunkManifest:
-    # chunk_id deliberately equals qdrant_point_id here, unlike ChunkManifest (user docs)
+    # chunk_id deliberately equals point_id here, unlike ChunkManifest (user docs)
     # where chunk_id is a fresh uuid4 independent of the point id. Both being the same
     # deterministic value is what makes "unchanged section -> same row every refresh" true
     # without any extra bookkeeping to look up a prior chunk_id by citation.
@@ -90,7 +90,7 @@ def _manifest(
         token_count=chunk.token_count,
         content_sha256=content_hash,
         embedding_version=embedding_version,
-        qdrant_point_id=point_id,
+        point_id=point_id,
     )
 
 
@@ -101,7 +101,7 @@ def refresh_source(
     fetcher: LawSourceFetcher,
     blob_store: BlobStore,
     embedder: Embedder,
-    qdrant: PublicLawQdrant,
+    vectors: PublicLawVectorStore,
     fetcher_kind: str,
 ) -> None:
     log = logger.bind(
@@ -124,9 +124,7 @@ def refresh_source(
     )
 
     chunks = chunk_sections(document.sections)
-    previous_by_point_id = {
-        m.qdrant_point_id: m for m in get_latest_law_chunk_manifests(conn, source.law_source_id)
-    }
+    previous_by_point_id = {m.point_id: m for m in get_latest_law_chunk_manifests(conn, source.law_source_id)}
     fetched_at = datetime.now(UTC).isoformat()
 
     new_manifests: list[LawChunkManifest] = []
@@ -150,7 +148,8 @@ def refresh_source(
 
         vector = embedder.embed_batch([chunk.text])[0]
         display_heading = f"{chunk.citation}  {chunk.heading}" if chunk.heading else chunk.citation
-        qdrant.upsert_section(
+        vectors.upsert_section(
+            conn=conn,
             vector=vector,
             point_id=point_id,
             payload={
@@ -175,7 +174,7 @@ def refresh_source(
 
     removed_point_ids = set(previous_by_point_id) - new_point_ids
     if removed_point_ids:
-        qdrant.delete_points(list(removed_point_ids))
+        vectors.delete_points(list(removed_point_ids), conn=conn)
 
     create_law_source_version(
         conn,
@@ -205,8 +204,8 @@ def run_refresh(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     configure_telemetry("ingestion-worker", settings)
 
-    if not settings.law_qdrant_collection:
-        logger.warning("law_refresh_skipped", reason="CANI_LAW_QDRANT_COLLECTION not configured")
+    if not settings.law_corpus_enabled:
+        logger.warning("law_refresh_skipped", reason="CANI_LAW_CORPUS_ENABLED is false")
         return
 
     pool = get_pool(settings.postgres_dsn)
@@ -216,8 +215,8 @@ def run_refresh(settings: Settings | None = None) -> None:
     fetchers = build_law_fetchers(settings)
     fetcher_kind = "real" if settings.law_fetch_enabled else "fake"
 
-    qdrant = PublicLawQdrant(settings.qdrant_url, settings.law_qdrant_collection, settings.qdrant_api_key)
-    qdrant.ensure_collection(embedder.vector_size)
+    vectors = PublicLawVectorStore(pool)
+    vectors.ensure_collection(embedder.vector_size)
 
     logger.info("law_refresh_started", fetcher_kind=fetcher_kind)
     with pool.connection() as conn:
@@ -236,7 +235,7 @@ def run_refresh(settings: Settings | None = None) -> None:
                     fetcher=fetcher,
                     blob_store=blob_store,
                     embedder=embedder,
-                    qdrant=qdrant,
+                    vectors=vectors,
                     fetcher_kind=fetcher_kind,
                 )
             except Exception as exc:  # noqa: BLE001 - one source's failure must never block the others (§20.7)

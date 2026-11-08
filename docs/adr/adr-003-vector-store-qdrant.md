@@ -1,6 +1,6 @@
 # ADR-003: Self-host Qdrant on AKS as the vector store
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-008](adr-008-vector-store-pgvector.md) (2026-11-07)
 **Date:** 2026-07-11
 
 **Context:** CanI Docs needs a vector store for embedding retrieval. Options were Azure AI Search (managed, native Azure OpenAI integration), Postgres Flexible Server + pgvector (managed, cheaper, more portable), or a self-hosted OSS vector DB (Qdrant/Weaviate) on AKS.

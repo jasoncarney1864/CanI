@@ -1,10 +1,16 @@
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # Backup and restore drill (docs/09 §9.10, Sprint 2 C1)
 
 How CanI's three data stores are backed up, how to restore each, and the results of the
 2026-07-17 validation drill. Recovery objectives are summarized first, then the
 per-store procedures.
 
-## Recovery objectives (dev, measured/estimated 2026-07-17)
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# Recovery objectives (dev, measured/estimated 2026-07-17)
 
 | Store | Mechanism | RTO | RPO |
 | --- | --- | --- | --- |
@@ -12,7 +18,10 @@ per-store procedures.
 | Qdrant | IaC-configured snapshot export to Blob (daily Container Apps Job; live artifact must be verified) | ~1 s to restore a snapshot into a collection (measured on AKS); ~13 s to take + upload a fresh snapshot | Intended interval = 24 h; take and verify an on-demand snapshot before risky ops to drive RPO toward 0 |
 | Blob Storage | Versioning + soft delete (7-day) | Immediate (list versions / undelete) | Versioning captures every overwrite (RPO ~0 for overwrites); 7-day recovery window for deletes |
 
-## 2026-07-17 drill results
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 2026-07-17 drill results
 
 - **Qdrant — full drill executed and passed.** Seeded one real document (1 chunk),
   triggered the snapshot CronJob (completed in 13 s, ~64 MB snapshot landed in the
@@ -28,7 +37,10 @@ per-store procedures.
 - **Blob — enabled and verified live.** Versioning = true, blob soft delete = true
   (7 days), container soft delete = true (7 days).
 
-## Postgres: point-in-time restore
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# Postgres: point-in-time restore
 
 PITR creates a **new** server from the source server's continuous backups; it never
 mutates the source. Restore to a new name, validate, then repoint the app (or rename)
@@ -37,9 +49,15 @@ during a real recovery.
 ```bash
 RG=cani-workload-core-dev-eastus2-rg9c8e66d0
 SRC=cani-pgfd564d67
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # Pick a time within the retention window (see earliestRestoreDate):
 az postgres flexible-server show -g "$RG" -n "$SRC" \
   --query "backup.earliestRestoreDate" -o tsv
+
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
 
 # Restore to a new server at a chosen UTC timestamp:
 az postgres flexible-server restore \
@@ -69,7 +87,10 @@ Notes:
   for the dev RPO; revisit for prod.
 - RTO is dominated by new-server provisioning, not data volume, at this scale.
 
-## Qdrant: snapshot and restore
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# Qdrant: snapshot and restore
 
 **Backup** is configured for the current Container Apps deployment: the `qdrant-snapshot`
 scheduled job (`infra/container-apps/main.bicep`, daily 02:00 UTC) runs
@@ -96,8 +117,14 @@ from cani_shared.blob import BlobStore
 
 s = get_settings()
 base = s.qdrant_url.rstrip("/")
-blob_uri = "qdrant-snapshots/<collection>/<timestamp>_<snapshot>.snapshot"  # from the CronJob log
-target = "cani_docs_dev"  # or a scratch name for a drill
+blob_uri = "qdrant-snapshots/<collection>/<timestamp>_<snapshot>.snapshot"  > **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# from the CronJob log
+target = "cani_docs_dev"  > **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# or a scratch name for a drill
 
 data = BlobStore(s.azure_storage_connection_string).download(blob_uri)
 httpx.post(
@@ -111,7 +138,10 @@ httpx.post(
 points are missing (re-ingest the affected documents); an excess means orphaned points
 (safe to leave or prune). The drill confirmed an exact match.
 
-## Blob Storage: accidental-deletion recovery
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# Blob Storage: accidental-deletion recovery
 
 Versioning and soft delete are enabled on the workload storage account (7-day window).
 

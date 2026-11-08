@@ -16,8 +16,6 @@ _VALID_BASE = {
     "POSTGRES_DB": "cani",
     "POSTGRES_USER": "cani",
     "POSTGRES_PASSWORD": "a-real-password",
-    "QDRANT_URL": "http://localhost:6333",
-    "QDRANT_COLLECTION": "cani_docs_test",
     "AZURE_STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
     "CANI_TOKEN_SIGNING_SECRET": "x" * 32,
     "CANI_SESSION_SECRET": "y" * 32,

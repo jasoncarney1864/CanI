@@ -27,11 +27,6 @@ class Settings(BaseSettings):
     postgres_user: str = Field(alias="POSTGRES_USER")
     postgres_password: str = Field(alias="POSTGRES_PASSWORD")
 
-    qdrant_url: str = Field(alias="QDRANT_URL")
-    qdrant_collection: str = Field(alias="QDRANT_COLLECTION")
-    # Empty for a local/self-hosted Qdrant with no auth; required for Qdrant Cloud.
-    qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
-
     azure_storage_connection_string: str = Field(alias="AZURE_STORAGE_CONNECTION_STRING")
 
     cani_token_signing_secret: str = Field(alias="CANI_TOKEN_SIGNING_SECRET")
@@ -146,10 +141,11 @@ class Settings(BaseSettings):
     # deliberately explicit rather than inferred from config presence — there are no
     # credentials to infer from (NRS is an unauthenticated public page), and the
     # fakes-in-prod incident (CLAUDE.md) happened precisely because an absent-config check
-    # silently chose "fake" with no flag to catch in review. law_qdrant_collection empty
-    # means the feature ships dark: retrieval-worker never constructs PublicLawQdrant.
+    # silently chose "fake" with no flag to catch in review. law_corpus_enabled false means
+    # the feature ships dark: retrieval-worker never constructs PublicLawVectorStore and
+    # the refresh job exits without touching anything.
     law_fetch_enabled: bool = Field(default=False, alias="CANI_LAW_FETCH_ENABLED")
-    law_qdrant_collection: str = Field(default="", alias="CANI_LAW_QDRANT_COLLECTION")
+    law_corpus_enabled: bool = Field(default=False, alias="CANI_LAW_CORPUS_ENABLED")
     law_default_jurisdictions: str = Field(default="us-nv", alias="CANI_LAW_DEFAULT_JURISDICTIONS")
 
 

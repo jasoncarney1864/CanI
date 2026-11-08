@@ -15,7 +15,7 @@ from cani_shared.db.repositories import claim_next_deletion_job, claim_next_inge
 from cani_shared.logging import configure_logging, get_logger
 from cani_shared.providers.factory import build_embedder, build_extractor, build_malware_scanner
 from cani_shared.telemetry import configure_telemetry
-from cani_shared.vector.qdrant_client import OwnerScopedQdrant
+from cani_shared.vector.store import OwnerScopedVectorStore
 
 from ingestion_worker_app.deletion import handle_deletion_failure, process_deletion
 from ingestion_worker_app.pipeline import handle_job_failure, process_job
@@ -25,19 +25,19 @@ POLL_INTERVAL_SECONDS = 3
 configure_logging("ingestion-worker")
 logger = get_logger(__name__)
 
-# Lazy initialization flag for Qdrant collection — postpone ensure_collection()
-# until the first job is claimed instead of blocking startup.
-_qdrant_initialized = False
+# Lazy initialization flag for the vector table — postpone ensure_collection() (the
+# dimension tripwire + HNSW index) until the first job is claimed instead of blocking startup.
+_vectors_initialized = False
 
 
-def ensure_qdrant_ready(qdrant: OwnerScopedQdrant, vector_size: int) -> None:
-    """Ensure Qdrant collection exists on first job processing (lazy init)."""
-    global _qdrant_initialized  # noqa: PLW0603
-    if not _qdrant_initialized:
-        logger.info("lazy_qdrant_init_start")
-        qdrant.ensure_collection(vector_size)
-        _qdrant_initialized = True
-        logger.info("lazy_qdrant_init_complete")
+def ensure_vectors_ready(vectors: OwnerScopedVectorStore, vector_size: int) -> None:
+    """Ensure the vector table matches the embedder on first job processing (lazy init)."""
+    global _vectors_initialized  # noqa: PLW0603
+    if not _vectors_initialized:
+        logger.info("lazy_vector_init_start")
+        vectors.ensure_collection(vector_size)
+        _vectors_initialized = True
+        logger.info("lazy_vector_init_complete")
 
 
 def run_forever() -> None:
@@ -51,7 +51,7 @@ def run_forever() -> None:
     scanner = build_malware_scanner(settings)
     extractor = build_extractor(settings)
     embedder = build_embedder(settings)
-    qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
+    vectors = OwnerScopedVectorStore(pool)
     # Postpone ensure_collection() until first job — avoids startup timeout
 
     logger.info("ingestion_worker_started")
@@ -60,11 +60,11 @@ def run_forever() -> None:
             job = claim_next_ingestion_job(conn)
             if job is not None:
                 try:
-                    # Lazy init: ensure collection exists before processing first job. Kept
-                    # inside the same try/except as process_job — a transient Qdrant hiccup
+                    # Lazy init: check the vector table before processing first job. Kept
+                    # inside the same try/except as process_job — a transient database hiccup
                     # here must not crash the whole worker process (it previously did,
                     # causing a restart storm instead of a simple per-job retry).
-                    ensure_qdrant_ready(qdrant, embedder.vector_size)
+                    ensure_vectors_ready(vectors, embedder.vector_size)
                     process_job(
                         conn,
                         job,
@@ -72,7 +72,7 @@ def run_forever() -> None:
                         scanner=scanner,
                         extractor=extractor,
                         embedder=embedder,
-                        qdrant=qdrant,
+                        vector_store=vectors,
                     )
                 except Exception as exc:  # noqa: BLE001 - top-level job loop must never crash the worker
                     handle_job_failure(conn, job, exc)
@@ -92,7 +92,7 @@ def run_forever() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
             try:
-                process_deletion(conn, deletion_job, blob_store=blob_store, qdrant=qdrant)
+                process_deletion(conn, deletion_job, blob_store=blob_store, vectors=vectors)
             except Exception as exc:  # noqa: BLE001 - top-level job loop must never crash the worker
                 handle_deletion_failure(conn, deletion_job, exc)
                 time.sleep(min(2**deletion_job.attempt_count, 30))

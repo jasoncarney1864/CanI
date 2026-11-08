@@ -565,7 +565,7 @@ def mark_document_status(
 
 def has_processing_ingestion_job(conn: Connection, owner_user_id: str, document_id: str) -> bool:
     """The deletion worker's single-worker-invariant guard (docs/21 §1.7 step 1): true if
-    an ingestion job for this document is mid-flight right now. Deleting Qdrant points and
+    an ingestion job for this document is mid-flight right now. Deleting vector rows and
     blobs while a `processing` job is still chunking/embedding would let that job's late
     upserts land after the delete, resurrecting orphan vectors for a document the user
     already deleted — see the comment on process_deletion's guard for the full race and
@@ -588,7 +588,7 @@ def has_processing_ingestion_job(conn: Connection, owner_user_id: str, document_
 
 def delete_document_cascade(conn: Connection, owner_user_id: str, document_id: str) -> int:
     """Final step of the deletion pipeline (docs/21 §1.7 step 4), run only after the
-    document's Qdrant points and blobs are already gone: removes its Postgres rows in
+    document's vector rows and blobs are already gone: removes its Postgres rows in
     FK-safe order. Returns the chunk_manifests row count for the audit event. No FK from
     deletion_jobs to documents (§4 migration) — the tombstone job row outliving the
     documents row it cleaned up is deliberate, it's this queue's own history, not
@@ -712,8 +712,8 @@ def update_document_spoke(conn: Connection, owner_user_id: str, document_id: str
     no way to fix a mis-filed upload). This row is what the Documents page reads and what
     an in-flight ingestion job re-reads before upserting a chunk (pipeline.py), so it's
     authoritative going forward; callers are also responsible for propagating the same
-    value onto already-indexed Qdrant points via OwnerScopedQdrant.set_document_spoke,
-    since retrieval filters on that payload copy, not this column."""
+    value onto already-indexed vector rows via OwnerScopedVectorStore.set_document_spoke,
+    since retrieval filters on that copy, not this column."""
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE documents SET spoke = %s, updated_at = now() WHERE owner_user_id = %s AND document_id = %s",
@@ -729,7 +729,7 @@ def insert_chunk_manifests(conn: Connection, owner_user_id: str, chunks: list[Ch
                 """
                 INSERT INTO chunk_manifests (chunk_id, document_version_id, owner_user_id, document_id,
                                               page_start, page_end, section_label, chunk_index,
-                                              token_count, embedding_version, qdrant_point_id)
+                                              token_count, embedding_version, point_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
@@ -743,7 +743,7 @@ def insert_chunk_manifests(conn: Connection, owner_user_id: str, chunks: list[Ch
                     c.chunk_index,
                     c.token_count,
                     c.embedding_version,
-                    c.qdrant_point_id,
+                    c.point_id,
                 ),
             )
         conn.commit()
@@ -827,7 +827,7 @@ def get_latest_law_chunk_manifests(conn: Connection, law_source_id: str) -> list
 def replace_law_chunk_manifests(conn: Connection, law_source_id: str, chunks: list[LawChunkManifest]) -> None:
     """Wholesale replace: delete every existing manifest row for this source and insert the
     caller's complete current-state list (§20.7 step 6). The caller is responsible for
-    carrying forward unchanged rows (same chunk_id/qdrant_point_id) rather than minting new
+    carrying forward unchanged rows (same chunk_id/point_id) rather than minting new
     ones — this function doesn't diff, it just makes Postgres match what was passed."""
     with conn.cursor() as cur:
         cur.execute("DELETE FROM law_chunk_manifests WHERE law_source_id = %s", (law_source_id,))
@@ -836,7 +836,7 @@ def replace_law_chunk_manifests(conn: Connection, law_source_id: str, chunks: li
                 """
                 INSERT INTO law_chunk_manifests (chunk_id, law_source_version_id, law_source_id, citation,
                                                   heading, source_url, chunk_index, token_count,
-                                                  content_sha256, embedding_version, qdrant_point_id)
+                                                  content_sha256, embedding_version, point_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
@@ -850,7 +850,7 @@ def replace_law_chunk_manifests(conn: Connection, law_source_id: str, chunks: li
                     c.token_count,
                     c.content_sha256,
                     c.embedding_version,
-                    c.qdrant_point_id,
+                    c.point_id,
                 ),
             )
         conn.commit()

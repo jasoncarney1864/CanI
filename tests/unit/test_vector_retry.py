@@ -1,22 +1,14 @@
 """retry_transient: the retrieval-path hardening from the 2026-08-09 outage
-(docs/sitreps/2026-08-09-qdrant-corruption-and-missing-backups.md). The contract under
-test: transient faults (network-level, 5xx) are retried with bounded backoff; contract
-errors (4xx, owner-filter violations) re-raise immediately and are never retried.
+(docs/sitreps/2026-08-09-qdrant-corruption-and-missing-backups.md), carried over to the
+Postgres store. The contract under test: transient faults (connection-level, pool
+exhaustion) are retried with bounded backoff; contract errors (SQL/programming errors,
+owner-filter violations) re-raise immediately and are never retried.
 """
 
-import httpx
+import psycopg
+import psycopg_pool
 import pytest
-from cani_shared.vector.qdrant_client import (
-    MissingOwnerFilterError,
-    retry_transient,
-)
-from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
-
-
-def _unexpected(status_code: int) -> UnexpectedResponse:
-    return UnexpectedResponse(
-        status_code=status_code, reason_phrase="x", content=b"", headers=httpx.Headers()
-    )
+from cani_shared.vector.store import MissingOwnerFilterError, retry_transient
 
 
 class _Recorder:
@@ -44,34 +36,34 @@ def test_succeeds_first_try_no_sleep():
     assert rec.slept == []
 
 
-def test_retries_network_fault_then_succeeds():
-    rec = _Recorder(failures=[ResponseHandlingException(httpx.ConnectError("boom"))])
+def test_retries_connection_fault_then_succeeds():
+    rec = _Recorder(failures=[psycopg.OperationalError("connection refused")])
     assert retry_transient(rec.fn, sleep=rec.sleep) == "ok"
     assert rec.calls == 2
     assert rec.slept == [0.25]
 
 
-def test_retries_5xx_then_succeeds():
-    rec = _Recorder(failures=[_unexpected(503)])
+def test_retries_pool_timeout_then_succeeds():
+    rec = _Recorder(failures=[psycopg_pool.PoolTimeout("pool exhausted")])
     assert retry_transient(rec.fn, sleep=rec.sleep) == "ok"
     assert rec.calls == 2
 
 
 def test_exhausts_attempts_and_reraises_last():
-    fault = ResponseHandlingException(httpx.ReadTimeout("slow"))
+    fault = psycopg.OperationalError("server closed the connection unexpectedly")
     rec = _Recorder(failures=[fault, fault, fault])
-    with pytest.raises(ResponseHandlingException):
+    with pytest.raises(psycopg.OperationalError):
         retry_transient(rec.fn, sleep=rec.sleep)
     assert rec.calls == 3
     # Exponential and bounded: two sleeps for three attempts, never one after the last.
     assert rec.slept == [0.25, 0.5]
 
 
-def test_4xx_is_not_retried():
-    rec = _Recorder(failures=[_unexpected(401), _unexpected(401)])
-    with pytest.raises(UnexpectedResponse):
+def test_sql_error_is_not_retried():
+    rec = _Recorder(failures=[psycopg.ProgrammingError("relation does not exist")] * 2)
+    with pytest.raises(psycopg.ProgrammingError):
         retry_transient(rec.fn, sleep=rec.sleep)
-    assert rec.calls == 1  # a bad API key does not get better with retries
+    assert rec.calls == 1  # a missing table does not get better with retries
     assert rec.slept == []
 
 

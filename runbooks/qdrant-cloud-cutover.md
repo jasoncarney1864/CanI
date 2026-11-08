@@ -1,3 +1,6 @@
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # Qdrant Cloud cutover and re-ingest (2026-08-09 incident recovery)
 
 Recovers from the 2026-08-09 corruption of self-hosted Qdrant
@@ -21,14 +24,20 @@ re-embed every document from Postgres + Blob, which are both intact.
 Everything up to step 6 is reversible with `git revert` plus a redeploy. Step 8
 (decommission) and the AKS teardown in step 9 are not.
 
-## 1. Commit and push
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 1. Commit and push
 
 Working tree carries the incident-hardening changes (retrieval retry, `/readyz`, bicep
 probe, CD smoke check). Review, commit, and push **from a local terminal** — and remember
 `main` was already one commit ahead (`74e446f`, the sitrep) before these.
 
 ```bash
-git add -p    # review: qdrant_client.py, retrieval main.py, main.bicep, cd workflow, test
+git add -p    > **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# review: qdrant_client.py, retrieval main.py, main.bicep, cd workflow, test
 git commit
 git push
 ```
@@ -36,7 +45,10 @@ git push
 Wait for CI green before deploying — the deploy ships whatever images CD built last, and
 you want the pipeline's view of main to match what you are about to run.
 
-## 2. Deploy the Bicep (the actual cutover)
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 2. Deploy the Bicep (the actual cutover)
 
 `deploy-with-secrets.ps1` reads six secrets from Key Vault *from this machine*, so the
 public endpoint must be opened for the duration:
@@ -47,8 +59,17 @@ az keyvault update --name cani-platform-kv2e5cf1f6 --public-network-access Enabl
 
 ```powershell
 pwsh infra/container-apps/deploy-with-secrets.ps1 -WhatIf
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # Expect noise on all six secure params — the -WhatIf path passes dummies. That is an
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # artifact, not a real change. Review everything else, especially QDRANT_URL flipping
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # from the internal FQDN to the cloud URL on all four apps + the snapshot job.
 pwsh infra/container-apps/deploy-with-secrets.ps1
 ```
@@ -61,13 +82,25 @@ This deploy also creates the `qdrant-snapshot` job for the first time — the te
 defined it before the incident but it had never been applied, which is exactly why there
 were no backups.
 
-## 3. Verify connectivity before re-ingesting
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 3. Verify connectivity before re-ingesting
 
 ```bash
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # Startup log: expect "✅ Qdrant client created", and no 401 afterwards
 az containerapp logs show -n retrieval-worker -g cani-container-apps-dev --tail 50
 
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # Readiness now exercises Qdrant (new in this change) — 200 means the cluster is
+> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
 # reachable with the real key from the real environment:
 RETRIEVAL_FQDN=$(az containerapp show -n retrieval-worker -g cani-container-apps-dev \
   --query properties.configuration.ingress.fqdn -o tsv)
@@ -77,7 +110,10 @@ curl -i "https://$RETRIEVAL_FQDN/readyz"
 A 401 here means the Key Vault secret and the cluster's current API key disagree
 (remember the first key was rotated after the 2026-08-09 leak — see the preflight notes).
 
-## 4. Re-ingest
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 4. Re-ingest
 
 Postgres `documents` / `document_versions` rows and the raw blobs are intact, so
 re-ingest = enqueue a fresh ingestion job for every document version. The pipeline
@@ -105,7 +141,10 @@ WHERE started_at > now() - interval '1 hour' GROUP BY status;
 az containerapp logs show -n ingestion-worker -g cani-container-apps-dev --follow
 ```
 
-## 5. Reconcile (docs/09 §9.10)
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 5. Reconcile (docs/09 §9.10)
 
 Point count in Qdrant must equal the manifest count in Postgres:
 
@@ -121,7 +160,10 @@ curl -s -H "api-key: $QDRANT_API_KEY" \
 Then ask a real question through the app and confirm citations render. This is the
 moment `/query` is back.
 
-## 6. Prove the backup exists this time
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 6. Prove the backup exists this time
 
 The incident's core lesson was a documented-but-not-running control. Do not take the
 job's existence on faith — run it and look at the artifact:
@@ -135,11 +177,17 @@ az storage blob list --account-name cani6ada34dffd -c qdrant-snapshots -o table
 A timestamped blob under `cani_docs_dev_v2/` = you have a backup for the first time
 since the migration.
 
-## 7. Update the incident sitrep
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 7. Update the incident sitrep
 
 Mark the 2026-08-09 sitrep resolved with the recovery date and the points_count.
 
-## 8. Decommission the corrupted self-hosted Qdrant
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 8. Decommission the corrupted self-hosted Qdrant
 
 The incremental ARM deploy does not delete resources it no longer declares:
 
@@ -150,7 +198,10 @@ az storage account delete -n caniqdrthpizrvpqt7u -g cani-container-apps-dev --ye
 
 The corrupted collection data dies with the storage account; nothing of value is on it.
 
-## 9. Check whether AKS is still billing
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# 9. Check whether AKS is still billing
 
 The consolidation plan ended with `pulumi up` on the workload stack destroying the AKS
 cluster. Verify it actually happened:
@@ -166,7 +217,10 @@ only run it with steps 3–6 verified):
 cd infra/workload && pulumi up
 ```
 
-## Rollback
+#> **Historical (2026-11-07).** Vectors now live in Postgres via pgvector (ADR-008); the
+> Qdrant procedures below no longer apply. The Postgres backup covers the embeddings.
+
+# Rollback
 
 Before step 8 there is nothing to roll back *to* — the self-hosted store is corrupt and
 was already down. If the cloud cluster misbehaves, the failure mode is the same outage

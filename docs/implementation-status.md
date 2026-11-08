@@ -11,6 +11,25 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-11-07 update (vector store moved into Postgres)
+
+- Qdrant is gone from the code: `docs/adr/adr-008-vector-store-pgvector.md`. Migration
+  `0009_pgvector.sql` adds `chunk_embeddings` / `law_chunk_embeddings` and renames the
+  manifests' `qdrant_point_id` to `point_id`. `OwnerScopedVectorStore` and
+  `PublicLawVectorStore` keep the Qdrant wrappers' exact surface and fail-closed rules.
+  `cani_shared.backup` (the Qdrant snapshot job) and the `QDRANT_*` / 
+  `CANI_LAW_QDRANT_COLLECTION` settings are removed; the law corpus is now switched by
+  `CANI_LAW_CORPUS_ENABLED`.
+- Verified locally on 2026-11-07: `ruff check` / `ruff format --check` clean, 243/243
+  `pytest tests/unit`, and 25/25 `pytest tests/integration` against the
+  `pgvector/pgvector:pg16` compose image with fake providers (CI-style `.env`).
+- Not yet updated: `infra/container-apps/main.bicep` still carries the Qdrant
+  parameters and the `qdrant-snapshot` job. That template is being replaced wholesale
+  by the low-cost rebuild (new subscription, see the sitrep for 2026-11-07), so it was
+  deliberately not patched piecemeal.
+- The 2026-08-09 incident's open reconciliation item is closed by construction: there is
+  no second store to reconcile against.
+
 ## 2026-08-22 update (Sprint 4 implementation and verification gaps)
 
 - Public-law corpus phases 1–3 are implemented (`893e534`, `0953060`, `46418bc`) and the

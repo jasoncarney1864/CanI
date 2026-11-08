@@ -91,8 +91,19 @@ too. Flag it rather than papering over it.
 deliberate — CI and local dev need no credentials — but in August 2026 production ran
 fakes for an entire sprint before anyone noticed, because nothing errored. If you are
 verifying that real AI is in play, check the deployed config, not the fact that a
-grounded answer came back. `ensure_collection` now hard-fails on vector-dimension
-mismatch, which is the tripwire for that class of bug.
+grounded answer came back. `ensure_collection` on the vector store hard-fails when the
+stored vectors' width differs from the configured embedder's, which is the tripwire for
+that class of bug.
+
+**Vectors live in Postgres, not a separate store.** Since ADR-008 (2026-11) embeddings are
+pgvector rows in `chunk_embeddings` / `law_chunk_embeddings` (migration 0009), written in
+the same transaction as their manifests. Only `cani_shared/vector/store.py` and
+`public_law_store.py` may name those tables; `tests/unit/test_vector_access_boundary.py`
+fails the build otherwise, because the owner filter in those wrappers is the whole of
+tenant isolation. The compose Postgres image is `pgvector/pgvector:pg16`, and an Azure
+Flexible Server needs `azure.extensions` to include `VECTOR` before migrations run.
+Anything still mentioning Qdrant (older docs, runbooks, `infra/container-apps/`) is
+historical.
 
 **`.env` secrets must be ≥32 chars.** `CANI_TOKEN_SIGNING_SECRET` and
 `CANI_SESSION_SECRET` fail startup if missing, empty, or short. An unedited copy of

@@ -40,7 +40,7 @@ from cani_shared.models import ChunkManifest, IngestionJob, IngestionStage
 from cani_shared.providers.embedder import Embedder
 from cani_shared.providers.extractor import OcrUnavailableError, TextExtractor
 from cani_shared.providers.scanner import MalwareScanner
-from cani_shared.vector.qdrant_client import OwnerScopedQdrant
+from cani_shared.vector.store import OwnerScopedVectorStore
 from psycopg import Connection
 
 from ingestion_worker_app.title_gen import generate_title
@@ -60,7 +60,7 @@ def process_job(
     scanner: MalwareScanner,
     extractor: TextExtractor,
     embedder: Embedder,
-    qdrant: OwnerScopedQdrant,
+    vector_store: OwnerScopedVectorStore,
 ) -> None:
     owner_user_id = job.owner_user_id
     document_version = get_document_version(conn, owner_user_id, job.document_version_id)
@@ -163,7 +163,11 @@ def process_job(
     manifests: list[ChunkManifest] = []
     for chunk, vector in zip(chunks, vectors, strict=True):
         chunk_id = str(uuid.uuid4())
-        qdrant.upsert_chunk(
+        # Same connection as the manifest insert below: the vector row and its
+        # chunk_manifests row commit together, so there is no point-count-vs-manifest
+        # reconciliation to run after a crash (the 2026-08-09 incident's open item).
+        vector_store.upsert_chunk(
+            conn=conn,
             owner_user_id=owner_user_id,
             vector=vector,
             point_id=chunk_id,
@@ -198,7 +202,7 @@ def process_job(
                 chunk_index=chunk.chunk_index,
                 token_count=chunk.token_count,
                 embedding_version=embedder.embedding_version,
-                qdrant_point_id=chunk_id,
+                point_id=chunk_id,
             )
         )
 

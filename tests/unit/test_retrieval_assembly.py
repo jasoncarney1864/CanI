@@ -6,7 +6,7 @@ is pure by design so this logic is testable without one.
 """
 
 from cani_shared.models import Citation, Verdict, VerdictKind
-from cani_shared.vector.qdrant_client import ScoredChunk
+from cani_shared.vector.store import ScoredChunk
 from retrieval_worker_app.assembly import (
     LAW_CONTEXT_TOP_K,
     USER_CONTEXT_TOP_K,

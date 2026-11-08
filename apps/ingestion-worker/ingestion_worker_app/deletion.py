@@ -1,7 +1,7 @@
 """Async tombstone-cleanup pipeline (docs/09 §9.9, docs/21 §1.7). Runs in the same worker
 process as the ingestion pipeline (worker.py drains both queues in one loop) — deliberately
 not a separate deployable, for the same "the jobs table is the queue" rationale as
-ingestion. Removes Qdrant points, blobs, and Postgres rows for a document already
+ingestion. Removes vector rows, blobs, and Postgres rows for a document already
 tombstoned by docs-api's DELETE /documents/{id}.
 """
 
@@ -22,7 +22,7 @@ from cani_shared.db.repositories import (
 )
 from cani_shared.logging import get_logger, hash_user_id
 from cani_shared.models import DeletionJob
-from cani_shared.vector.qdrant_client import OwnerScopedQdrant
+from cani_shared.vector.store import OwnerScopedVectorStore
 from psycopg import Connection
 
 logger = get_logger(__name__)
@@ -36,7 +36,7 @@ class RetryableDeletionError(Exception):
 
 
 def process_deletion(
-    conn: Connection, job: DeletionJob, *, blob_store: BlobStore, qdrant: OwnerScopedQdrant
+    conn: Connection, job: DeletionJob, *, blob_store: BlobStore, vectors: OwnerScopedVectorStore
 ) -> None:
     owner_user_id = job.owner_user_id
     document_id = job.document_id
@@ -53,7 +53,7 @@ def process_deletion(
     # called concurrently with each other for the same document. If this worker is ever
     # scaled to multiple replicas, this becomes a TOCTOU race: replica A can pass this
     # check while replica B concurrently claims an ingestion job for the same document, and
-    # B's late chunk upserts land in Qdrant AFTER A's delete_document_points call below —
+    # B's late chunk upserts land AFTER A's delete_document_points call below —
     # resurrecting orphan vectors for a document the user already deleted. The fix, when
     # multi-replica is needed: take a per-document advisory lock
     # (pg_advisory_xact_lock(hashtext(document_id::text))) in both process_job and
@@ -63,7 +63,9 @@ def process_deletion(
             f"document {document_id} has an ingestion job in flight; retrying after it completes"
         )
 
-    qdrant.delete_document_points(owner_user_id=owner_user_id, document_id=document_id)
+    # Joins this job's transaction: if the blob or row deletes below fail, the vector delete
+    # rolls back with them and the retry starts from a consistent state.
+    vectors.delete_document_points(conn=conn, owner_user_id=owner_user_id, document_id=document_id)
     log.info("stage_completed", stage="vectors_deleted")
 
     blobs_deleted = 0

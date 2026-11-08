@@ -3,7 +3,7 @@
 
 Finds documents with filename-based titles (e.g., ending in .pdf, .jpg) and replaces
 them with LLM-generated descriptive titles by reading the document's chunk text from
-Postgres, calling Azure OpenAI, and updating documents.title.
+the vector table, calling Azure OpenAI, and updating documents.title.
 
 Usage:
     python scripts/backfill_document_titles.py [--limit N] [--dry-run]
@@ -22,6 +22,7 @@ from cani_shared.config import get_settings
 from cani_shared.db.pool import get_pool
 from cani_shared.db.repositories import update_document_title
 from cani_shared.logging import configure_logging, get_logger
+from cani_shared.vector.store import OwnerScopedVectorStore
 from ingestion_worker_app.title_gen import generate_title
 from psycopg import Connection
 
@@ -44,30 +45,16 @@ def get_filename_titled_documents(conn: Connection, limit: int | None = None) ->
         return [{"owner_user_id": row[0], "document_id": row[1], "title": row[2]} for row in cur.fetchall()]
 
 
-def get_document_text(conn: Connection, owner_user_id: str, document_id: str) -> str:
-    """Fetch all chunk text for a document (ordered by chunk_index) and concatenate."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT chunk_text FROM (
-                SELECT qdrant_point_id, chunk_index
-                FROM chunk_manifests
-                WHERE owner_user_id = %s AND document_id = %s
-                ORDER BY chunk_index
-            ) cm
-            CROSS JOIN LATERAL (
-                SELECT payload->>'chunk_text' as chunk_text
-                FROM unnest(ARRAY[1]) -- placeholder for Qdrant lookup; in reality we'd query Qdrant
-            ) q
-            """,
-            (owner_user_id, document_id),
-        )
-        # NOTE: This is a placeholder query. In a real backfill, we'd either:
-        # 1. Query Qdrant directly for each point_id and extract chunk_text from payload
-        # 2. Store chunk_text in Postgres (not currently done)
-        # For now, we'll use a simpler approach: query chunk manifests and fetch from Qdrant
-        rows = cur.fetchall()
-        return "\n".join(row[0] for row in rows if row[0])
+def get_document_text(
+    conn: Connection, vectors: OwnerScopedVectorStore, owner_user_id: str, document_id: str
+) -> str:
+    """All of a document's chunk text in document order — the same owner-scoped read the
+    Document Viewer uses (cani_shared.vector.store), so this script never touches the
+    embeddings table directly."""
+    payloads = vectors.chunks_for_document(
+        conn=conn, owner_user_id=str(owner_user_id), document_id=str(document_id)
+    )
+    return "\n".join(p.get("chunk_text", "") for p in payloads)
 
 
 def backfill_titles(conn: Connection, settings, limit: int | None = None, dry_run: bool = False) -> None:
@@ -77,6 +64,7 @@ def backfill_titles(conn: Connection, settings, limit: int | None = None, dry_ru
         sys.exit(1)
 
     docs = get_filename_titled_documents(conn, limit)
+    vectors = OwnerScopedVectorStore()
     logger.info("backfill_started", document_count=len(docs), dry_run=dry_run)
 
     for i, doc in enumerate(docs, start=1):
@@ -84,45 +72,10 @@ def backfill_titles(conn: Connection, settings, limit: int | None = None, dry_ru
         owner_user_id = doc["owner_user_id"]
         document_id = doc["document_id"]
 
-        # For this MVP, we'll fetch document text from Qdrant via the vector client
-        # (same approach the retrieval worker uses). This is simpler than duplicating
-        # chunk_text in Postgres just for backfill.
-        from cani_shared.vector.qdrant_client import OwnerScopedQdrant
-
-        qdrant = OwnerScopedQdrant(settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key)
-
-        # Fetch chunks for this document from Qdrant
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT qdrant_point_id
-                FROM chunk_manifests
-                WHERE owner_user_id = %s AND document_id = %s
-                ORDER BY chunk_index
-                """,
-                (owner_user_id, document_id),
-            )
-            point_ids = [row[0] for row in cur.fetchall()]
-
-        if not point_ids:
-            logger.warning("no_chunks_found", document_id=document_id, title=old_title)
-            continue
-
-        # Retrieve chunk text from Qdrant
         try:
-            chunks = []
-            for point_id in point_ids:
-                point = qdrant.client.retrieve(
-                    collection_name=qdrant.collection,
-                    ids=[point_id],
-                    with_payload=True,
-                )
-                if point and point[0].payload:
-                    chunks.append(point[0].payload.get("chunk_text", ""))
-
-            full_text = "\n".join(chunks)
+            full_text = get_document_text(conn, vectors, owner_user_id, document_id)
             if not full_text.strip():
-                logger.warning("empty_document", document_id=document_id, title=old_title)
+                logger.warning("no_chunks_found", document_id=document_id, title=old_title)
                 continue
 
             new_title = generate_title(

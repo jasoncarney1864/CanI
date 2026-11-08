@@ -64,7 +64,7 @@ class BlobStore:
 
         ``upload`` takes ``bytes``, which means the caller has already paid for the whole
         object in RAM. That is fine for document artifacts, which are bounded by the upload
-        limit, and wrong for anything that grows with the size of the corpus — Qdrant
+        limit, and wrong for anything that grows with the size of the corpus — vector
         snapshots above all. Pass an iterator of chunks here instead and let the SDK
         block-upload them.
 

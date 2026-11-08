@@ -1,7 +1,7 @@
 """Refresh diff logic (docs/20 §20.7, §20.10): unchanged sections skip re-embedding,
 changed/new sections reuse a deterministic point id so the upsert replaces in place, and
-sections that disappear from a fetch get deleted from Qdrant. No real Postgres/Qdrant/network
-— repository calls are monkeypatched and the embedder/qdrant are fakes/mocks that record
+sections that disappear from a fetch get deleted from the vector table. No real Postgres/network
+— repository calls are monkeypatched and the embedder/vector store are fakes/mocks that record
 what they were asked to do.
 """
 
@@ -89,11 +89,11 @@ def blob_store():
 
 
 @pytest.fixture
-def qdrant():
+def vectors():
     return MagicMock()
 
 
-def test_first_refresh_embeds_and_upserts_every_chunk(repo, blob_store, qdrant):
+def test_first_refresh_embeds_and_upserts_every_chunk(repo, blob_store, vectors):
     source = _source()
     fetcher = _StubFetcher(_two_sections())
     embedder = FakeEmbedder()
@@ -104,12 +104,12 @@ def test_first_refresh_embeds_and_upserts_every_chunk(repo, blob_store, qdrant):
         fetcher=fetcher,
         blob_store=blob_store,
         embedder=embedder,
-        qdrant=qdrant,
+        vectors=vectors,
         fetcher_kind="fake",
     )
 
-    assert qdrant.upsert_section.call_count == 2
-    assert qdrant.delete_points.call_count == 0
+    assert vectors.upsert_section.call_count == 2
+    assert vectors.delete_points.call_count == 0
     repo.replace_law_chunk_manifests.assert_called_once()
     manifests = repo.replace_law_chunk_manifests.call_args.args[2]
     assert {m.citation for m in manifests} == {"NRS 116.001", "NRS 116.003"}
@@ -117,7 +117,7 @@ def test_first_refresh_embeds_and_upserts_every_chunk(repo, blob_store, qdrant):
     repo.touch_law_source_checked.assert_called_once()
 
 
-def test_unchanged_source_checksum_skips_everything(repo, blob_store, qdrant):
+def test_unchanged_source_checksum_skips_everything(repo, blob_store, vectors):
     source = _source()
     raw_bytes = b"same-bytes"
     fetcher = _StubFetcher(_two_sections(), raw_bytes=raw_bytes)
@@ -140,17 +140,17 @@ def test_unchanged_source_checksum_skips_everything(repo, blob_store, qdrant):
         fetcher=fetcher,
         blob_store=blob_store,
         embedder=embedder,
-        qdrant=qdrant,
+        vectors=vectors,
         fetcher_kind="fake",
     )
 
-    qdrant.upsert_section.assert_not_called()
+    vectors.upsert_section.assert_not_called()
     blob_store.upload.assert_not_called()
     repo.replace_law_chunk_manifests.assert_not_called()
     repo.touch_law_source_checked.assert_called_once()
 
 
-def test_unchanged_section_content_is_not_reembedded(repo, blob_store, qdrant):
+def test_unchanged_section_content_is_not_reembedded(repo, blob_store, vectors):
     source = _source()
     sections = _two_sections()
     fetcher = _StubFetcher(sections)
@@ -172,7 +172,7 @@ def test_unchanged_section_content_is_not_reembedded(repo, blob_store, qdrant):
             token_count=10,
             content_sha256=content_hash_001,
             embedding_version=embedder.embedding_version,
-            qdrant_point_id=point_id_001,
+            point_id=point_id_001,
         )
     ]
 
@@ -182,23 +182,23 @@ def test_unchanged_section_content_is_not_reembedded(repo, blob_store, qdrant):
         fetcher=fetcher,
         blob_store=blob_store,
         embedder=embedder,
-        qdrant=qdrant,
+        vectors=vectors,
         fetcher_kind="fake",
     )
 
     # Only 116.003 (new/changed) gets embedded+upserted; 116.001's content is unchanged.
-    assert qdrant.upsert_section.call_count == 1
-    upserted_point_id = qdrant.upsert_section.call_args.kwargs["point_id"]
+    assert vectors.upsert_section.call_count == 1
+    upserted_point_id = vectors.upsert_section.call_args.kwargs["point_id"]
     assert upserted_point_id == point_id_003
 
     manifests = repo.replace_law_chunk_manifests.call_args.args[2]
     assert {m.citation for m in manifests} == {"NRS 116.001", "NRS 116.003"}
     reused = next(m for m in manifests if m.citation == "NRS 116.001")
-    assert reused.qdrant_point_id == point_id_001
+    assert reused.point_id == point_id_001
     assert reused.content_sha256 == content_hash_001
 
 
-def test_content_change_reembeds_with_same_deterministic_point_id(repo, blob_store, qdrant):
+def test_content_change_reembeds_with_same_deterministic_point_id(repo, blob_store, vectors):
     source = _source()
     sections = _two_sections()
     fetcher = _StubFetcher(sections)
@@ -219,7 +219,7 @@ def test_content_change_reembeds_with_same_deterministic_point_id(repo, blob_sto
             token_count=10,
             content_sha256=stale_hash,
             embedding_version=embedder.embedding_version,
-            qdrant_point_id=point_id_001,
+            point_id=point_id_001,
         )
     ]
 
@@ -229,15 +229,15 @@ def test_content_change_reembeds_with_same_deterministic_point_id(repo, blob_sto
         fetcher=fetcher,
         blob_store=blob_store,
         embedder=embedder,
-        qdrant=qdrant,
+        vectors=vectors,
         fetcher_kind="fake",
     )
 
-    upserted_point_ids = {call.kwargs["point_id"] for call in qdrant.upsert_section.call_args_list}
+    upserted_point_ids = {call.kwargs["point_id"] for call in vectors.upsert_section.call_args_list}
     assert point_id_001 in upserted_point_ids  # re-embedded, but point id is unchanged (replace-in-place)
 
 
-def test_embedder_version_change_forces_reembed_even_if_content_hash_matches(repo, blob_store, qdrant):
+def test_embedder_version_change_forces_reembed_even_if_content_hash_matches(repo, blob_store, vectors):
     source = _source()
     sections = _two_sections()
     fetcher = _StubFetcher(sections)
@@ -258,7 +258,7 @@ def test_embedder_version_change_forces_reembed_even_if_content_hash_matches(rep
             token_count=10,
             content_sha256=content_hash_001,
             embedding_version="some-older-embedder-v0",  # different from embedder.embedding_version
-            qdrant_point_id=point_id_001,
+            point_id=point_id_001,
         )
     ]
 
@@ -268,15 +268,15 @@ def test_embedder_version_change_forces_reembed_even_if_content_hash_matches(rep
         fetcher=fetcher,
         blob_store=blob_store,
         embedder=embedder,
-        qdrant=qdrant,
+        vectors=vectors,
         fetcher_kind="fake",
     )
 
-    upserted_point_ids = {call.kwargs["point_id"] for call in qdrant.upsert_section.call_args_list}
+    upserted_point_ids = {call.kwargs["point_id"] for call in vectors.upsert_section.call_args_list}
     assert point_id_001 in upserted_point_ids
 
 
-def test_removed_citation_is_deleted_from_qdrant(repo, blob_store, qdrant):
+def test_removed_citation_is_deleted_from_qdrant(repo, blob_store, vectors):
     source = _source()
     # Fetch now only returns 116.001 — 116.003 has been repealed/removed.
     sections = [_two_sections()[0]]
@@ -296,7 +296,7 @@ def test_removed_citation_is_deleted_from_qdrant(repo, blob_store, qdrant):
             token_count=10,
             content_sha256="whatever",
             embedding_version=embedder.embedding_version,
-            qdrant_point_id=point_id_003,
+            point_id=point_id_003,
         )
     ]
 
@@ -306,12 +306,12 @@ def test_removed_citation_is_deleted_from_qdrant(repo, blob_store, qdrant):
         fetcher=fetcher,
         blob_store=blob_store,
         embedder=embedder,
-        qdrant=qdrant,
+        vectors=vectors,
         fetcher_kind="fake",
     )
 
-    qdrant.delete_points.assert_called_once()
-    deleted_ids = qdrant.delete_points.call_args.args[0]
+    vectors.delete_points.assert_called_once()
+    deleted_ids = vectors.delete_points.call_args.args[0]
     assert deleted_ids == [point_id_003]
 
     manifests = repo.replace_law_chunk_manifests.call_args.args[2]

@@ -1,7 +1,7 @@
 """Negative test proving tenant isolation (docs/16 Milestone A: "No known cross-user
 access path in validation tests"). User B must never see User A's chunks or citations,
 even when asking about the exact same content, even though both hit the same shared
-Qdrant collection and Postgres tables.
+vector table and Postgres tables.
 """
 
 from __future__ import annotations

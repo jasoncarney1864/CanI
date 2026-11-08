@@ -23,12 +23,12 @@ RETRIEVAL_URL = "http://localhost:8003"
 STARTUP_TIMEOUT_SECONDS = 240
 
 # Public-law corpus (docs/20 §20.11 phase-2 gate: "enable in dev"). The checked-in
-# .env.example default stays empty (ships dark everywhere until an environment opts in);
+# .env.example default stays false (ships dark everywhere until an environment opts in);
 # this only turns it on inside the local/CI .env so retrieval-worker constructs
-# PublicLawQdrant and test_public_law_retrieval.py has something to seed via law_refresh's
-# FakeLawFetcher. CANI_LAW_FETCH_ENABLED stays false — fetching is a separate concern from
-# whether the collection/search path is exercised.
-_LAW_COLLECTION_KEY = "CANI_LAW_QDRANT_COLLECTION"
+# PublicLawVectorStore and test_public_law_retrieval.py has something to seed via
+# law_refresh's FakeLawFetcher. CANI_LAW_FETCH_ENABLED stays false — fetching is a separate
+# concern from whether the table/search path is exercised.
+_LAW_COLLECTION_KEY = "CANI_LAW_CORPUS_ENABLED"
 _LAW_COLLECTION_LINE_RE = re.compile(rf"^{_LAW_COLLECTION_KEY}=(.*)$", re.MULTILINE)
 
 
@@ -46,18 +46,18 @@ def _ensure_env_file() -> None:
 
     # Whether freshly generated above or already present (e.g. a developer's own .env with
     # real Azure keys, possibly predating this key's introduction to .env.example entirely),
-    # turn on only a still-blank/missing law-collection value — every other setting,
+    # turn on only a still-false/blank/missing law-corpus flag — every other setting,
     # including real credentials, is left exactly as the developer configured it.
     content = env_path.read_text(encoding="utf-8")
     match = _LAW_COLLECTION_LINE_RE.search(content)
-    if match and match.group(1).strip():
-        return  # developer already configured a real value; leave it alone
+    if match and match.group(1).strip().lower() == "true":
+        return  # developer already turned it on; leave it alone
     if match:
-        content = _LAW_COLLECTION_LINE_RE.sub(f"{_LAW_COLLECTION_KEY}=cani_law_test", content, count=1)
+        content = _LAW_COLLECTION_LINE_RE.sub(f"{_LAW_COLLECTION_KEY}=true", content, count=1)
     else:
         if not content.endswith("\n"):
             content += "\n"
-        content += f"{_LAW_COLLECTION_KEY}=cani_law_test\n"
+        content += f"{_LAW_COLLECTION_KEY}=true\n"
     env_path.write_text(content, encoding="utf-8")
 
 
