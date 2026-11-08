@@ -219,7 +219,7 @@ ruff format --check apps tests db # verify formatting without changing files (CI
 ```
 apps/            hub-api, docs-api, ingestion-worker, retrieval-worker, shared-lib
 db/               SQL migrations + migration runner
-infra/            Pulumi IaC (platform + workload landing zones) — applied to dev; see docs/implementation-status.md
+infra/            container-apps/: the Bicep template, parameters and deploy scripts — see docs/22-low-cost-rebuild.md
 tests/unit/       no external dependencies
 tests/integration/ drives docker-compose
 runbooks/         operational runbooks for the scenarios already covered by this MVP

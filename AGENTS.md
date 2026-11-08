@@ -20,8 +20,7 @@ Python monorepo, 5 installable packages under `apps/`, plus two JS frontends.
 | `apps/web` | Next.js app (standalone output). The deployed UI. |
 | `apps/marketing` | Separate Vite marketing site → Azure Static Web Apps. |
 | `db/` | Numbered SQL migrations + runner image. |
-| `infra/container-apps/` | **Current** deploy target: Bicep + PowerShell. |
-| `infra/platform`, `infra/workload` | Pulumi landing zones (the older AKS-era IaC). |
+| `infra/container-apps/` | The deploy target: one Bicep template + PowerShell, see `docs/22-low-cost-rebuild.md`. The Pulumi/AKS landing zones are gone (git history before 2026-11-07). |
 | `tests/unit` | Fast, no Docker, no credentials. |
 | `tests/integration` | Drives real HTTP against docker-compose. Slow. |
 | `runbooks/` | Operational procedures. |
@@ -102,8 +101,7 @@ the same transaction as their manifests. Only `cani_shared/vector/store.py` and
 fails the build otherwise, because the owner filter in those wrappers is the whole of
 tenant isolation. The compose Postgres image is `pgvector/pgvector:pg16`, and an Azure
 Flexible Server needs `azure.extensions` to include `VECTOR` before migrations run.
-Anything still mentioning Qdrant (older docs, runbooks, `infra/container-apps/`) is
-historical.
+Anything still mentioning Qdrant (older docs, runbooks) is historical.
 
 **`.env` secrets must be ≥32 chars.** `CANI_TOKEN_SIGNING_SECRET` and
 `CANI_SESSION_SECRET` fail startup if missing, empty, or short. An unedited copy of
@@ -114,9 +112,11 @@ catch. Generate with `python -c "import secrets; print(secrets.token_urlsafe(48)
 documented Azurite emulator dev key. Everything else it flags is real.
 
 **Docs lag the infrastructure.** Much of `docs/` (and `docs/10-aks-cluster-design.md`
-especially) describes the AKS deployment. Commit `25a8899` consolidated onto Azure
-Container Apps. When docs and `infra/container-apps/` disagree, the latter is current;
-say so rather than following stale docs.
+especially) describes the AKS deployment, and `docs/06`/`11`/`container-apps-migration-guide`
+describe the VNet + Key Vault + ACR era that followed. `docs/22-low-cost-rebuild.md` and
+`infra/container-apps/main.bicep` are current (November 2026, fresh subscription, no VNet,
+images from GHCR). When docs and the template disagree, the template is right; say so
+rather than following stale docs.
 
 **Don't search `node_modules`.** `apps/web`, `apps/marketing`, and
 `cani-approval-broker` all have populated `node_modules/` in the working tree. Scope

@@ -1,178 +1,284 @@
-// Container Apps migration from AKS
-// Cost savings: ~50-70% reduction by eliminating node pools and cluster management fees
-// Architecture: Hub-API + Docs-API + Web + 2 workers on consumption-based billing.
-// Vectors live in Qdrant Cloud (managed) — Azure Files/SMB cannot host Qdrant's storage engine.
+// CanI — low-cost Azure Container Apps deployment (docs/22-low-cost-rebuild.md, ADR-008).
+//
+// Resource-group scoped. Everything the product needs lives in this one template so a
+// fresh subscription goes from empty to running with one `az deployment group create`
+// plus one migration-job start. Design rules, in priority order:
+//
+//   1. Nothing costs money while idle except Postgres. No VNet (removes the load
+//      balancer, private endpoints and private DNS zones that were a third of the
+//      August 2026 bill), no Key Vault, no container registry (images come from GHCR),
+//      APIs and the worker scale to zero, one capped Log Analytics workspace.
+//   2. Guardrails are IN the template, not a runbook: a budget scoped to this resource
+//      group with real alert emails, an action group, and three alerts. The August
+//      incident was a backup job that was defined in IaC and never applied; a deploy
+//      that creates the guardrails is the only kind that cannot forget them.
+//   3. Production posture by default: ENV=prod (dev-login stub is 404), only `web` is
+//      externally reachable, TLS everywhere, blob soft-delete + versioning on.
+//
+// Vectors live in Postgres via pgvector (migration 0009); the server parameter
+// `azure.extensions` below is what allows CREATE EXTENSION vector to succeed.
 
 targetScope = 'resourceGroup'
 
-@description('Environment name (dev, prod)')
-param environmentName string = 'dev'
+// ---------------------------------------------------------------------------------------
+// Parameters
+// ---------------------------------------------------------------------------------------
 
-@description('Location for all resources')
+@description('Short environment label used in resource names and tags.')
+param environmentName string = 'prod'
+
+@description('Region for everything except the Static Web App (see swaLocation).')
 param location string = resourceGroup().location
 
-@description('Container registry name (existing)')
-param acrName string
+@description('Static Web Apps is only offered in a handful of regions; eastus is not one of them.')
+param swaLocation string = 'eastus2'
 
-@description('Container registry login server')
-param acrLoginServer string
+@description('Image tag to deploy for every service (the CD workflow passes the commit SHA).')
+param imageTag string
 
-@description('Azure OpenAI endpoint')
-param azureOpenAIEndpoint string = 'https://cani-openai.openai.azure.com/'
+@description('GHCR owner (GitHub user or org) that publishes the images, e.g. jasoncarney1864.')
+param ghcrOwner string
 
-@description('''Azure OpenAI API key, for the two apps that build AI providers (ingestion-worker
-embeds; retrieval-worker embeds + grounds). This was dropped in the AKS->Container Apps
-migration and nothing errored: the provider factory silently falls back to
-FakeEmbedder/FakeGrounder when the key is absent (the 2026-08 fake-providers incident,
-and again on 2026-08-12 when re-ingestion built a 32-dim collection out of fake vectors).
-Sourced from the azure-openai-api-key Key Vault secret by deploy-with-secrets.ps1.''')
+@description('GitHub username used to pull from GHCR.')
+param ghcrUsername string
+
 @secure()
-param azureOpenAIApiKey string
+@description('GitHub token with read:packages, used by Container Apps to pull images.')
+param ghcrToken string
 
-@description('Azure Document Intelligence (OCR) endpoint. Ingestion-worker only — image and scanned-PDF extraction fails permanently without it.')
-param azureDocumentIntelligenceEndpoint string = 'https://cani-docintel.cognitiveservices.azure.com/'
+@description('Postgres administrator login.')
+param postgresAdminLogin string = 'caniadmin'
 
-@description('Azure Document Intelligence API key. Sourced from the azure-documentintelligence-api-key Key Vault secret by deploy-with-secrets.ps1.')
 @secure()
-param azureDocumentIntelligenceApiKey string
+param postgresAdminPassword string
 
-@description('PostgreSQL host')
-param postgresHost string
-
-@description('PostgreSQL database name')
-param postgresDb string = 'cani'
-
-@description('PostgreSQL user')
-param postgresUser string = 'caniadmin'
-
-@description('PostgreSQL password')
-@secure()
-param postgresPassword string
-
-@description('JWT token signing secret')
 @secure()
 param tokenSigningSecret string
 
-@description('Session cookie encryption secret')
 @secure()
 param sessionSecret string
 
-@description('Azure Storage connection string')
-@secure()
-param storageConnectionString string
+@description('Entra External ID authority, e.g. https://caniauth.ciamlogin.com/<tenant-id>/v2.0')
+param entraOidcAuthority string
 
-@description('Microsoft Entra OIDC client secret')
+param entraOidcClientId string
+
 @secure()
 param entraClientSecret string
 
-@description('Qdrant endpoint URL. Qdrant Cloud cluster URL (https://<cluster-id>.<region>.<cloud>.cloud.qdrant.io:6333), or an internal Container Apps FQDN if you ever move back to self-hosting.')
-param qdrantUrl string
+@description('Azure OpenAI-compatible endpoint of the Foundry resource, e.g. https://<name>.openai.azure.com/')
+param azureOpenAIEndpoint string
 
-@description('Qdrant API key. Required for Qdrant Cloud. Sourced from the qdrant-api-key Key Vault secret by deploy-with-secrets.ps1.')
 @secure()
-param qdrantApiKey string
+param azureOpenAIApiKey string
 
-@description('''Azure AI Speech API key. web only — /api/speech uses it for neural TTS
-for the browser's MP3 playback path. Sourced from the azure-speech-api-key Key Vault secret
-by deploy-with-secrets.ps1. Defaults empty so existing deploys and validations that do not
-pass it do not break; the browser falls back to speechSynthesis.''')
+param azureOpenAIApiVersion string = '2024-10-21'
+param azureOpenAIEmbeddingDeployment string = 'text-embedding-3-small'
+param azureOpenAIChatDeployment string = 'gpt-5-mini'
+
+@description('Document Intelligence endpoint of the same Foundry resource, e.g. https://<name>.cognitiveservices.azure.com/')
+param azureDocumentIntelligenceEndpoint string
+
 @secure()
+param azureDocumentIntelligenceApiKey string
+
+@secure()
+@description('Optional. Speech key for the voice feature; empty disables it in the web app.')
 param azureSpeechApiKey string = ''
 
-@description('Azure AI Speech region — matches the cani-speech resource, not secret.')
-param azureSpeechRegion string = 'eastus2'
+param azureSpeechRegion string = 'eastus'
 
-// Container images are parameters, NOT hardcoded, because container-apps-cd-dev.yml
-// deploys images out-of-band via `az containerapp update --image ...:<git-sha>`. If these
-// were pinned in the template, every infra deploy would silently roll all five apps back
-// to whatever digest happened to be committed. deploy.ps1 reads the currently-running
-// image off each app and passes it through, so an infra change never moves an image.
-@description('Currently-running hub-api image. Supplied by deploy.ps1 from the live app.')
-param hubApiImage string
-
-@description('Currently-running docs-api image. Supplied by deploy.ps1 from the live app.')
-param docsApiImage string
-
-@description('Currently-running web image. Supplied by deploy.ps1 from the live app.')
-param webImage string
-
-@description('Currently-running ingestion-worker image. Supplied by deploy.ps1 from the live app.')
-param ingestionWorkerImage string
-
-@description('Currently-running retrieval-worker image. Supplied by deploy.ps1 from the live app.')
-param retrievalWorkerImage string
-
-@description('Azure Storage account name')
-param storageAccountName string = 'cani6ada34dffd'
-
-@description('Microsoft Entra OIDC Authority (tenant endpoint)')
-param entraOidcAuthority string
-
-@description('Microsoft Entra OIDC Client ID')
-param entraOidcClientId string
-
-@description('Public custom domain the web app is served on (used for the OIDC redirect_uri, NOT the Container Apps auto-generated FQDN)')
+@description('Public hostname for the web app.')
 param customDomain string = 'app.canido.co'
 
-@description('Name of the existing Container Apps managed certificate bound to the public web custom domain')
-param customDomainCertificateName string
+@description('''Custom-domain rollout phase, because a managed certificate cannot be created and bound in one deployment:
+0 = no custom domain (first deploy; take the webAppFqdn and customDomainVerificationId outputs to GoDaddy),
+1 = domain added to the app unbound so Azure can validate the CNAME + asuid TXT,
+2 = managed certificate issued and bound (steady state).''')
+@allowed([0, 1, 2])
+param customDomainPhase int = 0
 
-@description('Key Vault name for secrets')
-param keyVaultName string
+@description('Turns the public-law corpus on (retrieval dual-corpus + weekly refresh job).')
+param lawCorpusEnabled bool = true
 
-@description('Key Vault resource group (if different from deployment RG)')
-param keyVaultResourceGroup string = resourceGroup().name
+@description('Real NRS fetching in the refresh job. Explicit on purpose (fakes-in-prod incident class).')
+param lawFetchEnabled bool = true
 
-@description('Managed Identity ID for workload identity')
-param managedIdentityId string
+@description('Monthly budget for this resource group in USD. Alerts at 50/80/100% actual and 100% forecast.')
+param budgetAmountUsd int = 30
 
-@description('Managed Identity Client ID')
-param managedIdentityClientId string
+@description('Where budget and operational alerts go. Use a mailbox that is actually read.')
+param alertEmail string
 
-@description('VNet resource group name for private networking')
-param vnetResourceGroup string = 'cani-workload-core-canido-dev-eastus2-rgca86c588'
+@description('Start of the current month; budgets must start on the 1st. Defaulted so it never has to be typed.')
+param budgetStartDate string = utcNow('yyyy-MM-01')
 
-@description('VNet name for Container Apps integration')
-param vnetName string = 'cani-workload-vnet84822d25'
-
-@description('Container Apps subnet name (must be delegated to Microsoft.App/environments)')
-param containerAppsSubnetName string = 'ContainerAppsSubnet'
-
-// Existing resources
-resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
-  name: acrName
+var tags = {
+  project: 'cani'
+  environment: environmentName
+  owner: 'jason'
+  costCenter: 'personal'
+  managedBy: 'bicep'
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-  name: keyVaultName
-  scope: resourceGroup(keyVaultResourceGroup)
+var prefix = 'cani-${environmentName}'
+var registryServer = 'ghcr.io'
+var image = {
+  hubApi: '${registryServer}/${ghcrOwner}/cani-hub-api:${imageTag}'
+  docsApi: '${registryServer}/${ghcrOwner}/cani-docs-api:${imageTag}'
+  web: '${registryServer}/${ghcrOwner}/cani-web:${imageTag}'
+  ingestionWorker: '${registryServer}/${ghcrOwner}/cani-ingestion-worker:${imageTag}'
+  retrievalWorker: '${registryServer}/${ghcrOwner}/cani-retrieval-worker:${imageTag}'
+  migrate: '${registryServer}/${ghcrOwner}/cani-migrate:${imageTag}'
 }
+var postgresDb = 'cani'
+// Storage account names: 3-24 lowercase alphanumerics, globally unique.
+var storageAccountName = toLower(replace('canist${environmentName}${uniqueString(resourceGroup().id)}', '-', ''))
 
-// Reference existing VNet and subnet for private networking
-resource vnet 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {
-  name: vnetName
-  scope: resourceGroup(vnetResourceGroup)
-}
+// ---------------------------------------------------------------------------------------
+// Observability (one workspace, capped) and the alerting plumbing
+// ---------------------------------------------------------------------------------------
 
-resource containerAppsSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {
-  parent: vnet
-  name: containerAppsSubnetName
-}
-
-// Log Analytics workspace for Container Apps
-resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-  name: 'cani-logs-${environmentName}'
+resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: '${prefix}-logs'
   location: location
+  tags: tags
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
+    // August 2026: Log Analytics was the single largest line item ($76) because the
+    // Container Apps workspace had no cap at all. 0.5 GB/day is ~15 GB/month, three times
+    // the free 5 GB but still a $7 ceiling — and far above what five idle apps emit.
+    workspaceCapping: { dailyQuotaGb: json('0.5') }
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 
-// Container Apps Environment
-resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: 'cani-env-${environmentName}'
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: '${prefix}-ops'
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: 'cani-ops'
+    enabled: true
+    emailReceivers: [
+      { name: 'owner', emailAddress: alertEmail, useCommonAlertSchema: true }
+    ]
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Data: Postgres (also the vector store) and Blob Storage
+// ---------------------------------------------------------------------------------------
+
+resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
+  name: '${prefix}-pg'
   location: location
+  tags: tags
+  sku: {
+    // The only always-on compute in the design. B1ms is the smallest tier Flexible
+    // Server offers; HNSW over tens of thousands of chunks is comfortable here.
+    name: 'Standard_B1ms'
+    tier: 'Burstable'
+  }
+  properties: {
+    version: '16'
+    administratorLogin: postgresAdminLogin
+    administratorLoginPassword: postgresAdminPassword
+    storage: {
+      storageSizeGB: 32
+      autoGrow: 'Enabled'
+    }
+    backup: {
+      backupRetentionDays: 7
+      geoRedundantBackup: 'Disabled'
+    }
+    highAvailability: { mode: 'Disabled' }
+    network: {
+      // No VNet by design (see header). Reachability is controlled by the firewall rule
+      // below; transport is TLS-only (Flexible Server default require_secure_transport=on).
+      publicNetworkAccess: 'Enabled'
+    }
+  }
+}
+
+// Container Apps on the Consumption plan without a VNet have no stable egress IP, so the
+// standard "allow Azure services" rule is the only way to let them in without paying for
+// a VNet + NAT. Cost of this choice: any Azure-hosted client that knows the password can
+// connect. The password is 48 random chars and lives only in Container Apps secrets.
+resource postgresAllowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
+  parent: postgres
+  name: 'AllowAllAzureServicesAndResourcesWithinAzureIps'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
+// pgvector must be allow-listed before `CREATE EXTENSION vector` (migration 0009) can run.
+resource postgresExtensions 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2024-08-01' = {
+  parent: postgres
+  name: 'azure.extensions'
+  properties: {
+    value: 'VECTOR'
+    source: 'user-override'
+  }
+  dependsOn: [postgresAllowAzure]
+}
+
+resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
+  parent: postgres
+  name: postgresDb
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
+  dependsOn: [postgresExtensions]
+}
+
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageAccountName
+  location: location
+  tags: tags
+  kind: 'StorageV2'
+  sku: { name: 'Standard_LRS' }
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    supportsHttpsTrafficOnly: true
+    accessTier: 'Hot'
+  }
+}
+
+// docs/21 phase 2 hard gate: deletion is tombstone-then-async-cleanup, so the originals
+// must survive an accidental or buggy delete long enough to notice. 7-day soft delete and
+// versioning on both blobs and containers — the same settings the old account was
+// verified to have live.
+resource storageBlobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+  properties: {
+    deleteRetentionPolicy: { enabled: true, days: 7 }
+    containerDeleteRetentionPolicy: { enabled: true, days: 7 }
+    isVersioningEnabled: true
+  }
+}
+
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+
+// KEDA's postgresql scaler takes a libpq connection string; sslmode=require matches the
+// server's TLS-only posture.
+var postgresScalerConnection = 'postgresql://${postgresAdminLogin}:${uriComponent(postgresAdminPassword)}@${postgres.properties.fullyQualifiedDomainName}:5432/${postgresDb}?sslmode=require'
+
+// ---------------------------------------------------------------------------------------
+// Container Apps environment
+// ---------------------------------------------------------------------------------------
+
+resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: '${prefix}-env'
+  location: location
+  tags: tags
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -182,320 +288,244 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
       }
     }
     workloadProfiles: [
-      {
-        name: 'Consumption'
-        workloadProfileType: 'Consumption'
-      }
+      { name: 'Consumption', workloadProfileType: 'Consumption' }
     ]
-    vnetConfiguration: {
-      infrastructureSubnetId: containerAppsSubnet.id
-      internal: false
-    }
+    zoneRedundant: false
   }
 }
 
-resource customDomainCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' existing = {
+// Managed certificate for the custom domain (phase 2 only). Azure validates ownership via
+// the CNAME on `customDomain` plus the asuid TXT record carrying
+// customDomainVerificationId — both of which must already be at GoDaddy.
+resource customDomainCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (customDomainPhase == 2) {
   parent: containerAppEnv
-  name: customDomainCertificateName
+  name: 'mc-${replace(customDomain, '.', '-')}'
+  location: location
+  tags: tags
+  properties: {
+    subjectName: customDomain
+    domainControlValidation: 'CNAME'
+  }
 }
 
-// Hub API Container App
+// ---------------------------------------------------------------------------------------
+// Shared pieces for every app
+// ---------------------------------------------------------------------------------------
+
+var registries = [
+  {
+    server: registryServer
+    username: ghcrUsername
+    passwordSecretRef: 'ghcr-token'
+  }
+]
+
+// Every secret an app could need. Container Apps only stores what is declared; apps
+// declare the subset they reference via secretRef below.
+var allSecrets = [
+  { name: 'ghcr-token', value: ghcrToken }
+  { name: 'postgres-password', value: postgresAdminPassword }
+  { name: 'postgres-scaler-connection', value: postgresScalerConnection }
+  { name: 'token-signing-secret', value: tokenSigningSecret }
+  { name: 'session-secret', value: sessionSecret }
+  { name: 'storage-connection-string', value: storageConnectionString }
+  { name: 'entra-client-secret', value: entraClientSecret }
+  { name: 'azure-openai-api-key', value: azureOpenAIApiKey }
+  { name: 'docintel-api-key', value: azureDocumentIntelligenceApiKey }
+  { name: 'azure-speech-api-key', value: azureSpeechApiKey }
+]
+
+// Common to every Python service. ENV=prod is what turns the dev-login stub into a 404
+// and makes hub-api refuse to start without Entra configured — the previous template
+// never set it, so production ran with dev-mode auth paths reachable.
+var pythonCommonEnv = [
+  { name: 'ENV', value: 'prod' }
+  { name: 'POSTGRES_HOST', value: postgres.properties.fullyQualifiedDomainName }
+  { name: 'POSTGRES_PORT', value: '5432' }
+  { name: 'POSTGRES_DB', value: postgresDb }
+  { name: 'POSTGRES_USER', value: postgresAdminLogin }
+  { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
+  { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
+  { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
+  { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
+  { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storage.name }
+]
+
+// Both endpoint AND key, always together: with either missing the provider factory
+// silently builds the fakes (CLAUDE.md "Fake providers fail open").
+var aiEnv = [
+  { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
+  { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
+  { name: 'AZURE_OPENAI_API_VERSION', value: azureOpenAIApiVersion }
+  { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: azureOpenAIEmbeddingDeployment }
+  { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: azureOpenAIChatDeployment }
+]
+
+var lawEnv = [
+  { name: 'CANI_LAW_CORPUS_ENABLED', value: string(lawCorpusEnabled) }
+  { name: 'CANI_LAW_FETCH_ENABLED', value: string(lawFetchEnabled) }
+  { name: 'CANI_LAW_DEFAULT_JURISDICTIONS', value: 'us-nv' }
+]
+
+var smallResources = { cpu: json('0.25'), memory: '0.5Gi' }
+
+func healthProbes(port int, readyPath string) array => [
+  {
+    type: 'Readiness'
+    httpGet: { path: readyPath, port: port, scheme: 'HTTP' }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  }
+  {
+    type: 'Liveness'
+    httpGet: { path: '/healthz', port: port, scheme: 'HTTP' }
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  }
+]
+
+// ---------------------------------------------------------------------------------------
+// Apps
+// ---------------------------------------------------------------------------------------
+
 resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'hub-api'
   location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityId}': {}
-    }
-  }
+  tags: tags
   properties: {
     environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 8001
-        transport: 'http'
-        allowInsecure: false
-      }
-      registries: [
-        {
-          server: acrLoginServer
-          identity: managedIdentityId
-        }
-      ]
-      secrets: [
-        {
-          name: 'postgres-password'
-          value: postgresPassword
-        }
-        {
-          name: 'token-signing-secret'
-          value: tokenSigningSecret
-        }
-        {
-          name: 'session-secret'
-          value: sessionSecret
-        }
-        {
-          name: 'storage-connection-string'
-          value: storageConnectionString
-        }
-        {
-          name: 'qdrant-api-key'
-          value: qdrantApiKey
-        }
-        {
-          name: 'entra-client-secret'
-          value: entraClientSecret
-        }
-      ]
+      ingress: { external: false, targetPort: 8001, transport: 'http', allowInsecure: false }
+      registries: registries
+      secrets: allSecrets
     }
     template: {
       containers: [
         {
           name: 'hub-api'
-          image: hubApiImage
-          resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
-          }
-          env: [
-            { name: 'POSTGRES_HOST', value: postgresHost }
-            { name: 'POSTGRES_PORT', value: '5432' }
-            { name: 'POSTGRES_DB', value: postgresDb }
-            { name: 'POSTGRES_USER', value: postgresUser }
-            { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
-            { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
-            { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
-            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
-            { name: 'ENTRA_OIDC_CLIENT_SECRET', secretRef: 'entra-client-secret' }
+          image: image.hubApi
+          resources: smallResources
+          env: concat(pythonCommonEnv, [
             { name: 'ENTRA_OIDC_AUTHORITY', value: entraOidcAuthority }
             { name: 'ENTRA_OIDC_CLIENT_ID', value: entraOidcClientId }
+            { name: 'ENTRA_OIDC_CLIENT_SECRET', secretRef: 'entra-client-secret' }
             { name: 'ENTRA_OIDC_REDIRECT_URI', value: 'https://${customDomain}/auth/callback' }
-            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-            { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
-            { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
-            { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
-            { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: qdrantUrl }
-            { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
-            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
-          ]
-          probes: [
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/healthz'
-                port: 8001
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/healthz'
-                port: 8001
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 15
-              periodSeconds: 30
-            }
-          ]
+          ])
+          probes: healthProbes(8001, '/healthz')
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 5
-        rules: [
-          {
-            name: 'http-scaling'
-            http: {
-              metadata: {
-                concurrentRequests: '20'
-              }
-            }
-          }
-        ]
+        minReplicas: 0
+        maxReplicas: 3
+        rules: [{ name: 'http', http: { metadata: { concurrentRequests: '20' } } }]
       }
     }
   }
 }
 
-// Docs API Container App
+resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: 'retrieval-worker'
+  location: location
+  tags: tags
+  properties: {
+    environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: { external: false, targetPort: 8003, transport: 'http', allowInsecure: false }
+      registries: registries
+      secrets: allSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: 'retrieval-worker'
+          image: image.retrievalWorker
+          resources: smallResources
+          env: concat(pythonCommonEnv, aiEnv, lawEnv)
+          // /readyz exercises Postgres + pgvector on every probe (2026-08-09 lesson: a
+          // dead dependency must fail readiness, not liveness).
+          probes: healthProbes(8003, '/readyz')
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 3
+        rules: [{ name: 'http', http: { metadata: { concurrentRequests: '10' } } }]
+      }
+    }
+  }
+}
+
 resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'docs-api'
   location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityId}': {}
-    }
-  }
+  tags: tags
   properties: {
     environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 8002
-        transport: 'http'
-        allowInsecure: false
-      }
-      registries: [
-        {
-          server: acrLoginServer
-          identity: managedIdentityId
-        }
-      ]
-      secrets: [
-        {
-          name: 'postgres-password'
-          value: postgresPassword
-        }
-        {
-          name: 'token-signing-secret'
-          value: tokenSigningSecret
-        }
-        {
-          name: 'session-secret'
-          value: sessionSecret
-        }
-        {
-          name: 'storage-connection-string'
-          value: storageConnectionString
-        }
-        {
-          name: 'qdrant-api-key'
-          value: qdrantApiKey
-        }
-      ]
+      ingress: { external: false, targetPort: 8002, transport: 'http', allowInsecure: false }
+      registries: registries
+      secrets: allSecrets
     }
     template: {
       containers: [
         {
           name: 'docs-api'
-          image: docsApiImage
-          resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
-          }
-          env: [
-            { name: 'POSTGRES_HOST', value: postgresHost }
-            { name: 'POSTGRES_PORT', value: '5432' }
-            { name: 'POSTGRES_DB', value: postgresDb }
-            { name: 'POSTGRES_USER', value: postgresUser }
-            { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
-            { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
-            { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
-            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
-            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-            { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
-            { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
-            { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
-            { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: qdrantUrl }
-            { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
-            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
-            { name: 'RETRIEVAL_WORKER_URL', value: 'https://retrieval-worker.internal.${containerAppEnv.properties.defaultDomain}' }
-          ]
-          probes: [
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/healthz'
-                port: 8002
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/healthz'
-                port: 8002
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 15
-              periodSeconds: 30
-            }
-          ]
+          image: image.docsApi
+          resources: smallResources
+          env: concat(pythonCommonEnv, aiEnv, lawEnv, [
+            { name: 'RETRIEVAL_WORKER_URL', value: 'https://${retrievalWorkerApp.properties.configuration.ingress.fqdn}' }
+          ])
+          probes: healthProbes(8002, '/healthz')
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 10
-        rules: [
-          {
-            name: 'http-scaling'
-            http: {
-              metadata: {
-                concurrentRequests: '20'
-              }
-            }
-          }
-        ]
+        minReplicas: 0
+        maxReplicas: 3
+        rules: [{ name: 'http', http: { metadata: { concurrentRequests: '20' } } }]
       }
     }
   }
 }
 
-// Web (Next.js) Container App
 resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'web'
   location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityId}': {}
-    }
-  }
+  tags: tags
   properties: {
     environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: true // public-facing
+        external: true // the only public surface
         targetPort: 3000
         transport: 'http'
         allowInsecure: false
-        customDomains: [
+        customDomains: customDomainPhase == 0 ? null : [
           {
             name: customDomain
-            bindingType: 'SniEnabled'
-            certificateId: customDomainCertificate.id
+            bindingType: customDomainPhase == 2 ? 'SniEnabled' : 'Disabled'
+            certificateId: customDomainPhase == 2 ? customDomainCertificate.id : null
           }
         ]
       }
-      registries: [
-        {
-          server: acrLoginServer
-          identity: managedIdentityId
-        }
-      ]
-      secrets: [
-        {
-          name: 'azure-speech-api-key'
-          value: azureSpeechApiKey
-        }
-      ]
+      registries: registries
+      secrets: allSecrets
     }
     template: {
       containers: [
         {
           name: 'web'
-          image: webImage
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
+          image: image.web
+          resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
+            { name: 'NODE_ENV', value: 'production' }
             { name: 'HUB_API_URL', value: 'https://${hubApiApp.properties.configuration.ingress.fqdn}' }
             { name: 'DOCS_API_URL', value: 'https://${docsApiApp.properties.configuration.ingress.fqdn}' }
             { name: 'AZURE_SPEECH_API_KEY', secretRef: 'azure-speech-api-key' }
@@ -504,11 +534,7 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
           probes: [
             {
               type: 'Readiness'
-              httpGet: {
-                path: '/api/health'
-                port: 3000
-                scheme: 'HTTP'
-              }
+              httpGet: { path: '/api/health', port: 3000, scheme: 'HTTP' }
               initialDelaySeconds: 5
               periodSeconds: 10
             }
@@ -516,129 +542,60 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
+        // One warm replica so the first visitor is not met by a cold start. Idle
+        // replicas bill at the idle rate (a few dollars a month at most).
         minReplicas: 1
-        maxReplicas: 10
-        rules: [
-          {
-            name: 'http-scaling'
-            http: {
-              metadata: {
-                concurrentRequests: '50'
-              }
-            }
-          }
-        ]
+        maxReplicas: 3
+        rules: [{ name: 'http', http: { metadata: { concurrentRequests: '50' } } }]
       }
     }
   }
 }
 
-// Ingestion Worker Container App (KEDA-enabled)
 resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'ingestion-worker'
   location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityId}': {}
-    }
-  }
+  tags: tags
   properties: {
     environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
-      registries: [
-        {
-          server: acrLoginServer
-          identity: managedIdentityId
-        }
-      ]
-      secrets: [
-        {
-          name: 'postgres-password'
-          value: postgresPassword
-        }
-        {
-          name: 'token-signing-secret'
-          value: tokenSigningSecret
-        }
-        {
-          name: 'session-secret'
-          value: sessionSecret
-        }
-        {
-          name: 'storage-connection-string'
-          value: storageConnectionString
-        }
-        {
-          name: 'qdrant-api-key'
-          value: qdrantApiKey
-        }
-        {
-          name: 'azure-openai-api-key'
-          value: azureOpenAIApiKey
-        }
-        {
-          name: 'docintel-api-key'
-          value: azureDocumentIntelligenceApiKey
-        }
-      ]
+      registries: registries
+      secrets: allSecrets
     }
     template: {
       containers: [
         {
           name: 'ingestion-worker'
-          image: ingestionWorkerImage
-          resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
-          }
-          env: [
-            { name: 'POSTGRES_HOST', value: postgresHost }
-            { name: 'POSTGRES_PORT', value: '5432' }
-            { name: 'POSTGRES_DB', value: postgresDb }
-            { name: 'POSTGRES_USER', value: postgresUser }
-            { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
-            { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
-            { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
-            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
-            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-            { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
-            // Without the API key the factory silently builds FakeEmbedder — see the
-            // param description. Endpoint alone is NOT enough; both are required.
-            { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
-            { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
-            { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
+          image: image.ingestionWorker
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat(pythonCommonEnv, aiEnv, lawEnv, [
             { name: 'AZURE_DOCUMENTINTELLIGENCE_ENDPOINT', value: azureDocumentIntelligenceEndpoint }
             { name: 'AZURE_DOCUMENTINTELLIGENCE_API_KEY', secretRef: 'docintel-api-key' }
-            { name: 'QDRANT_URL', value: qdrantUrl }
-            { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
-            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
-            // Public-law corpus refresh job (docs/20 §20.9, Sprint 4). Real fetching is an
-            // explicit opt-in, never inferred (CLAUDE.md fakes-in-prod incident class) — see
-            // build_law_fetchers's docstring.
-            { name: 'CANI_LAW_QDRANT_COLLECTION', value: 'cani_law_${environmentName}_v1' }
-            { name: 'CANI_LAW_FETCH_ENABLED', value: 'true' }
-            { name: 'CANI_LAW_DEFAULT_JURISDICTIONS', value: 'us-nv' }
-          ]
+          ])
         }
       ]
       scale: {
-        minReplicas: 0 // scale to zero when idle
-        maxReplicas: 5
+        // Scale-to-zero poller: KEDA wakes it when either queue has work. maxReplicas is
+        // 1 on purpose — deletion.process_deletion's single-worker invariant (docs/21
+        // §1.7) is only race-free with one replica.
+        minReplicas: 0
+        maxReplicas: 1
         rules: [
           {
-            name: 'postgres-scaling'
+            name: 'queued-jobs'
             custom: {
               type: 'postgresql'
               metadata: {
-                targetQueryValue: '5' // scale when >5 pending jobs
-                query: 'SELECT COUNT(*) FROM ingestion_jobs WHERE status = \'pending\''
-                connectionFromEnv: 'POSTGRES_CONNECTION_STRING'
+                // Both queues, same statuses repositories.claim_next_* look for.
+                query: 'SELECT (SELECT count(*) FROM ingestion_jobs WHERE status IN (\'queued\', \'retry_pending\')) + (SELECT count(*) FROM deletion_jobs WHERE status = \'queued\')'
+                targetQueryValue: '1'
+                activationTargetQueryValue: '0'
               }
-              // Note: identity authentication not supported in custom scale rules
-              // The container's managed identity will be used for POSTGRES_CONNECTION_STRING
+              auth: [
+                { secretRef: 'postgres-scaler-connection', triggerParameter: 'connection' }
+              ]
             }
           }
         ]
@@ -647,236 +604,216 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-// Retrieval Worker Container App (KEDA-enabled)
-resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'retrieval-worker'
+// ---------------------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------------------
+
+// One migration job, updated to each commit's image and started by the CD workflow (the
+// previous workflow created a new job per commit and left them all behind).
+resource migrateJob 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${prefix}-migrate'
   location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityId}': {}
-    }
-  }
+  tags: tags
   properties: {
     environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 8003
-        transport: 'http'
-        allowInsecure: false
-      }
-      registries: [
-        {
-          server: acrLoginServer
-          identity: managedIdentityId
-        }
-      ]
-      secrets: [
-        {
-          name: 'postgres-password'
-          value: postgresPassword
-        }
-        {
-          name: 'token-signing-secret'
-          value: tokenSigningSecret
-        }
-        {
-          name: 'session-secret'
-          value: sessionSecret
-        }
-        {
-          name: 'storage-connection-string'
-          value: storageConnectionString
-        }
-        {
-          name: 'qdrant-api-key'
-          value: qdrantApiKey
-        }
-        {
-          name: 'azure-openai-api-key'
-          value: azureOpenAIApiKey
-        }
-      ]
+      triggerType: 'Manual'
+      manualTriggerConfig: { parallelism: 1, replicaCompletionCount: 1 }
+      replicaTimeout: 300
+      replicaRetryLimit: 1
+      registries: registries
+      secrets: allSecrets
     }
     template: {
       containers: [
         {
-          name: 'retrieval-worker'
-          image: retrievalWorkerImage
-          resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
-          }
+          name: 'migrate'
+          image: image.migrate
+          resources: smallResources
           env: [
-            { name: 'POSTGRES_HOST', value: postgresHost }
+            { name: 'POSTGRES_HOST', value: postgres.properties.fullyQualifiedDomainName }
             { name: 'POSTGRES_PORT', value: '5432' }
             { name: 'POSTGRES_DB', value: postgresDb }
-            { name: 'POSTGRES_USER', value: postgresUser }
+            { name: 'POSTGRES_USER', value: postgresAdminLogin }
             { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
-            { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
-            { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
-            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
-            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-            { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIEndpoint }
-            // Without the API key the factory silently builds FakeEmbedder AND
-            // FakeGrounder — queries "work" and return fake answers over fake vectors.
-            { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
-            { name: 'AZURE_OPENAI_API_VERSION', value: '2024-10-21' }
-            { name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT', value: 'text-embedding-3-small' }
-            { name: 'AZURE_OPENAI_CHAT_DEPLOYMENT', value: 'gpt-5-1' }
-            { name: 'QDRANT_URL', value: qdrantUrl }
-            { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
-            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
-            // Public-law corpus (docs/20 §20.9, Sprint 4): empty collection name means the
-            // feature ships dark — retrieve() never constructs a PublicLawQdrant or searches
-            // a second corpus. Setting this is what turns dual-source retrieval on.
-            { name: 'CANI_LAW_QDRANT_COLLECTION', value: 'cani_law_${environmentName}_v1' }
-            { name: 'CANI_LAW_DEFAULT_JURISDICTIONS', value: 'us-nv' }
-          ]
-          probes: [
-            {
-              // /readyz exercises Qdrant on every probe. During the 2026-08-09 outage the
-              // old /healthz readiness answered 200 while Qdrant crash-looped, so traffic
-              // kept routing to a replica that failed every query. Readiness (stop
-              // routing) is the right response to a dead dependency — NOT liveness
-              // (restart), which can't fix Qdrant and would restart-loop the worker.
-              type: 'Readiness'
-              httpGet: {
-                path: '/readyz'
-                port: 8003
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/healthz'
-                port: 8003
-                scheme: 'HTTP'
-              }
-              initialDelaySeconds: 15
-              periodSeconds: 30
-            }
           ]
         }
       ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 5
-        rules: [
-          {
-            name: 'http-scaling'
-            http: {
-              metadata: {
-                concurrentRequests: '10'
-              }
-            }
-          }
-        ]
-      }
     }
   }
+  dependsOn: [postgresDatabase]
 }
 
-// Scheduled Qdrant snapshot -> Blob Storage (docs/09 section 9.10, Sprint 2 C1).
-// Replaces the deleted Kubernetes CronJob (k8s/base/qdrant/snapshot-cronjob.yaml). This
-// matters MORE on Qdrant Cloud's free tier, which has no automatic backups of its own.
-// Runs on the ingestion-worker image, which already carries httpx + the blob SDK, and
-// tracks the same image the worker runs. Restore stays a manual operator action --
-// see runbooks/backup-restore-drill.md.
-resource qdrantSnapshotJob 'Microsoft.App/jobs@2024-03-01' = {
-  name: 'qdrant-snapshot'
+// Weekly public-law refresh (docs/20 §20.7) on the ingestion image.
+resource lawRefreshJob 'Microsoft.App/jobs@2024-03-01' = if (lawCorpusEnabled) {
+  name: '${prefix}-law-refresh'
   location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityId}': {}
-    }
-  }
+  tags: tags
   properties: {
     environmentId: containerAppEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       triggerType: 'Schedule'
-      scheduleTriggerConfig: {
-        cronExpression: '0 2 * * *' // daily 02:00 UTC, same slot as the old CronJob
-        parallelism: 1
-        replicaCompletionCount: 1
-      }
+      scheduleTriggerConfig: { cronExpression: '0 3 * * 0', parallelism: 1, replicaCompletionCount: 1 }
       replicaTimeout: 1800
-      replicaRetryLimit: 2
-      registries: [
-        {
-          server: acrLoginServer
-          identity: managedIdentityId
-        }
-      ]
-      secrets: [
-        {
-          name: 'postgres-password'
-          value: postgresPassword
-        }
-        {
-          name: 'token-signing-secret'
-          value: tokenSigningSecret
-        }
-        {
-          name: 'session-secret'
-          value: sessionSecret
-        }
-        {
-          name: 'storage-connection-string'
-          value: storageConnectionString
-        }
-        {
-          name: 'qdrant-api-key'
-          value: qdrantApiKey
-        }
-      ]
+      replicaRetryLimit: 1
+      registries: registries
+      secrets: allSecrets
     }
     template: {
       containers: [
         {
-          name: 'qdrant-snapshot'
-          image: ingestionWorkerImage
-          command: [
-            'python'
-            '-m'
-            'cani_shared.backup'
-          ]
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-          env: [
-            { name: 'POSTGRES_HOST', value: postgresHost }
-            { name: 'POSTGRES_PORT', value: '5432' }
-            { name: 'POSTGRES_DB', value: postgresDb }
-            { name: 'POSTGRES_USER', value: postgresUser }
-            { name: 'POSTGRES_PASSWORD', secretRef: 'postgres-password' }
-            { name: 'CANI_TOKEN_SIGNING_SECRET', secretRef: 'token-signing-secret' }
-            { name: 'CANI_SESSION_SECRET', secretRef: 'session-secret' }
-            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
-            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-            { name: 'QDRANT_URL', value: qdrantUrl }
-            { name: 'QDRANT_COLLECTION', value: 'cani_docs_${environmentName}_v2' }
-            { name: 'QDRANT_API_KEY', secretRef: 'qdrant-api-key' }
-          ]
+          name: 'law-refresh'
+          image: image.ingestionWorker
+          command: ['python', '-m', 'ingestion_worker_app.law_refresh']
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat(pythonCommonEnv, aiEnv, lawEnv)
         }
       ]
     }
   }
 }
 
-// Outputs for workflow consumption
-output containerAppEnvId string = containerAppEnv.id
+// ---------------------------------------------------------------------------------------
+// Marketing site (free tier)
+// ---------------------------------------------------------------------------------------
+
+resource marketingSite 'Microsoft.Web/staticSites@2023-12-01' = {
+  name: '${prefix}-marketing'
+  location: swaLocation
+  tags: tags
+  sku: { name: 'Free', tier: 'Free' }
+  properties: {
+    stagingEnvironmentPolicy: 'Disabled'
+    allowConfigFileUpdates: true
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Guardrails: budget + alerts. These are the point of the exercise.
+// ---------------------------------------------------------------------------------------
+
+module budget 'budget.bicep' = {
+  name: 'budget-${environmentName}'
+  scope: subscription()
+  params: {
+    budgetName: '${prefix}-monthly'
+    amountUsd: budgetAmountUsd
+    startDate: budgetStartDate
+    resourceGroupName: resourceGroup().name
+    contactEmails: [alertEmail]
+    actionGroupId: actionGroup.id
+  }
+}
+
+// Public 5xx: the symptom users see. 20 in 5 minutes is well above any health-probe noise.
+resource webServerErrorsAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${prefix}-web-5xx'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'web returned 20+ 5xx responses in 5 minutes'
+    severity: 2
+    enabled: true
+    scopes: [webApp.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    targetResourceType: 'Microsoft.App/containerApps'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          criterionType: 'StaticThresholdCriterion'
+          name: 'server-errors'
+          metricNamespace: 'Microsoft.App/containerApps'
+          metricName: 'Requests'
+          dimensions: [{ name: 'statusCodeCategory', operator: 'Include', values: ['5xx'] }]
+          operator: 'GreaterThan'
+          threshold: 20
+          timeAggregation: 'Total'
+        }
+      ]
+    }
+    actions: [{ actionGroupId: actionGroup.id }]
+  }
+}
+
+// Postgres is the one fixed-cost, single-instance dependency; sustained CPU saturation on
+// a B1ms is the early warning for "retrieval is about to time out".
+resource postgresCpuAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${prefix}-pg-cpu'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'Postgres CPU above 90% for 15 minutes'
+    severity: 2
+    enabled: true
+    scopes: [postgres.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
+    targetResourceType: 'Microsoft.DBforPostgreSQL/flexibleServers'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          criterionType: 'StaticThresholdCriterion'
+          name: 'cpu'
+          metricNamespace: 'Microsoft.DBforPostgreSQL/flexibleServers'
+          metricName: 'cpu_percent'
+          operator: 'GreaterThan'
+          threshold: 90
+          timeAggregation: 'Average'
+        }
+      ]
+    }
+    actions: [{ actionGroupId: actionGroup.id }]
+  }
+}
+
+// Dead-lettered ingestion or deletion jobs are the silent failure mode: the user sees
+// "failed" on one document and nobody else sees anything. Both workers log the event
+// names below (pipeline.handle_job_failure, deletion.handle_deletion_failure).
+resource deadLetterAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: '${prefix}-dead-letter'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'CanI: job dead-lettered'
+    description: 'An ingestion or deletion job exhausted its retries in the last 15 minutes'
+    severity: 2
+    enabled: true
+    scopes: [logWorkspace.id]
+    evaluationFrequency: 'PT15M'
+    windowSize: 'PT15M'
+    criteria: {
+      allOf: [
+        {
+          query: 'ContainerAppConsoleLogs_CL | where ContainerAppName_s == "ingestion-worker" | where Log_s has "job_dead_lettered" or Log_s has "deletion_job_dead_lettered"'
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+        }
+      ]
+    }
+    actions: { actionGroups: [actionGroup.id] }
+    autoMitigate: false
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Outputs the CD workflow and the DNS cutover need
+// ---------------------------------------------------------------------------------------
+
+output resourceGroupName string = resourceGroup().name
+output containerAppEnvName string = containerAppEnv.name
 output containerAppEnvDefaultDomain string = containerAppEnv.properties.defaultDomain
+@description('Value for the asuid.<customDomain> TXT record at GoDaddy.')
+output customDomainVerificationId string = containerAppEnv.properties.customDomainConfiguration.customDomainVerificationId
+@description('CNAME target for the custom domain at GoDaddy.')
 output webAppFqdn string = webApp.properties.configuration.ingress.fqdn
-output hubApiFqdn string = hubApiApp.properties.configuration.ingress.fqdn
-output docsApiFqdn string = docsApiApp.properties.configuration.ingress.fqdn
-output retrievalWorkerFqdn string = retrievalWorkerApp.properties.configuration.ingress.fqdn
+output postgresHost string = postgres.properties.fullyQualifiedDomainName
+output storageAccountName string = storage.name
+output migrateJobName string = migrateJob.name
+output marketingSiteName string = marketingSite.name
+output marketingSiteDefaultHostname string = marketingSite.properties.defaultHostname

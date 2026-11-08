@@ -11,6 +11,20 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-11-07 update (low-cost rebuild infrastructure)
+
+- `infra/container-apps/main.bicep` rewritten for the fresh "CanI" subscription per
+  `docs/22-low-cost-rebuild.md`: no VNet/ACR/Key Vault/Qdrant, GHCR images, B1ms Postgres
+  with pgvector allow-listed, scale-to-zero APIs, KEDA-driven ingestion worker, capped
+  Log Analytics, Free Static Web App, and the guardrails in-template (RG-scoped $30 budget,
+  action group, three alerts). `ENV=prod` is now set, which the old template never did.
+- `.github/workflows/deploy.yml` replaces the ACR/Key Vault CD workflow and the two Pulumi
+  workflows; `infra/platform`, `infra/workload`, `infra/modules` are deleted.
+- Verified: `az bicep build` clean, `az deployment group validate` Succeeded, what-if lists
+  21 creates in `rg-cani-prod-eus` (created, empty). **Not deployed** — needs the GitHub
+  `prod` environment secrets, the Foundry model deployments, and the GoDaddy records
+  (bootstrap steps in docs/22).
+
 ## 2026-11-07 update (vector store moved into Postgres)
 
 - Qdrant is gone from the code: `docs/adr/adr-008-vector-store-pgvector.md`. Migration

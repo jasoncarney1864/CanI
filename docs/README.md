@@ -29,6 +29,8 @@ This document is split into one file per section. Start with [Vision & goals](01
 18. [Sprint 2 operational readiness board](18-sprint-2-operational-readiness-board.md)
 19. [Sprint 3 reachability board](19-sprint-3-reachability-board.md)
 20. [Public-law corpus design](20-public-law-corpus-design.md)
+21. [Documents page: download and generated documents](21-documents-page-download-and-generated-docs-spec.md)
+22. [Low-cost rebuild (November 2026)](22-low-cost-rebuild.md)
 
 Appendices:
 - [Appendix A — Glossary](appendix-a-glossary.md)
