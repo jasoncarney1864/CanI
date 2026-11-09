@@ -17,9 +17,15 @@ not that it has run.
   subscription is disabled and app.canido.co is down; the replacement is coded, validated
   and not deployed. Bootstrap order is in `docs/22-low-cost-rebuild.md`.
 - Real vs scaffolded today: everything under `apps/` and `db/` is real and tested
-  (unit + integration, 2026-11-07). `infra/container-apps/` is validated-but-undeployed
-  scaffolding until the first `deploy` workflow run succeeds. Nothing in the repo is
-  currently serving traffic.
+  (unit + integration, 2026-11-07). `infra/container-apps/` is **deployed** as of
+  2026-11-09 evening via `deploy.ps1` (GitHub Actions is billing-locked): resource group
+  `rg-cani-prod-eus`, images built in ACR Basic, Postgres B1ms in centralus (eastus and
+  eastus2 refused the SKU for this subscription), all nine migrations applied including
+  pgvector, five Container Apps healthy, budget + three alerts present, real Foundry
+  providers configured. `web` answers on its default Container Apps hostname; the
+  `app.canido.co` custom domain waits on GoDaddy records (CNAME + asuid TXT) and the
+  phase 1/2 certificate deploys, and Entra sign-in only works once that hostname resolves
+  because the registered redirect URI is `https://app.canido.co/auth/callback`.
 
 ## 2026-11-07 update (low-cost rebuild infrastructure)
 
