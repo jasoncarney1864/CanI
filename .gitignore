@@ -41,3 +41,6 @@ Thumbs.db
 
 # App data volumes mounted by docker-compose
 .data/
+
+# azd / Azure extension scratch (deployment plans, validation output) — local only
+.azure/

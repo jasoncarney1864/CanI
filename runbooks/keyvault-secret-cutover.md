@@ -153,8 +153,8 @@ Per-secret specifics (each still follows the four steps above):
   must succeed — then `kvset azure-storage-connection-string …` → refresh. A previous attempt
   wrote an unverified key2 string and crashlooped docs-api; the test-first guard prevents that.
 - **Entra client secret**: cross-tenant — the `cani-hub` app is in the caniauth CIAM tenant,
-  not your default `az` session. `az login --tenant 43189f5e-8c1b-4e3f-9cf7-d17babc03e36 --allow-no-subscriptions`,
-  then `az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416` → switch the CLI
+  not your default `az` session. `az login --tenant <entra-tenant-id> --allow-no-subscriptions`,
+  then `az ad app credential reset --id <entra-client-id>` → switch the CLI
   back → `kvset entra-oidc-client-secret …` → refresh (only hub-system carries this secret, but
   still delete `cani-secrets` there and restart hub-api).
 

@@ -186,12 +186,12 @@ az aks command invoke -g $RG -n $CL --command \
 ### 4. Entra OIDC client secret (`entra-oidc-client-secret`)
 
 Cross-tenant: the `cani-hub` app registration lives in the `caniauth` CIAM tenant
-(43189f5e-8c1b-4e3f-9cf7-d17babc03e36), not your default `az` session — authenticate there
+(<entra-tenant-id>), not your default `az` session — authenticate there
 first:
 
 ```bash
-az login --tenant 43189f5e-8c1b-4e3f-9cf7-d17babc03e36 --allow-no-subscriptions
-NEW="$(az ad app credential reset --id 1f0927a0-fe19-4661-93e0-019e94b05416 \
+az login --tenant <entra-tenant-id> --allow-no-subscriptions
+NEW="$(az ad app credential reset --id <entra-client-id> \
   --display-name hub-api-dev --years 1 --query password -o tsv)"
 az account set --subscription <subscription-id>   # switch CLI back
 ENTRA_OIDC_CLIENT_SECRET="$NEW"; unset NEW

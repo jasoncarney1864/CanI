@@ -260,9 +260,9 @@ Execution notes (2026-07-15):
         additionally fails startup outside dev without OIDC config.)
 
 Execution notes (2026-07-16):
-- Tenant `caniauth.onmicrosoft.com` (43189f5e-8c1b-4e3f-9cf7-d17babc03e36) created
+- Tenant `caniauth.onmicrosoft.com` (<entra-tenant-id>) created
   via ARM ciamDirectories in `cani-ciam-rg`; app registration `cani-hub`
-  (1f0927a0-fe19-4661-93e0-019e94b05416) with redirect http://localhost:8001/auth/callback;
+  (<entra-client-id>) with redirect http://localhost:8001/auth/callback;
   Graph delegated sign-in scopes granted; email+password sign-up/sign-in user flow
   created via Graph and app association verified.
 - hub-api: /auth/login (authorization code + PKCE, state/nonce in a signed 10-min
