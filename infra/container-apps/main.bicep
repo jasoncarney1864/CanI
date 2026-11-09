@@ -6,8 +6,10 @@
 //
 //   1. Nothing costs money while idle except Postgres. No VNet (removes the load
 //      balancer, private endpoints and private DNS zones that were a third of the
-//      August 2026 bill), no Key Vault, no container registry (images come from GHCR),
-//      APIs and the worker scale to zero, one capped Log Analytics workspace.
+//      August 2026 bill), no Key Vault, a Basic-tier container registry (the one paid
+//      component besides Postgres, ~$5/month, chosen over GHCR so deploys need no GitHub
+//      token and images build in Azure with `az acr build`), APIs and the worker scale
+//      to zero, one capped Log Analytics workspace.
 //   2. Guardrails are IN the template, not a runbook: a budget scoped to this resource
 //      group with real alert emails, an action group, and three alerts. The August
 //      incident was a backup job that was defined in IaC and never applied; a deploy
@@ -33,18 +35,19 @@ param location string = resourceGroup().location
 @description('Static Web Apps is only offered in a handful of regions; eastus is not one of them.')
 param swaLocation string = 'eastus2'
 
+@description('''Postgres region. Separate from `location` because Flexible Server provisioning is
+restricted for this subscription in eastus ("Version should be in: []", 2026-11-09) and B1ms was
+refused in eastus2 ("SkuNotAvailable") even though `list-skus` advertises it there — the catalog does
+not reflect per-subscription capacity holds. Cross-region latency from the apps is tens of ms.''')
+param postgresLocation string = 'centralus'
+
 @description('Image tag to deploy for every service (the CD workflow passes the commit SHA).')
 param imageTag string
 
-@description('GHCR owner (GitHub user or org) that publishes the images, e.g. jasoncarney1864.')
-param ghcrOwner string
-
-@description('GitHub username used to pull from GHCR.')
-param ghcrUsername string
-
-@secure()
-@description('GitHub token with read:packages, used by Container Apps to pull images.')
-param ghcrToken string
+@description('''Container Apps validate the image on creation, so the registry must hold the images
+before the apps exist. First run: deployApps=false (registry, Postgres, storage, guardrails), then
+`az acr build` the six images, then deployApps=true. deploy.ps1 and deploy.yml sequence this.''')
+param deployApps bool = true
 
 @description('Postgres administrator login.')
 param postgresAdminLogin string = 'caniadmin'
@@ -122,14 +125,15 @@ var tags = {
 }
 
 var prefix = 'cani-${environmentName}'
-var registryServer = 'ghcr.io'
+// Registry names: 5-50 alphanumerics, globally unique.
+var acrName = toLower(replace('caniacr${environmentName}${uniqueString(resourceGroup().id)}', '-', ''))
 var image = {
-  hubApi: '${registryServer}/${ghcrOwner}/cani-hub-api:${imageTag}'
-  docsApi: '${registryServer}/${ghcrOwner}/cani-docs-api:${imageTag}'
-  web: '${registryServer}/${ghcrOwner}/cani-web:${imageTag}'
-  ingestionWorker: '${registryServer}/${ghcrOwner}/cani-ingestion-worker:${imageTag}'
-  retrievalWorker: '${registryServer}/${ghcrOwner}/cani-retrieval-worker:${imageTag}'
-  migrate: '${registryServer}/${ghcrOwner}/cani-migrate:${imageTag}'
+  hubApi: '${acr.properties.loginServer}/cani-hub-api:${imageTag}'
+  docsApi: '${acr.properties.loginServer}/cani-docs-api:${imageTag}'
+  web: '${acr.properties.loginServer}/cani-web:${imageTag}'
+  ingestionWorker: '${acr.properties.loginServer}/cani-ingestion-worker:${imageTag}'
+  retrievalWorker: '${acr.properties.loginServer}/cani-retrieval-worker:${imageTag}'
+  migrate: '${acr.properties.loginServer}/cani-migrate:${imageTag}'
 }
 var postgresDb = 'cani'
 // Storage account names: 3-24 lowercase alphanumerics, globally unique.
@@ -172,9 +176,13 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 // Data: Postgres (also the vector store) and Blob Storage
 // ---------------------------------------------------------------------------------------
 
+// Region-qualified name. Flexible Server reserves a deleted server's name for days, and a
+// failed eastus2 attempt on 2026-11-09 left `cani-prod-pg` unusable in any other region
+// ("InvalidResourceLocation ... already exists in location 'eastus2'") long after the
+// resource itself was gone. Qualifying the name makes a region move a clean create.
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
-  name: '${prefix}-pg'
-  location: location
+  name: '${prefix}-pg-${postgresLocation}'
+  location: postgresLocation
   tags: tags
   sku: {
     // The only always-on compute in the design. B1ms is the smallest tier Flexible
@@ -272,6 +280,42 @@ var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${stor
 var postgresScalerConnection = 'postgresql://${postgresAdminLogin}:${uriComponent(postgresAdminPassword)}@${postgres.properties.fullyQualifiedDomainName}:5432/${postgresDb}?sslmode=require'
 
 // ---------------------------------------------------------------------------------------
+// Image registry and the identity the apps pull with
+// ---------------------------------------------------------------------------------------
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: acrName
+  location: location
+  tags: tags
+  sku: { name: 'Basic' }
+  properties: {
+    adminUserEnabled: false // pulls use the identity below; builds use the operator's az login
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+// One user-assigned identity shared by every app and job. User-assigned (not system) so the
+// AcrPull grant can exist BEFORE the apps are created — Container Apps validate the image
+// pull at creation time, and a system identity does not exist until after that point.
+resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${prefix}-pull'
+  location: location
+  tags: tags
+}
+
+var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+
+resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, pullIdentity.id, acrPullRoleId)
+  scope: acr
+  properties: {
+    roleDefinitionId: acrPullRoleId
+    principalId: pullIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ---------------------------------------------------------------------------------------
 // Container Apps environment
 // ---------------------------------------------------------------------------------------
 
@@ -314,16 +358,19 @@ resource customDomainCertificate 'Microsoft.App/managedEnvironments/managedCerti
 
 var registries = [
   {
-    server: registryServer
-    username: ghcrUsername
-    passwordSecretRef: 'ghcr-token'
+    server: acr.properties.loginServer
+    identity: pullIdentity.id
   }
 ]
+
+var appIdentity = {
+  type: 'UserAssigned'
+  userAssignedIdentities: { '${pullIdentity.id}': {} }
+}
 
 // Every secret an app could need. Container Apps only stores what is declared; apps
 // declare the subset they reference via secretRef below.
 var allSecrets = [
-  { name: 'ghcr-token', value: ghcrToken }
   { name: 'postgres-password', value: postgresAdminPassword }
   { name: 'postgres-scaler-connection', value: postgresScalerConnection }
   { name: 'token-signing-secret', value: tokenSigningSecret }
@@ -388,10 +435,12 @@ func healthProbes(port int, readyPath string) array => [
 // Apps
 // ---------------------------------------------------------------------------------------
 
-resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: 'hub-api'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -425,10 +474,12 @@ resource hubApiApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: 'retrieval-worker'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -459,10 +510,12 @@ resource retrievalWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: 'docs-api'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -479,7 +532,7 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
           image: image.docsApi
           resources: smallResources
           env: concat(pythonCommonEnv, aiEnv, lawEnv, [
-            { name: 'RETRIEVAL_WORKER_URL', value: 'https://${retrievalWorkerApp.properties.configuration.ingress.fqdn}' }
+            { name: 'RETRIEVAL_WORKER_URL', value: 'https://${retrievalWorkerApp!.properties.configuration.ingress.fqdn}' }
           ])
           probes: healthProbes(8002, '/healthz')
         }
@@ -493,10 +546,12 @@ resource docsApiApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource webApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: 'web'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -526,8 +581,8 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
             { name: 'NODE_ENV', value: 'production' }
-            { name: 'HUB_API_URL', value: 'https://${hubApiApp.properties.configuration.ingress.fqdn}' }
-            { name: 'DOCS_API_URL', value: 'https://${docsApiApp.properties.configuration.ingress.fqdn}' }
+            { name: 'HUB_API_URL', value: 'https://${hubApiApp!.properties.configuration.ingress.fqdn}' }
+            { name: 'DOCS_API_URL', value: 'https://${docsApiApp!.properties.configuration.ingress.fqdn}' }
             { name: 'AZURE_SPEECH_API_KEY', secretRef: 'azure-speech-api-key' }
             { name: 'AZURE_SPEECH_REGION', value: azureSpeechRegion }
           ]
@@ -552,10 +607,12 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: 'ingestion-worker'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -610,10 +667,12 @@ resource ingestionWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
 
 // One migration job, updated to each commit's image and started by the CD workflow (the
 // previous workflow created a new job per commit and left them all behind).
-resource migrateJob 'Microsoft.App/jobs@2024-03-01' = {
+resource migrateJob 'Microsoft.App/jobs@2024-03-01' = if (deployApps) {
   name: '${prefix}-migrate'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull, postgresDatabase]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -642,14 +701,15 @@ resource migrateJob 'Microsoft.App/jobs@2024-03-01' = {
       ]
     }
   }
-  dependsOn: [postgresDatabase]
 }
 
 // Weekly public-law refresh (docs/20 §20.7) on the ingestion image.
-resource lawRefreshJob 'Microsoft.App/jobs@2024-03-01' = if (lawCorpusEnabled) {
+resource lawRefreshJob 'Microsoft.App/jobs@2024-03-01' = if (deployApps && lawCorpusEnabled) {
   name: '${prefix}-law-refresh'
   location: location
   tags: tags
+  identity: appIdentity
+  dependsOn: [acrPull]
   properties: {
     environmentId: containerAppEnv.id
     workloadProfileName: 'Consumption'
@@ -708,7 +768,7 @@ module budget 'budget.bicep' = {
 }
 
 // Public 5xx: the symptom users see. 20 in 5 minutes is well above any health-probe noise.
-resource webServerErrorsAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+resource webServerErrorsAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployApps) {
   name: '${prefix}-web-5xx'
   location: 'global'
   tags: tags
@@ -789,7 +849,12 @@ resource deadLetterAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-prev
     criteria: {
       allOf: [
         {
-          query: 'ContainerAppConsoleLogs_CL | where ContainerAppName_s == "ingestion-worker" | where Log_s has "job_dead_lettered" or Log_s has "deletion_job_dead_lettered"'
+          // Container Apps only creates ContainerAppConsoleLogs_CL once the first log line is
+          // ingested, and a plain reference fails the deployment with "Failed to resolve
+          // table". `union isfuzzy=true` alone is not enough either: on an empty workspace it
+          // fails with "must have at least one operand that can be evaluated", so an empty
+          // datatable with the same columns is the always-evaluable operand.
+          query: 'let empty = datatable(TimeGenerated: datetime, ContainerAppName_s: string, Log_s: string)[]; union isfuzzy=true empty, ContainerAppConsoleLogs_CL | where ContainerAppName_s == "ingestion-worker" | where Log_s has "job_dead_lettered" or Log_s has "deletion_job_dead_lettered"'
           timeAggregation: 'Count'
           operator: 'GreaterThan'
           threshold: 0
@@ -810,10 +875,12 @@ output containerAppEnvName string = containerAppEnv.name
 output containerAppEnvDefaultDomain string = containerAppEnv.properties.defaultDomain
 @description('Value for the asuid.<customDomain> TXT record at GoDaddy.')
 output customDomainVerificationId string = containerAppEnv.properties.customDomainConfiguration.customDomainVerificationId
-@description('CNAME target for the custom domain at GoDaddy.')
-output webAppFqdn string = webApp.properties.configuration.ingress.fqdn
+@description('CNAME target for the custom domain at GoDaddy (empty on a deployApps=false run).')
+output webAppFqdn string = deployApps ? webApp!.properties.configuration.ingress.fqdn : ''
 output postgresHost string = postgres.properties.fullyQualifiedDomainName
 output storageAccountName string = storage.name
-output migrateJobName string = migrateJob.name
+output migrateJobName string = deployApps ? migrateJob!.name : ''
+output acrName string = acr.name
+output acrLoginServer string = acr.properties.loginServer
 output marketingSiteName string = marketingSite.name
 output marketingSiteDefaultHostname string = marketingSite.properties.defaultHostname

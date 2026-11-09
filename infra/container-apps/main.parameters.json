@@ -4,8 +4,7 @@
   "parameters": {
     "environmentName": { "value": "prod" },
     "swaLocation": { "value": "eastus2" },
-    "ghcrOwner": { "value": "jasoncarney1864" },
-    "ghcrUsername": { "value": "jasoncarney1864" },
+    "postgresLocation": { "value": "centralus" },
     "postgresAdminLogin": { "value": "caniadmin" },
     "entraOidcAuthority": { "value": "https://caniauth.ciamlogin.com/43189f5e-8c1b-4e3f-9cf7-d17babc03e36/v2.0" },
     "entraOidcClientId": { "value": "1f0927a0-fe19-4661-93e0-019e94b05416" },

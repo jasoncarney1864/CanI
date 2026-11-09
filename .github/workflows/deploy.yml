@@ -1,13 +1,18 @@
 name: deploy
 
-# Build every image to GitHub Container Registry, then deploy infra/container-apps/main.bicep
-# and run migrations. One workflow owns infrastructure AND code: a deploy that creates the
-# budget and alerts is the only kind that cannot forget them (docs/22-low-cost-rebuild.md).
+# Deploy infra/container-apps/main.bicep and the six service images to Azure Container
+# Apps. Images are built IN Azure (`az acr build`) into the Basic-tier registry the
+# template creates, so this workflow needs only an Azure OIDC login — no container
+# registry tokens, nothing pulled from GitHub at runtime. One workflow owns
+# infrastructure AND code: a deploy that creates the budget and alerts is the only kind
+# that cannot forget them (docs/22-low-cost-rebuild.md).
+#
+# infra/container-apps/deploy.ps1 does the same sequence from a workstation; use it when
+# GitHub Actions is unavailable.
 #
 # One-time setup (Settings -> Environments -> prod):
 #   secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  (OIDC federated credential
 #            for a Contributor on the subscription; budgets need subscription scope)
-#            GHCR_PULL_TOKEN        classic PAT with read:packages, used by Container Apps to pull
 #            POSTGRES_ADMIN_PASSWORD, CANI_TOKEN_SIGNING_SECRET, CANI_SESSION_SECRET  (>= 32 chars)
 #            ENTRA_CLIENT_SECRET, AZURE_OPENAI_API_KEY, AZURE_DOCINTEL_API_KEY
 #            AZURE_SPEECH_API_KEY   optional
@@ -30,51 +35,9 @@ concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/cani
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - { service: hub-api, dockerfile: apps/hub-api/Dockerfile }
-          - { service: docs-api, dockerfile: apps/docs-api/Dockerfile }
-          - { service: retrieval-worker, dockerfile: apps/retrieval-worker/Dockerfile }
-          - { service: ingestion-worker, dockerfile: apps/ingestion-worker/Dockerfile }
-          - { service: web, dockerfile: apps/web/Dockerfile }
-          - { service: migrate, dockerfile: db/Dockerfile }
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-
-      # Immutable SHA tag for what gets deployed; `latest` only for humans poking around.
-      - uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,scope=${{ matrix.service }},mode=max
-
   deploy:
     runs-on: ubuntu-latest
-    needs: build
     environment: prod
     permissions:
       id-token: write
@@ -93,7 +56,6 @@ jobs:
           S1: ${{ secrets.AZURE_CLIENT_ID }}
           S2: ${{ secrets.AZURE_TENANT_ID }}
           S3: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          S4: ${{ secrets.GHCR_PULL_TOKEN }}
           S5: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           S6: ${{ secrets.CANI_TOKEN_SIGNING_SECRET }}
           S7: ${{ secrets.CANI_SESSION_SECRET }}
@@ -102,7 +64,7 @@ jobs:
           S10: ${{ secrets.AZURE_DOCINTEL_API_KEY }}
         run: |
           missing=()
-          for pair in "S1:AZURE_CLIENT_ID" "S2:AZURE_TENANT_ID" "S3:AZURE_SUBSCRIPTION_ID" "S4:GHCR_PULL_TOKEN" \
+          for pair in "S1:AZURE_CLIENT_ID" "S2:AZURE_TENANT_ID" "S3:AZURE_SUBSCRIPTION_ID" \
                       "S5:POSTGRES_ADMIN_PASSWORD" "S6:CANI_TOKEN_SIGNING_SECRET" "S7:CANI_SESSION_SECRET" \
                       "S8:ENTRA_CLIENT_SECRET" "S9:AZURE_OPENAI_API_KEY" "S10:AZURE_DOCINTEL_API_KEY"; do
             var=${pair%%:*}; name=${pair#*:}
@@ -128,19 +90,56 @@ jobs:
           az group create --name "$RESOURCE_GROUP" --location "$LOCATION" \
             --tags project=cani environment=prod owner=jason managedBy=bicep -o none
 
-      - name: Deploy infrastructure + apps
-        id: deploy
+      # Every deploy passes the same parameters; only deployApps differs between phases.
+      - name: Phase 1 — registry, data, guardrails (no apps yet)
+        id: phase1
         run: |
           az deployment group create \
-            --name "deploy-${GITHUB_SHA::7}-$(date +%s)" \
+            --name "phase1-${GITHUB_SHA::7}-$(date +%s)" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/container-apps/main.bicep \
             --parameters @infra/container-apps/main.parameters.json \
             --parameters \
+              deployApps=false \
               imageTag="$GITHUB_SHA" \
               customDomainPhase="$CUSTOM_DOMAIN_PHASE" \
               alertEmail="$ALERT_EMAIL" \
-              ghcrToken="${{ secrets.GHCR_PULL_TOKEN }}" \
+              postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
+              tokenSigningSecret="${{ secrets.CANI_TOKEN_SIGNING_SECRET }}" \
+              sessionSecret="${{ secrets.CANI_SESSION_SECRET }}" \
+              entraClientSecret="${{ secrets.ENTRA_CLIENT_SECRET }}" \
+              azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+              azureDocumentIntelligenceApiKey="${{ secrets.AZURE_DOCINTEL_API_KEY }}" \
+              azureSpeechApiKey="${{ secrets.AZURE_SPEECH_API_KEY }}" \
+            --query properties.outputs -o json > phase1.json
+          echo "acr=$(jq -r .acrName.value phase1.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Build images in ACR
+        run: |
+          ACR="${{ steps.phase1.outputs.acr }}"
+          for pair in "cani-hub-api:apps/hub-api/Dockerfile" "cani-docs-api:apps/docs-api/Dockerfile" \
+                      "cani-retrieval-worker:apps/retrieval-worker/Dockerfile" \
+                      "cani-ingestion-worker:apps/ingestion-worker/Dockerfile" \
+                      "cani-web:apps/web/Dockerfile" "cani-migrate:db/Dockerfile"; do
+            name=${pair%%:*}; file=${pair#*:}
+            echo "::group::$name"
+            az acr build --registry "$ACR" --image "$name:$GITHUB_SHA" --image "$name:latest" --file "$file" . -o none
+            echo "::endgroup::"
+          done
+
+      - name: Phase 2 — apps and jobs
+        id: deploy
+        run: |
+          az deployment group create \
+            --name "phase2-${GITHUB_SHA::7}-$(date +%s)" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/container-apps/main.bicep \
+            --parameters @infra/container-apps/main.parameters.json \
+            --parameters \
+              deployApps=true \
+              imageTag="$GITHUB_SHA" \
+              customDomainPhase="$CUSTOM_DOMAIN_PHASE" \
+              alertEmail="$ALERT_EMAIL" \
               postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
               tokenSigningSecret="${{ secrets.CANI_TOKEN_SIGNING_SECRET }}" \
               sessionSecret="${{ secrets.CANI_SESSION_SECRET }}" \
@@ -194,7 +193,6 @@ jobs:
             sleep 10
           done
           curl -fsS "https://$FQDN/api/health" >/dev/null || { echo "::error::web not healthy after 3 minutes"; exit 1; }
-          # Retrieval readiness exercises Postgres + pgvector. Internal ingress, so ask Azure.
           STATE=$(az containerapp revision list --name retrieval-worker --resource-group "$RESOURCE_GROUP" \
             --query "[?properties.active] | [0].properties.healthState" -o tsv)
           echo "retrieval-worker active revision: ${STATE:-unknown}"
