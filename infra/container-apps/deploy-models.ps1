@@ -23,7 +23,7 @@ param(
     [string]$EmbeddingModelVersion = "1",
     [string]$ChatDeployment = "gpt-5-mini",
     [string]$ChatModel = "gpt-5-mini",
-    [string]$ChatModelVersion = "",
+    [string]$ChatModelVersion = "2025-08-07",
     # Capacity is in thousands of tokens per minute. Both are deliberately small; raise
     # them when a real user hits 429s, not before.
     [int]$EmbeddingCapacity = 50,
