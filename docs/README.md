@@ -35,6 +35,7 @@ This document is split into one file per section. Start with [Vision & goals](01
 Appendices:
 - [Appendix A — Glossary](appendix-a-glossary.md)
 - [Appendix B — ADR log](adr/README.md)
+- [Sitreps](sitreps/) — dated situation reports and incident write-ups, newest last
 
 Implementation (v1 core loop, `feat/v1-core-loop-checkpoint`):
 - [Implementation status](implementation-status.md) — delivered vs. scaffolded vs. deferred, mapped to sections 7-16

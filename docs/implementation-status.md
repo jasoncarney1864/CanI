@@ -11,6 +11,16 @@ resources). Nothing in this document claims Azure resources were provisioned —
 section says "scaffolded," that means Pulumi/K8s/workflow YAML exists and is reviewable,
 not that it has run.
 
+## 2026-11-09 update (state of play)
+
+- Sitrep: `docs/sitreps/2026-11-09-pgvector-and-low-cost-rebuild.md`. Summary: the original
+  subscription is disabled and app.canido.co is down; the replacement is coded, validated
+  and not deployed. Bootstrap order is in `docs/22-low-cost-rebuild.md`.
+- Real vs scaffolded today: everything under `apps/` and `db/` is real and tested
+  (unit + integration, 2026-11-07). `infra/container-apps/` is validated-but-undeployed
+  scaffolding until the first `deploy` workflow run succeeds. Nothing in the repo is
+  currently serving traffic.
+
 ## 2026-11-07 update (low-cost rebuild infrastructure)
 
 - `infra/container-apps/main.bicep` rewritten for the fresh "CanI" subscription per

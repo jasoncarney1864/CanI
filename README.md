@@ -7,6 +7,14 @@ the code in this repo.
 Current scope: v1 core loop (`docs/16-roadmap-and-phasing.md` Phase 1). What's real vs
 scaffolded is tracked in [docs/implementation-status.md](docs/implementation-status.md).
 
+CanI is developed with [Claude Code](https://claude.com/claude-code) as the day-to-day
+engineering tool, by a single maintainer. [CLAUDE.md](CLAUDE.md) is the operating manual
+that Claude Code (and anyone else) works from: repo map, commands, conventions, and the
+things that bite. Decisions are recorded in [docs/adr/](docs/adr/), dated situation reports
+and incident write-ups in [docs/sitreps/](docs/sitreps/), and operational procedures in
+[runbooks/](runbooks/). The current deployment design is
+[docs/22-low-cost-rebuild.md](docs/22-low-cost-rebuild.md).
+
 ## Prerequisites
 
 - Python 3.13 (pinned baseline for reproducible local + CI runs). **On Windows on ARM,
@@ -223,6 +231,6 @@ infra/            container-apps/: the Bicep template, parameters and deploy scr
 tests/unit/       no external dependencies
 tests/integration/ drives docker-compose
 runbooks/         operational runbooks for the scenarios already covered by this MVP
-docs/             architecture, ADRs, implementation status, PR summary
+docs/             architecture (01-22), adr/ decision records, sitreps/ dated reports, implementation status
 scripts/          local developer automation helpers (including sequential test runner)
 ```
