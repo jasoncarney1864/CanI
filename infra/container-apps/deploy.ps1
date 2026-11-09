@@ -19,6 +19,8 @@
         $env:CANI_AZURE_OPENAI_API_KEY = "<Foundry resource key>"
         $env:CANI_DOCINTEL_API_KEY = "<same Foundry resource key>"
         $env:CANI_SPEECH_API_KEY = ""   # optional
+        $env:CANI_ALERT_EMAIL = "<mailbox that is actually read>"
+        $env:CANI_SUBSCRIPTION_ID = "<the CanI subscription id>"
     Generate the three random secrets with:
         python -c "import secrets; print(secrets.token_urlsafe(48))"
 .PARAMETER ImageTag
@@ -34,7 +36,7 @@
     pwsh infra/container-apps/deploy.ps1 -ImageTag abc1234 -CustomDomainPhase 2
 #>
 param(
-    [string]$SubscriptionId = "<subscription-id>",
+    [string]$SubscriptionId = $env:CANI_SUBSCRIPTION_ID,
     [string]$ResourceGroup = "rg-cani-prod-eus",
     [string]$Location = "eastus",
     [string]$ImageTag = (git rev-parse --short=7 HEAD),
@@ -45,6 +47,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $SubscriptionId) { throw "Set CANI_SUBSCRIPTION_ID or pass -SubscriptionId." }
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $template = Join-Path $PSScriptRoot "main.bicep"
 $parameters = Join-Path $PSScriptRoot "main.parameters.json"
@@ -67,6 +70,7 @@ $secrets = @{
     azureDocumentIntelligenceApiKey = Require-Env "CANI_DOCINTEL_API_KEY"
     azureSpeechApiKey               = (Require-Env "CANI_SPEECH_API_KEY" $true) ?? ""
 }
+$alertEmail = Require-Env "CANI_ALERT_EMAIL"
 foreach ($name in "postgresAdminPassword", "tokenSigningSecret", "sessionSecret") {
     if ($secrets[$name].Length -lt 32) { throw "$name must be at least 32 characters (config.py enforces this at startup)." }
 }
@@ -85,7 +89,7 @@ if (-not (az group exists --name $ResourceGroup | ConvertFrom-Json)) {
 # Secure parameters go in as `name=value` arguments, which az sends in the request body
 # (not the command line of a child process). They are still visible to `ps` on this
 # machine for the duration of the call; acceptable for a solo operator's workstation.
-$paramArgs = @("imageTag=$ImageTag", "customDomainPhase=$CustomDomainPhase")
+$paramArgs = @("imageTag=$ImageTag", "customDomainPhase=$CustomDomainPhase", "alertEmail=$alertEmail")
 foreach ($kv in $secrets.GetEnumerator()) { $paramArgs += "$($kv.Key)=$($kv.Value)" }
 
 $deploymentName = "cani-$(Get-Date -Format yyyyMMdd-HHmmss)"

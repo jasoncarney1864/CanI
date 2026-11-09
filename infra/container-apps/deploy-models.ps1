@@ -16,7 +16,7 @@
     pwsh infra/container-apps/deploy-models.ps1
 #>
 param(
-    [string]$SubscriptionId = "<subscription-id>",
+    [string]$SubscriptionId = $env:CANI_SUBSCRIPTION_ID,
     [string]$ResourceGroup = "rg-foundry-dev-eus-001",
     [string]$AccountName = "aif-jcarney-dev-eus-001",
     [string]$EmbeddingDeployment = "text-embedding-3-small",
@@ -31,6 +31,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $SubscriptionId) { throw "Set CANI_SUBSCRIPTION_ID or pass -SubscriptionId." }
 az account set --subscription $SubscriptionId | Out-Null
 
 function Ensure-Deployment([string]$name, [string]$model, [string]$version, [int]$capacity) {

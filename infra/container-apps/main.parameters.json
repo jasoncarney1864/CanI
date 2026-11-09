@@ -18,7 +18,6 @@
     "customDomainPhase": { "value": 0 },
     "lawCorpusEnabled": { "value": true },
     "lawFetchEnabled": { "value": true },
-    "budgetAmountUsd": { "value": 30 },
-    "alertEmail": { "value": "<personal mailbox>" }
+    "budgetAmountUsd": { "value": 30 }
   }
 }

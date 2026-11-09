@@ -38,6 +38,9 @@ secrets fed from GitHub environment secrets), ACR, Qdrant, the Qdrant snapshot j
 - `infra/container-apps/main.bicep` — the whole environment, resource-group scoped.
 - `infra/container-apps/budget.bicep` — subscription-scoped budget module, filtered to the RG.
 - `infra/container-apps/main.parameters.json` — non-secret values (endpoints, client ids, flags).
+  The alert mailbox and the subscription id are deliberately not in the repo: the workflow
+  takes them from the `ALERT_EMAIL` variable and the OIDC login, the scripts from
+  `CANI_ALERT_EMAIL` / `CANI_SUBSCRIPTION_ID`.
 - `infra/container-apps/deploy.ps1` — local deploy; secrets from environment variables.
 - `infra/container-apps/deploy-models.ps1` — model deployments on the Foundry resource.
 - `.github/workflows/deploy.yml` — build to GHCR, deploy Bicep, run migrations, assert the
