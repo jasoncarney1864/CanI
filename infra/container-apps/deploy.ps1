@@ -84,6 +84,22 @@ foreach ($name in "postgresAdminPassword", "tokenSigningSecret", "sessionSecret"
     if ($secrets[$name].Length -lt 32) { throw "$name must be at least 32 characters (config.py enforces this at startup)." }
 }
 
+# Prove the Entra client secret before spending twenty minutes deploying around it. A
+# client_credentials call with a wrong secret fails with AADSTS7000215 at once; any other
+# answer (a token, or a consent/scope error) means the secret itself is accepted. The
+# 2026-11-09 launch shipped an expired secret and only the first real sign-in found out.
+$paramsJson = Get-Content $parameters -Raw | ConvertFrom-Json
+$authority = $paramsJson.parameters.entraOidcAuthority.value -replace '/v2\.0/?$', ''
+$body = @{ client_id = $paramsJson.parameters.entraOidcClientId.value; client_secret = $secrets.entraClientSecret; grant_type = "client_credentials"; scope = "https://graph.microsoft.com/.default" }
+try {
+    Invoke-RestMethod -Method Post -Uri "$authority/oauth2/v2.0/token" -Body $body | Out-Null
+} catch {
+    $detail = ""
+    try { $detail = ($_.ErrorDetails.Message | ConvertFrom-Json).error_description } catch {}
+    if ($detail -match 'AADSTS7000215') { throw "CANI_ENTRA_CLIENT_SECRET is not a valid secret for the app registration. Create a new client secret in the Entra External ID tenant and update the secrets file." }
+}
+Write-Host "Entra secret : accepted by the token endpoint"
+
 az account set --subscription $SubscriptionId | Out-Null
 Write-Host "Subscription : $(az account show --query name -o tsv) ($SubscriptionId)"
 Write-Host "Resource grp : $ResourceGroup ($Location)"
