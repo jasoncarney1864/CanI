@@ -124,6 +124,17 @@ if (-not $acrName -or $WhatIf) {
 $acrLoginServer = az acr show --name $acrName --query loginServer -o tsv
 Write-Host "Registry     : $acrLoginServer"
 
+# -SkipBuild reuses whatever $ImageTag names, and the default is the CURRENT commit — which has
+# no images if HEAD moved since the last build. Container Apps would reject that twenty
+# resources into the deployment; fail here instead and say which tag to pass.
+if ($SkipBuild) {
+    $tags = az acr repository show-tags --name $acrName --repository cani-web -o tsv 2>$null
+    if ($tags -notcontains $ImageTag) {
+        $latest = az acr repository show-manifests --name $acrName --repository cani-web --orderby time_desc --top 1 --query "[0].tags" -o tsv 2>$null
+        throw "No cani-web image tagged '$ImageTag' in $acrName. Pass -ImageTag (most recent build: $latest) or drop -SkipBuild."
+    }
+}
+
 # Build in Azure. ACR Basic allows one concurrent build, so these run one after another;
 # six images take roughly 10-15 minutes. The .dockerignore keeps the context small.
 if (-not $SkipBuild) {
