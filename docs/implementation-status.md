@@ -22,10 +22,11 @@ not that it has run.
   `rg-cani-prod-eus`, images built in ACR Basic, Postgres B1ms in centralus (eastus and
   eastus2 refused the SKU for this subscription), all nine migrations applied including
   pgvector, five Container Apps healthy, budget + three alerts present, real Foundry
-  providers configured. `web` answers on its default Container Apps hostname; the
-  `app.canido.co` custom domain waits on GoDaddy records (CNAME + asuid TXT) and the
-  phase 1/2 certificate deploys, and Entra sign-in only works once that hostname resolves
-  because the registered redirect URI is `https://app.canido.co/auth/callback`.
+  providers configured. Later the same evening: GoDaddy CNAME + asuid TXT added, custom-domain
+  phases 1 and 2 run, `https://app.canido.co` serves with the managed certificate, and a
+  live Entra sign-in completed end to end after the client secret was re-issued (the old
+  secrets file carried a value Entra no longer recognised; `deploy.ps1` now probes the
+  secret before deploying). The product is reachable and usable again.
 
 ## 2026-11-07 update (low-cost rebuild infrastructure)
 
