@@ -3,6 +3,7 @@ export function AiPositioning() {
     <section id="ai-positioning" className="section section--alt">
       <div className="section-inner ai-positioning-inner">
         <div>
+          <p className="eyebrow">How it answers</p>
           <h2>Grounded AI, not a guess</h2>
           <p>
             CanI is built on Retrieval-Augmented Generation over your own uploaded
@@ -13,6 +14,7 @@ export function AiPositioning() {
           </p>
         </div>
         <div>
+          <p className="eyebrow">What it is not</p>
           <h2>A clarity tool, not a replacement for judgment</h2>
           <p>
             CanI is built to make your documents understandable, not to make your

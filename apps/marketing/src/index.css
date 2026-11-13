@@ -16,6 +16,9 @@
   --spoke-legal: #4a7c59;
   --spoke-health: #d96c5c;
   --spoke-finance: #205a5b;
+  --spotlight: #fff4cc; /* Spotlight Yellow: the product's cited-passage highlight */
+  --font-ui: "DM Sans Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-content: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
 }
 
 /* Light-only by design: the CanI "Illuminated Clarity" language is built around
@@ -31,7 +34,7 @@ html {
 
 body {
   margin: 0;
-  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   color: var(--color-text);
   background: var(--color-bg);
   line-height: 1.55;
@@ -40,8 +43,40 @@ body {
 h1,
 h2,
 h3 {
-  line-height: 1.2;
-  font-weight: 650;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* The spotlight is the brand gesture: the same highlight the product lays over a cited
+   passage. Used on the one phrase that matters, never as decoration on whole lines. */
+.spotlight {
+  background: linear-gradient(var(--spotlight), var(--spotlight)) no-repeat 0 88% / 100% 62%;
+  color: inherit;
+  padding: 0 0.12em;
+  margin: 0 -0.12em;
+  border-radius: 0.15em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.spotlight--sweep {
+  animation: spotlight-sweep 1.1s ease-out 0.3s backwards;
+}
+
+@keyframes spotlight-sweep {
+  from {
+    background-size: 0% 100%;
+  }
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spotlight--sweep {
+    animation: none;
+  }
 }
 
 p {
@@ -148,9 +183,108 @@ a {
 }
 
 .hero-inner {
-  padding-top: 5rem;
+  padding-top: 4.5rem;
   padding-bottom: 5rem;
-  max-width: 44rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 3.5rem;
+  align-items: center;
+}
+
+@media (max-width: 60rem) {
+  .hero-inner {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    padding-top: 3rem;
+    padding-bottom: 3.5rem;
+  }
+}
+
+/* ---- Hero answer card ------------------------------------------------- */
+
+.answer-card {
+  margin: 0;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 0.9rem;
+  padding: 1.5rem;
+  box-shadow:
+    0 24px 48px -24px rgba(30, 58, 95, 0.28),
+    0 2px 6px rgba(45, 49, 66, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.answer-card p {
+  margin: 0;
+}
+
+.answer-card-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.answer-card-question {
+  color: var(--color-text);
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+
+.answer-card-answer p {
+  color: var(--color-text);
+  margin-top: 0.45rem;
+}
+
+.answer-card-verdict {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-success);
+  background: rgba(31, 111, 74, 0.1);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+}
+
+.answer-card-source {
+  margin: 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0.4rem;
+  padding: 1rem 1.1rem;
+}
+
+.answer-card-source p {
+  font-family: var(--font-content);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--color-text);
+}
+
+/* Inside the quoted clause the highlight covers the full line height, as it does in the
+   product's document viewer. */
+.answer-card-source .spotlight {
+  background-position: 0 50%;
+  background-size: 100% 100%;
+}
+
+.answer-card-source footer {
+  margin-top: 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.answer-card figcaption {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  text-align: right;
 }
 
 .eyebrow {
@@ -163,7 +297,7 @@ a {
 }
 
 .hero h1 {
-  font-size: 2.75rem;
+  font-size: clamp(2.2rem, 4.4vw, 3.25rem);
   margin: 0 0 1.25rem;
 }
 
@@ -226,6 +360,13 @@ a {
   margin: 0;
 }
 
+.capability-card .capability-question {
+  font-family: var(--font-content);
+  font-size: 1.12rem;
+  color: var(--color-text);
+  margin: 0 0 0.75rem;
+}
+
 /* ---- AI positioning --------------------------------------------------- */
 
 .ai-positioning-inner {
@@ -248,9 +389,6 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .hero h1 {
-    font-size: 2.1rem;
-  }
 }
 
 .demo-request-copy h2 {
