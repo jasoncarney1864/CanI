@@ -92,10 +92,16 @@ from `az` alone.
 6. **Domain phase 1** (`-CustomDomainPhase 1`): adds the domain to the app unbound so Azure
    can validate. **Phase 2** (`2`): issues the managed certificate and binds it. Each is a
    deploy run with `-SkipBuild`.
-7. **Marketing site.** The Static Web App's deployment token
-   (`az staticwebapp secrets list --name cani-prod-marketing`) goes into
-   `AZURE_STATIC_WEB_APPS_API_TOKEN` for `marketing-static-web-app.yml`. Pointing the root
-   domain at it is a separate GoDaddy change (the two A records currently park at GoDaddy).
+7. **Marketing site.** `pwsh infra/container-apps/deploy-marketing.ps1` builds
+   `apps/marketing` and uploads it with the Static Web Apps CLI, reading the deployment
+   token from the resource at run time (the GitHub workflow `marketing-static-web-app.yml`
+   does the same when Actions is available; its secret is `AZURE_STATIC_WEB_APPS_API_TOKEN`).
+   Then point GoDaddy's `www` CNAME at the site's default hostname (printed by the script)
+   and bind it: `az staticwebapp hostname set -n cani-prod-marketing -g rg-cani-prod-eus
+   --hostname www.canido.co`. The apex `canido.co` stays a GoDaddy forward to
+   `https://www.canido.co` (the two A records are GoDaddy's forwarding service). Until the
+   CNAME moves, www.canido.co answers Azure's generic 404 because it still names the old
+   subscription's site — which is what the web app's "Take the tour" link hit on 2026-11-13.
 8. **Old subscription.** Cancel it outright once the new one is serving, so it can never
    bill again.
 
